@@ -16,19 +16,19 @@
 │   │   └── security.py           # 암호화 및 JWT 생성 로직
 │   ├── crud/                     # 데이터베이스 CRUD 함수
 │   │   └── user.py               # 유저 생성 및 조회 (get_user_by_id 포함)
-│   ├── db/
-│   │   ├── alembic.ini           # 마이그레이션 설정
+│   ├── db/                       # DB 관련 설정 및 세션
 │   │   ├── base_class.py         # Table명 자동 생성 기능이 포함된 Base
 │   │   ├── migration/            # DB 변경 이력 관리
 │   │   │   └── versions/         # 마이그레이션 파일들 저장소
 │   │   └── session.py            # DB 엔진 및 세션 관리 (get_db)
 │   ├── main.py                   # FastAPI 엔트리 포인트
 │   ├── models/                   # SQLAlchemy 모델 (DB 테이블)
-│   │   ├── init.py           # 모델 통합 참조
+│   │   ├── __init__.py           # 모델 통합 참조
 │   │   └── user.py               # User 테이블 (nickname, onboarding 필드)
 │   └── schemas/                  # Pydantic 데이터 검증 모델
 │       ├── token.py              # Token 및 TokenData 규격
 │       └── user.py               # UserCreate, UserResponse 규격
+├── alembic.ini                   # 마이그레이션 설정 (Root 위치)
 ├── docker-compose.yml            # Docker 환경 설정
 └── requirements.txt              # 파이썬 의존성 패키지 목록
 
@@ -78,13 +78,11 @@
 ## 1. 마이그레이션 적용 (테이블 생성/변경)
 
 ```
-Mac / Git Bash:
-docker-compose exec -w /back/app/db web alembic revision --autogenerate -m "message"
-docker-compose exec -w /back/app/db web alembic upgrade head
+1. DB에 최신 변경 사항 적용 (팀원 최초 실행 시 필수)
+docker-compose exec web alembic upgrade head
 
-Windows (CMD/PS):
-docker-compose exec -w //back/app/db web alembic revision --autogenerate -m "message"
-docker-compose exec -w //back/app/db web alembic upgrade head
+2. 모델 변경 시 새로운 마이그레이션 파일 생성
+docker-compose exec web alembic revision --autogenerate -m "변경 내용 메시지"
 ```
 
 # 5. DB 직접 접속 (CLI)
