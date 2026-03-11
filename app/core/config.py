@@ -1,31 +1,41 @@
 import os
-from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import computed_field
 
-load_dotenv()
-
-#260307박현식
-
+# 20260311 박현식: .env 기반 CORS 및 환경 설정 최적화
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Pinlm_Backend"
-    
     API_V1_STR: str = "/api/v1"
     
-    DB_USER: str = os.getenv("DB_USER")
-    DB_PASSWORD: str = os.getenv("DB_PASSWORD")
-    DB_HOST: str = os.getenv("DB_HOST")
-    DB_PORT: str = os.getenv("DB_PORT")
-    DB_NAME: str = os.getenv("DB_NAME")
+    # DB 설정 (Pydantic이 .env에서 자동으로 매칭하여 읽어옵니다)
+    DB_USER: str
+    DB_PASSWORD: str
+    DB_HOST: str
+    DB_PORT: str
+    DB_NAME: str
     
-    DATABASE_URL: str = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    @computed_field
+    @property
+    def DATABASE_URL(self) -> str:
+        return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
     
-    SECRET_KEY: str = os.getenv("SECRET_KEY")
-    ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
-    TOKEN_EXP_TIME: int = int(os.getenv("TOKEN_EXP_TIME", 30))
+    SECRET_KEY: str
+    ALGORITHM: str = "HS256"
+    TOKEN_EXP_TIME: int = 30
+    TMDB_API_KEY: str
 
-    TMDB_API_KEY: str = os.getenv("TMDB_API_KEY")
+    # CORS 설정 추가
+    CORS_ORIGINS: str = ""
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        if not self.CORS_ORIGINS:
+            return []
+        # 쉼표로 구분된 문자열을 리스트로 변환
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     model_config = SettingsConfigDict(
+        env_file=".env",  # .env 파일을 자동으로 읽도록 설정
         extra="ignore"
     )
 

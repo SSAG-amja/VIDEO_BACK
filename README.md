@@ -10,6 +10,7 @@
 │   │       ├── endpoints/
 │   │       │   ├── login.py      # 로그인 & OAuth2 토큰 발행
 │   │       │   └── user.py       # 회원가입 & /me 내 정보 조회
+│   │       │   └── movie_load.py # 홈피드와 TMDB연결 영화 데이터 조회(임시)
 │   │       └── routers.py        # 모든 엔드포인트를 'users' 태그로 통합
 │   ├── core/
 │   │   ├── config.py             # 환경변수 (SECRET_KEY, TOKEN_EXP 등)
