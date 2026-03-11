@@ -86,4 +86,4 @@ docker-compose exec web alembic revision --autogenerate -m "변경 내용 메시
 ```
 
 # 5. DB 직접 접속 (CLI)
-- docker exec -it PINLM_DB psql -U gookbob -d pinlm_db
+- docker exec -it PINLM_DB psql -U gookbob -d ssag_algo
