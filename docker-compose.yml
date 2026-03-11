@@ -7,6 +7,8 @@ services:
     image: postgres:16
     container_name: PINLM_DB
     restart: always
+    env_file:
+      - .env
     environment:
       POSTGRES_USER: ${DB_USER:-gookbob}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-gookbob}
@@ -27,6 +29,7 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      - TMDB_API_KEY=${TMDB_API_KEY}
     depends_on:
       - db
 
