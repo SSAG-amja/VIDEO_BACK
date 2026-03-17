@@ -16,8 +16,8 @@ from app.crud import user as crud_user
 
 router = APIRouter()
 
-# 260117 김광원 (현식 리더 요청으로 VIDEO_BACK 이식)
-# 로그인
+# 20260305 박현식
+# # 로그인
 @router.post("/", response_model=Token)
 def signin(
     db: Session = Depends(get_db),
