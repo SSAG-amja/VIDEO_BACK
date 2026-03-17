@@ -16,7 +16,7 @@ from app.crud import user as crud_user
 
 router = APIRouter()
 
-# 260117 김광원 (현식 리더 요청으로 VIDEO_BACK 이식)
+# 20260305 박현식
 # 로그인
 @router.post("/", response_model=Token)
 def signin(
@@ -32,7 +32,7 @@ def signin(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # VIDEO_BACK의 토큰 생성 로직 (MUSIC_BACK과 동일한 sub 구조)
+    # VIDEO_BACK의 토큰 생성 로직
     access_token = security.create_access_token(
         user.id,
         expires_delta=timedelta(minutes=int(settings.TOKEN_EXP_TIME)),

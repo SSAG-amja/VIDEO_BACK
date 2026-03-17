@@ -1,13 +1,12 @@
-# app/api/v1/endpoints/user.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.api import deps
 from app.schemas import user as user_schema
 from app.crud import user as user_crud
-from app import models  # app/models/__init__.py에 User가 임포트되어 있어야 함
-
+from app import models  
 router = APIRouter()
 
+# 20260305 박현식
 # [POST] 회원가입 API
 @router.post("/signin", response_model=user_schema.UserResponse)
 def create_user(
@@ -23,7 +22,6 @@ def create_user(
 # [GET] 내 정보 확인 API
 @router.get("/me", response_model=user_schema.UserResponse)
 def read_user_me(
-    # deps.get_current_user가 내부적으로 crud_user.get_user_by_id를 호출합니다.
     current_user: models.User = Depends(deps.get_current_user)
 ):
     return current_user
