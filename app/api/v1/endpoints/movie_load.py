@@ -87,3 +87,66 @@ async def get_shorts_movies(page: int = Query(1, description="페이지 번호")
         final_movies = [m for m in full_movies_data if m is not None and m.get("youtubeId")]
 
         return {"movies": final_movies}
+    
+    # ... 기존 코드 유지 ...
+
+
+# 260330 박현식
+# 탐색창에서 영화 요약 정보만 가져온 경우
+@router.get("/{movie_id}")
+async def get_movie_detail(movie_id: int):
+    """
+    특정 영화의 상세 정보(시놉시스, 예고편, 출연진 등)를 단건으로 조회합니다.
+    탐색(Explore) 등에서 넘어온 요약 데이터만 있을 때, 프론트엔드에서 추가 정보를 채우기 위해 호출합니다.
+    """
+    async with httpx.AsyncClient() as client:
+        detail_url = f"{BASE_URL}/movie/{movie_id}?api_key={settings.TMDB_API_KEY}&language=ko-KR&append_to_response=videos,credits"
+        res = await client.get(detail_url)
+        
+        if res.status_code != 200:
+            raise HTTPException(status_code=res.status_code, detail="TMDB 영화 상세 정보 호출 실패")
+            
+        data = res.json()
+
+        # --- 트레일러(YouTube ID) 추출 ---
+        videos = data.get("videos", {}).get("results", [])
+        youtube_id = next((v["key"] for v in videos if v["site"] == "YouTube" and v["type"] == "Trailer"), None)
+        
+        if not youtube_id:
+            en_url = f"{BASE_URL}/movie/{movie_id}/videos?api_key={settings.TMDB_API_KEY}"
+            en_res = await client.get(en_url)
+            en_videos = en_res.json().get("results", [])
+            youtube_id = next((v["key"] for v in en_videos if v["site"] == "YouTube" and v["type"] == "Trailer"), None)
+
+        # --- 출연진(Cast) 정보 추출 (최대 10명) ---
+        cast_data = data.get("credits", {}).get("cast", [])[:10]
+        formatted_cast = [
+            {
+                "id": person["id"],
+                "name": person["name"],
+                "role": person["character"],
+                "image": f"https://image.tmdb.org/t/p/w200{person['profile_path']}" if person.get("profile_path") else "https://via.placeholder.com/200x300?text=No+Image"
+            }
+            for person in cast_data
+        ]
+
+        # --- 데이터 포맷팅 ---
+        release_date = data.get("release_date", "")
+        release_year = release_date[:4] if release_date else "미상"
+        genres = ", ".join([g["name"] for g in data.get("genres", [])])
+        runtime = data.get("runtime", 0)
+        rating = round(data.get("vote_average", 0), 1)
+        real_tags = [f"#{g['name']}" for g in data.get("genres", [])[:3]]
+
+        return {
+            "id": data["id"],
+            "title": data["title"],
+            "overview": data.get("overview", "시놉시스 정보가 없습니다."),
+            "posterPath": data.get("poster_path", ""),
+            "youtubeId": youtube_id,
+            "info": f"{release_year} | {genres} | {runtime}분",
+            "rating": rating,
+            "runtime": runtime,
+            "tags": real_tags if real_tags else ["#추천영화"],
+            "cast": formatted_cast
+        }
