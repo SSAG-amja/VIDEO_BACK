@@ -35,8 +35,8 @@ class Settings(BaseSettings):
         return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
     
     SECRET_KEY: str
-    ALGORITHM: str = "HS256"
-    TOKEN_EXP_TIME: int = 30
+    ALGORITHM: str
+    TOKEN_EXP_TIME: int
     TMDB_API_KEY: str
 
     # CORS 설정 추가 (.env에서 고정으로 허용할 주소들만 받음)
