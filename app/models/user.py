@@ -1,14 +1,16 @@
 # app/models/user.py
-from sqlalchemy import Column, Integer, String, Boolean
-# 이전 단계에서 만든 base_class를 사용합니다.
-from app.db.base_class import Base 
+from sqlalchemy import Column, Integer, String, Boolean, Identity, Date, DateTime
+from app.db.base import Base 
+from sqlalchemy.sql import func
 
-# 20260305 박현식
-# 본인 파일 내부이므로 import User 구문은 반드시 삭제해야 합니다.
 class User(Base):
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    nickname = Column(String, index=True)
-    hashed_password = Column(String, nullable=False)
-    is_active = Column(Boolean(), default=True)
+    id = Column(Integer, Identity(always=True), primary_key=True, index=True)
+    email = Column(String(100), unique=True, index=True, nullable=False)
+    refresh_token = Column(String(255), nullable=True)
+    hashed_password = Column(String(255), nullable=False)
+    nickname = Column(String(10), unique=True, index=True, nullable=True)
+    birth_date = Column(Date, nullable=False)
+    gender = Column(String(1), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
     is_onboarding_completed = Column(Boolean(), default=False)

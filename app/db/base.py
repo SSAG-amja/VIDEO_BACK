@@ -20,5 +20,3 @@ class Base:
 
 # 20260305 박현식
 # 마이그레이션 대상이 되는 모든 모델들을 여기에 임포트함
-# (현재는 유저 모델만 존재)
-from app.models.user import User

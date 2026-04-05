@@ -9,7 +9,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session  # requests.Session 대신 sqlalchemy.orm.Session 사용
 
 from app.schemas.token import Token
-from app.core.config import settings # VIDEO_BACK의 환경설정 객체 사용
+from app.core.config import settings 
 from app.core import security
 from app.schemas.token import Token
 from app.schemas import user as user_schema
@@ -21,28 +21,28 @@ from app.crud import user as user_crud
 
 router = APIRouter()
 
-# 20260305 박현식
-# [POST] 회원가입 API
+# 260405 김광원
+# 회원가입시 이메일, 닉네임 체크
 @router.post("/signup", response_model=user_schema.UserResponse)
 def create_user(
     *,
     db: Session = Depends(deps.get_db),
     user_in: user_schema.UserCreate
 ):
-    user = user_crud.get_user_by_email(db, email=user_in.email)
-    if user:
+    if crud_user.get_active_user_by_email(db, email=user_in.email):
         raise HTTPException(status_code=400, detail="이미 존재하는 이메일입니다.")
+    if user_in.nickname and crud_user.get_user_by_nickname(db, nickname=user_in.nickname):
+        raise HTTPException(status_code=400, detail="이미 존재하는 닉네임입니다.")
     return user_crud.create_user(db, obj_in=user_in)
 
-# 20260305 박현식
-# # 로그인
+# 260405 김광원
+# 주석 및 리팩토링
 @router.post("/signin", response_model=Token)
 def signin(
     db: Session = Depends(get_db),
     form_data: OAuth2PasswordRequestForm = Depends() # Swagger Authorize 활성화
 ) -> Any:
-    # username 칸에 입력된 이메일로 유저를 찾습니다.
-    user = crud_user.get_user_by_email(db, email=form_data.username)
+    user = crud_user.get_active_user_by_email(db, email=form_data.username)
     if not user or not security.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -50,10 +50,9 @@ def signin(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # VIDEO_BACK의 토큰 생성 로직 (MUSIC_BACK과 동일한 sub 구조)
     access_token = security.create_access_token(
         user.id,
-        expires_delta=timedelta(minutes=int(settings.TOKEN_EXP_TIME)),
+        expires_delta=timedelta(minutes=settings.TOKEN_EXP_TIME),
     )
 
     return {
@@ -61,5 +60,6 @@ def signin(
         "token_type" : "bearer",
     }
 
-# @router.post("/signout")
-# def signout():
+@router.post("/signout")
+def signout():
+    return {"message": "로그아웃 완료"}
