@@ -18,7 +18,7 @@ def read_user_me(
     return current_user
 
 # 내 정보 수정
-# @router.patch("/me')
+# @router.patch("/me", response_model=user_schema.UserResponse)
 # def update_user_me():
 
 # 온보딩 데이터 저장
