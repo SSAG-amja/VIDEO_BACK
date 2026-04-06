@@ -6,6 +6,7 @@ from app.core.config import settings
 
 # 20260305 박현식
 # 비밀번호 암호화를 위한 알고리즘 설정 (BCRYPT 사용)
+# 추후 필요에 따라 Argon2 등 다른 알고리즘으로 변경 가능 -> 최신 권장 알고리즘
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # 평문 비밀번호를 해시값으로 변환하여 DB에 안전하게 저장함

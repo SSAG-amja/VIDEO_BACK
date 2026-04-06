@@ -79,11 +79,17 @@
 ## 1. 마이그레이션 적용 (테이블 생성/변경)
 
 ```
-1. DB에 최신 변경 사항 적용 (팀원 최초 실행 시 필수)
+cd app/db
+alembic revision --autogenerate -m "[message]"
+alembic upgrade head
+
+1. 모델 변경 시 새로운 마이그레이션 파일 생성
+docker-compose exec web alembic revision --autogenerate -m "변경 내용 메시지"
+
+2. DB에 최신 변경 사항 적용 (팀원 최초 실행 시 필수)
 docker-compose exec web alembic upgrade head
 
-2. 모델 변경 시 새로운 마이그레이션 파일 생성
-docker-compose exec web alembic revision --autogenerate -m "변경 내용 메시지"
+3. docker-compose exec web alembic downgrade -1
 ```
 
 # 5. DB 직접 접속 (CLI)
