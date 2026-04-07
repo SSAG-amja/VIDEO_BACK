@@ -8,10 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session  # requests.Session 대신 sqlalchemy.orm.Session 사용
 
-from app.schemas.token import Token
 from app.core.config import settings 
 from app.core import security
-from app.schemas.token import Token
+from app.schemas.token import Token, LoginResponse
 from app.schemas import user as user_schema
 
 from app.api import deps
@@ -37,7 +36,7 @@ def create_user(
 
 # 260405 김광원
 # 주석 및 리팩토링
-@router.post("/signin", response_model=Token)
+@router.post("/signin", response_model=LoginResponse)
 def signin(
     db: Session = Depends(get_db),
     form_data: OAuth2PasswordRequestForm = Depends() # Swagger Authorize 활성화
@@ -56,9 +55,9 @@ def signin(
     )
 
     return {
+        "is_onboarding_completed": user.is_onboarding_completed,
         "access_token": access_token,
         "token_type" : "bearer",
-        "is_onboarding_completed": user.is_onboarding_completed,
     }
 
 @router.post("/signout")
