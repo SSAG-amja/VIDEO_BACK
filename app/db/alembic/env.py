@@ -13,7 +13,7 @@ from app.core.config import settings
 # 260405 김광원
 # 기존작업 처럼 해당 파일에서 import하는 방식으로 변경 [임시 - 회의]
 from app.db.base import Base
-from app.models.user import User
+import app.models
 
 config = context.config
 

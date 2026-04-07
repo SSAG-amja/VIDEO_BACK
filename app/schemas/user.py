@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Optional, Literal
+from typing import List
 
 # 20260305 박현식
 # 공통 유저 데이터 필드 정의 (Pydantic 모델)
@@ -33,11 +34,10 @@ class UserUpdate(BaseModel):
     nickname: Optional[str] = None
 
 # 260404 김광원
-# 온보딩 시 수집하는 선호 장르 등의 추가 정보 규격
+# 사용자 온보딩 완료 시 요청받는 데이터 규격 (선호 OTT, 장르, 인생 영화 정보 포함)
+# 해당 부분은 프론트에 onboarding에서 영화 API호출시 ID값, 영화제목, 포스터 넘겨 주는 형식으로
+# ott, genre_id 부분은 양이 별로 없으니 서로 협의후 저장하면 될듯    
 class UserOnboarding(BaseModel):
-    is_onboarding_completed: bool = True
-
-    # 이름값이 아닌 id값으로 OTT와 장르를 관리할 경우, 아래 필드들은 list[int]로 변경 필요
-    # Optionsal로 해놨고 나중에 default값은 어떤걸로 할지 정해야할듯
-    ott_in_use: Optional[list[str]] = Field(None, description="사용 중인 OTT 목록")
-    genre_preferences: Optional[list[str]] = Field(None, description="선호 장르 목록")
+    ott_ids: List[int] = Field(..., description="구독 중인 OTT ID 리스트")
+    genre_ids: List[int] = Field(..., description="선호하는 장르 ID 리스트")
+    movie_ids: List[int] = Field(..., description="인생 영화 ID 리스트")

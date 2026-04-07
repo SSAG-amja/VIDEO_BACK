@@ -7,12 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.core.config import settings
-from app.models.user import User
+from app.models.user import Users
 from app.crud import user as user_crud
 
 # 20260305 박현식: Swagger UI와 연결될 토큰 추출기
 reusable_oauth2 = OAuth2PasswordBearer(
-    tokenUrl=f"{settings.API_V1_STR}/login/"
+    tokenUrl=f"{settings.API_V1_STR}/auth/signin/"
 )
 
 def get_db() -> Generator:
@@ -26,7 +26,7 @@ def get_db() -> Generator:
 def get_current_user(
     db: Session = Depends(get_db), 
     token: str = Depends(reusable_oauth2)
-) -> User:
+) -> Users:
     try:
         # 1. 토큰 복호화
         payload = jwt.decode(

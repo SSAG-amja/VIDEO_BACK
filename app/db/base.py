@@ -17,6 +17,3 @@ class Base:
     @declared_attr
     def __tablename__(cls) -> str:
         return cls.__name__.lower()
-
-# 20260305 박현식
-# 마이그레이션 대상이 되는 모든 모델들을 여기에 임포트함
