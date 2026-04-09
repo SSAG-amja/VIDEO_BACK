@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session  # requests.Session 대신 sqlalchemy.orm.Ses
 
 from app.core.config import settings 
 from app.core import security
-from app.schemas.token import Token, LoginResponse
+from app.schemas.auth import LoginResponse
 from app.schemas import user as user_schema
 
 from app.api import deps

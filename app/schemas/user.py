@@ -8,14 +8,6 @@ from typing import List
 class UserBase(BaseModel):
     email: EmailStr
 
-# 회원가입 시 요청받는 데이터 규격
-class UserCreate(UserBase):
-    password: str = Field(..., min_length=8, description="비밀번호는 8자리 이상이어야 합니다.")
-    password_check: str
-    birth_date: date
-    gender: Literal['M', 'F', 'U'] = Field(..., description="M: 남성, F: 여성, U: 기타")
-    nickname: str = Field(None, max_length=10, description="닉네임은 최대 10자까지 허용됩니다.")
-
 # API 응답 시 내보내는 데이터 규격
 class UserResponse(UserBase):
     id: int
@@ -28,6 +20,15 @@ class UserResponse(UserBase):
         # SQLAlchemy 모델 객체를 Pydantic 모델로 자동 변환 허용
         from_attributes = True
 
+# 회원가입 시 요청받는 데이터 규격
+class UserCreate(UserBase):
+    password: str = Field(..., min_length=8, description="비밀번호는 8자리 이상이어야 합니다.")
+    password_check: str
+    birth_date: date
+    gender: Literal['M', 'F', 'U'] = Field(..., description="M: 남성, F: 여성, U: 기타")
+    nickname: str = Field(None, max_length=10, description="닉네임은 최대 10자까지 허용됩니다.")
+
+
 # 260404 김광원 
 # 회원정보 수정 시 요청받는 데이터 규격 (현재는 닉네임만 수정 가능하도록 설정)
 class UserUpdate(BaseModel):
@@ -35,9 +36,11 @@ class UserUpdate(BaseModel):
 
 # 260404 김광원
 # 사용자 온보딩 완료 시 요청받는 데이터 규격 (선호 OTT, 장르, 인생 영화 정보 포함)
-# 해당 부분은 프론트에 onboarding에서 영화 API호출시 ID값, 영화제목, 포스터 넘겨 주는 형식으로
-# ott, genre_id 부분은 양이 별로 없으니 서로 협의후 저장하면 될듯    
-class UserOnboarding(BaseModel):
+class UserUpdateOtts(BaseModel):
     ott_ids: List[int] = Field(..., description="구독 중인 OTT ID 리스트")
+
+class UserUpdateGenres(BaseModel):
     genre_ids: List[int] = Field(..., description="선호하는 장르 ID 리스트")
+
+class UserUpdateMovies(BaseModel):
     movie_ids: List[int] = Field(..., description="인생 영화 ID 리스트")

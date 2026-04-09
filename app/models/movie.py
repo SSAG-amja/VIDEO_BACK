@@ -13,6 +13,8 @@ class Movies(Base):
     overview = Column(Text, nullable=True)
     keywords = Column(Text, nullable=True)
     director = Column(Text, nullable=True)
+    
+    # 종속성제거
     actor = Column(Text, nullable=True)
 
     # 수치 및 통계 데이터
@@ -33,3 +35,6 @@ class Movies(Base):
     genres = relationship("Genres", secondary="movie_genres", back_populates="movies")
     otts = relationship("OTTs", secondary="movie_otts", back_populates="movies")
     favorited_by_users = relationship("Users", secondary="user_favorite_movies", back_populates="favorite_movies")
+    
+    # actor relationship
+    actors = relationship("Actors", secondary="movie_actors", back_populates="movies")

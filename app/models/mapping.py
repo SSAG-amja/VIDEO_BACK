@@ -1,6 +1,8 @@
 from sqlalchemy import Column, Integer, ForeignKey
 from app.db.base import Base
 
+# [생성] movie actor
+
 class Movie_Genres(Base):
     movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True)
     genre_id = Column(Integer, ForeignKey("genres.id", ondelete="CASCADE"), primary_key=True)

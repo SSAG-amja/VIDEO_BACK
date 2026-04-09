@@ -19,6 +19,7 @@ class Users(Base):
 
     # 실제 컬럼이 아닌 관계 설정
     # relationship(타겟모델, 매핑테이블, 양방향 연결 설정)
+    # 양방향 참조 개발 가능성 
     genres = relationship("Genres", secondary="user_genres")
     otts = relationship("OTTs", secondary="user_otts")
     favorite_movies = relationship("Movies", secondary="user_favorite_movies")
