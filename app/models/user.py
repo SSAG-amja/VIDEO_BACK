@@ -1,25 +1,28 @@
-# app/models/user.py
-from sqlalchemy import Column, Integer, String, Boolean, Identity, Date, DateTime
-from app.db.base import Base 
-from sqlalchemy.sql import func
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Date, Identity, func, text
 from sqlalchemy.orm import relationship
+from app.db.base import Base
 
-# postgres : user 예약어여서 users로 변경
-class Users(Base):
+class User(Base):
+    __tablename__ = "users"
+
     id = Column(Integer, Identity(always=True), primary_key=True, index=True)
-    email = Column(String(100), unique=True, index=True, nullable=False)
-    refresh_token = Column(String(255), nullable=True)
+    email = Column(String(100), unique=True, nullable=False, index=True)
+    refresh_token = Column(String(255))
     hashed_password = Column(String(255), nullable=False)
-    nickname = Column(String(10), unique=True, index=True, nullable=True)
+    nickname = Column(String(10), unique=True)
     birth_date = Column(Date, nullable=False)
     gender = Column(String(1), nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    deleted_at = Column(DateTime(timezone=True), nullable=True)
-    is_onboarding_completed = Column(Boolean(), default=False)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    deleted_at = Column(DateTime)
+    is_onboarding_completed = Column(Boolean, server_default=text("false"), nullable=False)
 
-    # 실제 컬럼이 아닌 관계 설정
-    # relationship(타겟모델, 매핑테이블, 양방향 연결 설정)
-    # 양방향 참조 개발 가능성 
-    genres = relationship("Genres", secondary="user_genres")
-    otts = relationship("OTTs", secondary="user_otts")
-    favorite_movies = relationship("Movies", secondary="user_favorite_movies")
+    # Relationships
+    genres = relationship("Genre", secondary="user_genres", back_populates="users")
+    otts = relationship("Ott", secondary="user_otts", back_populates="users")
+    favorite_movies = relationship("Movie", secondary="user_favorite_movies", back_populates="favorited_by")
+    
+    interactions = relationship("UserInteraction", back_populates="user", cascade="all, delete-orphan")
+    playlists = relationship("Playlist", back_populates="user", cascade="all, delete-orphan")
+    posts = relationship("Post", back_populates="user", cascade="all, delete-orphan")
+    replies = relationship("Reply", back_populates="user", cascade="all, delete-orphan")
+    liked_posts = relationship("Post", secondary="likes", back_populates="liked_by")

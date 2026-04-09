@@ -1,40 +1,37 @@
-from sqlalchemy import Column, Integer, String, Text, Float, Date, BigInteger, Boolean
-from app.db.base import Base
+from sqlalchemy import Column, Integer, String, Boolean, Text, Float, BigInteger, Date, Identity, text
 from sqlalchemy.orm import relationship
+from app.db.base import Base
 
-class Movies(Base):
-    id = Column(Integer, primary_key=True, index=True)
-    imdb_id = Column(String(50), index=True, nullable=True)
-    title = Column(String(255), index=True, nullable=True)
-    original_title = Column(String(255), nullable=True)
-    original_language = Column(String(50), nullable=True)
+class Movie(Base):
+    __tablename__ = "movies"
 
-    # 상세정보
-    overview = Column(Text, nullable=True)
-    keywords = Column(Text, nullable=True)
-    director = Column(Text, nullable=True)
+    id = Column(Integer, Identity(always=True), primary_key=True, index=True)
+    tmdb_id = Column(Integer, unique=True, index=True)
+    imdb_id = Column(String(50))
+    title = Column(String(255))
+    original_title = Column(String(255))
+    original_language = Column(String(50))
+    overview = Column(Text)
+    director = Column(Text)
+    popularity = Column(Float)
+    vote_average = Column(Float)
+    vote_count = Column(Integer)
+    release_date = Column(Date)
+    runtime = Column(Integer)
+    budget = Column(BigInteger)
+    revenue = Column(BigInteger)
+    adult = Column(Boolean, server_default=text("false"), nullable=False)
+    status = Column(String(50))
+    poster_path = Column(Text)
+    backdrop_path = Column(Text)
+
+    # Relationships
+    genres = relationship("Genre", secondary="movie_genres", back_populates="movies")
+    otts = relationship("Ott", secondary="movie_otts", back_populates="movies")
+    actors = relationship("Actor", secondary="movie_actors", back_populates="movies")
+    keywords = relationship("Keyword", secondary="movie_keywords", back_populates="movies")
+    favorited_by = relationship("User", secondary="user_favorite_movies", back_populates="favorite_movies")
     
-    # 종속성제거
-    actor = Column(Text, nullable=True)
-
-    # 수치 및 통계 데이터
-    popularity = Column(Float, nullable=True)
-    vote_average = Column(Float, nullable=True)
-    vote_count = Column(Integer, nullable=True)
-    release_date = Column(Date, nullable=True)
-    runtime = Column(Integer, nullable=True)
-    budget = Column(BigInteger, nullable=True)
-    revenue = Column(BigInteger, nullable=True)
-
-    # 상태 및 이미지
-    adult = Column(Boolean, default=False, nullable=False)
-    status = Column(String(50), nullable=True)
-    poster_path = Column(String(255), nullable=True)
-    backdrop_path = Column(String(255), nullable=True)
-
-    genres = relationship("Genres", secondary="movie_genres", back_populates="movies")
-    otts = relationship("OTTs", secondary="movie_otts", back_populates="movies")
-    favorited_by_users = relationship("Users", secondary="user_favorite_movies", back_populates="favorite_movies")
-    
-    # actor relationship
-    actors = relationship("Actors", secondary="movie_actors", back_populates="movies")
+    interactions = relationship("UserInteraction", back_populates="movie", cascade="all, delete-orphan")
+    playlist_movies = relationship("PlaylistMovie", back_populates="movie", cascade="all, delete-orphan")
+    posts = relationship("Post", back_populates="movie", cascade="all, delete-orphan")
