@@ -7,5 +7,5 @@ class Ott(Base):
     id = Column(Integer, Identity(always=True), primary_key=True, index=True)
     name = Column(String(50), unique=True, index=True, nullable=False)
     
-    movies = relationship("Movie", secondary="movie_otts", back_populates="otts")
+    movie_otts = relationship("MovieOtt", back_populates="ott", cascade="all, delete-orphan")
     users = relationship("User", secondary="user_otts", back_populates="otts")

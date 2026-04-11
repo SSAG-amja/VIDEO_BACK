@@ -2,12 +2,12 @@
 from sqlalchemy.orm import Session
 
 from app.models.user import User
-from app.models.movie import Movies
-from app.models.genre import Genres
-from app.models.ott import OTTs
+from app.models.movie import Movie
+from app.models.genre import Genre
+from app.models.ott import Ott
 
 from app.schemas.user import UserCreate
-from app.schemas.user import UserOnboarding
+from app.schemas.auth import LoginResponse
 
 from app.core.security import get_password_hash
 
@@ -54,35 +54,35 @@ def get_user_by_nickname(db: Session, nickname: str) -> User | None:
     ).first()
 
 
-# 260405 김광원
-# 온보딩 데이터 저장 및 유저 상태 업데이트
-def complete_onboarding(db: Session, *, user_id: int, onboarding_data: UserOnboarding) -> User:
-    # 1. 대상 유저 조회
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        return None # 또는 에러 발생
+# # 260405 김광원
+# # 온보딩 데이터 저장 및 유저 상태 업데이트
+# def complete_onboarding(db: Session, *, user_id: int, onboarding_data: UserOnboarding) -> User:
+#     # 1. 대상 유저 조회
+#     user = db.query(User).filter(User.id == user_id).first()
+#     if not user:
+#         return None # 또는 에러 발생
 
-    try:
-        # 2. 존재 여부 검증 및 할당 (IN 쿼리로 한 번에 조회하여 성능 최적화)
-        # 단순히 ID만 넣는 게 아니라 실제 객체를 찾아 할당함으로써 FK 에러를 원천 차단합니다.
-        if onboarding_data.genre_ids:
-            user.genres = db.query(Genres).filter(Genres.id.in_(onboarding_data.genre_ids)).all()
+#     try:
+#         # 2. 존재 여부 검증 및 할당 (IN 쿼리로 한 번에 조회하여 성능 최적화)
+#         # 단순히 ID만 넣는 게 아니라 실제 객체를 찾아 할당함으로써 FK 에러를 원천 차단합니다.
+#         if onboarding_data.genre_ids:
+#             user.genres = db.query(Genres).filter(Genres.id.in_(onboarding_data.genre_ids)).all()
             
-        if onboarding_data.ott_ids:
-            user.otts = db.query(OTTs).filter(OTTs.id.in_(onboarding_data.ott_ids)).all()
+#         if onboarding_data.ott_ids:
+#             user.otts = db.query(OTTs).filter(OTTs.id.in_(onboarding_data.ott_ids)).all()
             
-        if onboarding_data.movie_ids:
-            user.favorite_movies = db.query(Movies).filter(Movies.id.in_(onboarding_data.movie_ids)).all()
+#         if onboarding_data.movie_ids:
+#             user.favorite_movies = db.query(Movies).filter(Movies.id.in_(onboarding_data.movie_ids)).all()
 
-        # 3. 유저 상태 업데이트
-        user.is_onboarding_completed = True
+#         # 3. 유저 상태 업데이트
+#         user.is_onboarding_completed = True
 
-        # 4. 트랜잭션 확정
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        return user
+#         # 4. 트랜잭션 확정
+#         db.add(user)
+#         db.commit()
+#         db.refresh(user)
+#         return user
 
-    except Exception as e:
-        db.rollback()
-        raise e
+#     except Exception as e:
+#         db.rollback()
+#         raise e

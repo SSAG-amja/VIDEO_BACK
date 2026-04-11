@@ -13,3 +13,4 @@ httpx
 pydantic-settings
 passlib[bcrypt]
 bcrypt==4.0.1
+pandas

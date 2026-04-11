@@ -27,7 +27,7 @@ class Movie(Base):
 
     # Relationships
     genres = relationship("Genre", secondary="movie_genres", back_populates="movies")
-    otts = relationship("Ott", secondary="movie_otts", back_populates="movies")
+    movie_otts = relationship("MovieOtt", back_populates="movie", cascade="all, delete-orphan")
     actors = relationship("Actor", secondary="movie_actors", back_populates="movies")
     keywords = relationship("Keyword", secondary="movie_keywords", back_populates="movies")
     favorited_by = relationship("User", secondary="user_favorite_movies", back_populates="favorite_movies")

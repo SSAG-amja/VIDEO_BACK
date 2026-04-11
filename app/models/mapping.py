@@ -3,19 +3,11 @@ from sqlalchemy import Table, Column, Integer, Boolean, DateTime, ForeignKey, fu
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
-# --- 순수 다대다(N:M) 매핑 테이블 ---
 movie_genres = Table(
     "movie_genres",
     Base.metadata,
     Column("movie_id", Integer, ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True),
     Column("genre_id", Integer, ForeignKey("genres.id", ondelete="CASCADE"), primary_key=True)
-)
-
-movie_otts = Table(
-    "movie_otts",
-    Base.metadata,
-    Column("movie_id", Integer, ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True),
-    Column("ott_id", Integer, ForeignKey("otts.id", ondelete="CASCADE"), primary_key=True)
 )
 
 movie_actors = Table(
@@ -91,3 +83,17 @@ class PlaylistMovie(Base):
 
     playlist = relationship("Playlist", back_populates="playlist_movies")
     movie = relationship("Movie", back_populates="playlist_movies")
+
+class MovieOtt(Base):
+    __tablename__ = "movie_otts"
+    
+    movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True)
+    ott_id = Column(Integer, ForeignKey("otts.id", ondelete="CASCADE"), primary_key=True)
+    
+    is_streaming = Column(Boolean, server_default=text("false"), nullable=False)
+    is_rent = Column(Boolean, server_default=text("false"), nullable=False)
+    is_buy = Column(Boolean, server_default=text("false"), nullable=False)
+
+    # Association Object는 양쪽 부모를 직접 참조해야 합니다.
+    movie = relationship("Movie", back_populates="movie_otts")
+    ott = relationship("Ott", back_populates="movie_otts")
