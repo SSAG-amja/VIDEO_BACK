@@ -15,7 +15,7 @@ from app.crud import user as user_crud
 router = APIRouter()
 
 # [GET] 내 정보 확인 API
-@router.get("/me", response_model=user_schema.UserResponse)
+@router.get("/me", response_model=user_schema.UserInfoResponse)
 def read_user_me(
     current_user: user.User = Depends(deps.get_current_user)
 ):
@@ -41,6 +41,7 @@ def update_user_genres(
     current_user: user.User = Depends(deps.get_current_user),
     genres_in: user_schema.UserUpdateGenres
 ):
+    pass
 
 # 260409 김광원
 # OTT 정보 저장
@@ -53,3 +54,4 @@ def update_user_genres(
 # OTT 정보 수정
 # @router.put("/me/otts")
 # def update_otts_user_me():
+#     pass

@@ -1,6 +1,27 @@
 from app.schemas.token import Token
+from app.schemas.user import UserBase
+from pydantic import BaseModel, EmailStr, Field, SecretStr
+from datetime import date
+from typing import Optional, Literal, List
 
 # 260407 김광원
 # 로그인시 온보딩 완료 여부도 함께 반환하기 위한 응답 모델
-class LoginResponse(Token):
+class SignInResponse(Token):
     is_onboarding_completed: bool
+
+# 2604430 김광원
+# 회원가입
+class SignUpRequest(UserBase):
+    password: SecretStr = Field(..., min_length=8, description="비밀번호는 8자리 이상이어야 합니다.")
+    password_confirm: SecretStr = Field(..., min_length=8, description="비밀번호 확인은 8자리 이상이어야 합니다.")
+    birth_date: date
+    gender: Literal['M', 'F', 'U'] = Field(..., description="M: 남성, F: 여성, U: 기타")
+    nickname: str = Field(None, max_length=10, description="닉네임은 최대 10자까지 허용됩니다.")
+
+class SignUpResponse(UserBase):
+    message: str = "회원가입이 완료되었습니다."
+    nickname: str
+
+
+class PasswordVerifyRequest(BaseModel):
+    current_password: SecretStr = Field(..., min_length=8, description="비밀번호는 8자리 이상이어야 합니다.")

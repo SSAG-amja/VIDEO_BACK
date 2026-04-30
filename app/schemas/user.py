@@ -1,38 +1,36 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, SecretStr
 from datetime import date, datetime
 from typing import Optional, Literal
 from typing import List
 
+from app.schemas.movie import OTT, Genre, Movie
+
 # 20260305 박현식
 # 공통 유저 데이터 필드 정의 (Pydantic 모델)
 class UserBase(BaseModel):
+    user_id: int
     email: EmailStr
 
 # API 응답 시 내보내는 데이터 규격
-class UserResponse(UserBase):
-    id: int
-    birth_date: date
-    gender: str
-    created_at: datetime
+class UserInfoResponse(UserBase, OTT):
+    nickname: str
+    birth_data: date
+    gender: Literal['M', 'F', 'U']
     is_onboarding_completed: bool
+    otts: List[OTT]
+    genres: List[Genre]
+    favorite_movies: List[Movie]
 
-    class Config:
-        # SQLAlchemy 모델 객체를 Pydantic 모델로 자동 변환 허용
-        from_attributes = True
-
-# 회원가입 시 요청받는 데이터 규격
-class UserCreate(UserBase):
-    password: str = Field(..., min_length=8, description="비밀번호는 8자리 이상이어야 합니다.")
-    password_check: str
-    birth_date: date
-    gender: Literal['M', 'F', 'U'] = Field(..., description="M: 남성, F: 여성, U: 기타")
-    nickname: str = Field(None, max_length=10, description="닉네임은 최대 10자까지 허용됩니다.")
-
+    model_config = ConfigDict(from_attributes=True)
 
 # 260404 김광원 
 # 회원정보 수정 시 요청받는 데이터 규격 (현재는 닉네임만 수정 가능하도록 설정)
-class UserUpdate(BaseModel):
+class UserInfoUpdate(BaseModel):
     nickname: Optional[str] = None
+
+class UserPasswordUpdate(BaseModel):
+    new_password: SecretStr = Field(..., min_length=8, description="새 비밀번호는 8자리 이상이어야 합니다.")
+    new_password_confirm: SecretStr = Field(..., min_length=8, description="새 비밀번호 확인은 8자리 이상이어야 합니다.")
 
 # 260404 김광원
 # 사용자 온보딩 완료 시 요청받는 데이터 규격 (선호 OTT, 장르, 인생 영화 정보 포함)
