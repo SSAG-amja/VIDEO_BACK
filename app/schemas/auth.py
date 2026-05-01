@@ -25,5 +25,5 @@ class SignUpResponse(UserBase):
     model_config = ConfigDict(from_attributes=True) # SQLAlchemy 모델 객체를 Pydantic 모델로 자동 변환 허용
 
 
-class PasswordVerifyRequest(BaseModel):
+class VerifyPasswordRequest(BaseModel):
     current_password: SecretStr = Field(..., min_length=8, description="비밀번호는 8자리 이상이어야 합니다.")

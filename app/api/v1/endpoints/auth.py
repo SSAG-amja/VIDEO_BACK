@@ -1,6 +1,3 @@
-# 사용자 인증 관련 API 엔드포인트 정의
-# 로그인 로그아웃 회원가입 등
-
 from datetime import timedelta
 from typing import Any
 
@@ -67,3 +64,12 @@ def signin(
 @router.post("/signout")
 def signout():
     return {"message": "로그아웃 완료"}
+
+@router.post("/verify-password")
+def verify_password(
+    request: auth_schema.VerifyPasswordRequest,
+    current_user: auth_schema.VerifyPasswordRequest = Depends(deps.get_current_user)
+):
+    if not security.verify_password(request.current_password.get_secret_value(), current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="현재 비밀번호가 일치하지 않습니다.")
+    return {"message": "비밀번호가 확인되었습니다."}
