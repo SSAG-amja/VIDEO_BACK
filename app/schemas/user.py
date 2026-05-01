@@ -8,7 +8,6 @@ from app.schemas.movie import OTT, Genre, Movie
 # 20260305 박현식
 # 공통 유저 데이터 필드 정의 (Pydantic 모델)
 class UserBase(BaseModel):
-    user_id: int
     email: EmailStr
 
 # API 응답 시 내보내는 데이터 규격

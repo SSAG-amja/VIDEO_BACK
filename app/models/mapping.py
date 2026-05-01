@@ -1,5 +1,5 @@
 # models/mapping.py
-from sqlalchemy import Table, Column, Integer, Boolean, DateTime, ForeignKey, func, text
+from sqlalchemy import Table, Column, Integer, Boolean, DateTime, ForeignKey, func, text, String
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
@@ -10,18 +10,18 @@ movie_genres = Table(
     Column("genre_id", Integer, ForeignKey("genres.id", ondelete="CASCADE"), primary_key=True)
 )
 
-movie_actors = Table(
-    "movie_actors",
-    Base.metadata,
-    Column("movie_id", Integer, ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True),
-    Column("actor_id", Integer, ForeignKey("actors.id", ondelete="CASCADE"), primary_key=True)
-)
-
 movie_keywords = Table(
     "movie_keywords",
     Base.metadata,
     Column("movie_id", Integer, ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True),
     Column("keyword_id", Integer, ForeignKey("keywords.id", ondelete="CASCADE"), primary_key=True)
+)
+
+movie_directors = Table(
+    "movie_directors",
+    Base.metadata,
+    Column("movie_id", Integer, ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True),
+    Column("director_id", Integer, ForeignKey("people.id", ondelete="CASCADE"), primary_key=True)
 )
 
 user_genres = Table(
@@ -59,7 +59,15 @@ likes = Table(
     Column("post_id", Integer, ForeignKey("posts.id", ondelete="CASCADE"), primary_key=True)
 )
 
-# --- 추가 컬럼이 있는 다대다(N:M) 연결 모델 ---
+class MovieActor(Base):
+    __tablename__ = "movie_actors"
+    
+    movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True)
+    actor_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), primary_key=True)
+    cast_name = Column(String(100))
+
+    movie = relationship("Movie", back_populates="movie_actors")
+    actor = relationship("People", back_populates="movie_actors")
 
 class UserInteraction(Base):
     __tablename__ = "user_interactions"
@@ -94,6 +102,5 @@ class MovieOtt(Base):
     is_rent = Column(Boolean, server_default=text("false"), nullable=False)
     is_buy = Column(Boolean, server_default=text("false"), nullable=False)
 
-    # Association Object는 양쪽 부모를 직접 참조해야 합니다.
     movie = relationship("Movie", back_populates="movie_otts")
     ott = relationship("Ott", back_populates="movie_otts")

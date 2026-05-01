@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session  # requests.Session 대신 sqlalchemy.orm.Ses
 
 from app.core.config import settings 
 from app.core import security
-from app.schemas.auth import LoginResponse
+from app.schemas.auth import SignInResponse
 from app.schemas import user as user_schema
+from app.schemas import auth as auth_schema
 
 from app.api import deps
 from app.api.deps import get_db
@@ -22,21 +23,24 @@ router = APIRouter()
 
 # 260405 김광원
 # 회원가입시 이메일, 닉네임 체크
-@router.post("/signup", response_model=user_schema.UserResponse)
+@router.post("/signup", response_model=auth_schema.SignUpResponse)
 def create_user(
     *,
     db: Session = Depends(deps.get_db),
-    user_in: user_schema.UserCreate
+    user_in: auth_schema.SignUpRequest
 ):
     if crud_user.get_active_user_by_email(db, email=user_in.email):
         raise HTTPException(status_code=400, detail="이미 존재하는 이메일입니다.")
     if user_in.nickname and crud_user.get_user_by_nickname(db, nickname=user_in.nickname):
         raise HTTPException(status_code=400, detail="이미 존재하는 닉네임입니다.")
-    return user_crud.create_user(db, obj_in=user_in)
+    user = user_crud.create_user(db, obj_in=user_in)
+    if user is None:
+        raise HTTPException(status_code=500, detail="회원가입에 실패했습니다.")
+    return user
 
 # 260405 김광원
 # 주석 및 리팩토링
-@router.post("/signin", response_model=LoginResponse)
+@router.post("/signin", response_model=auth_schema.SignInResponse)
 def signin(
     db: Session = Depends(get_db),
     form_data: OAuth2PasswordRequestForm = Depends() # Swagger Authorize 활성화

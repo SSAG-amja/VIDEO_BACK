@@ -14,9 +14,8 @@ class User(Base):
     gender = Column(String(1), nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     deleted_at = Column(DateTime)
-    is_onboarding_completed = Column(Boolean, server_default=text("false"), nullable=False)
+    is_onboarding_completed = Column(Boolean, default=False, server_default=text("false"), nullable=False)
 
-    # Relationships
     genres = relationship("Genre", secondary="user_genres", back_populates="users")
     otts = relationship("Ott", secondary="user_otts", back_populates="users")
     favorite_movies = relationship("Movie", secondary="user_favorite_movies", back_populates="favorited_by")

@@ -1,6 +1,6 @@
-# 1. 부모 테이블 모델들
+# models/__init__.py
 from .user import User
-from .actor import Actor
+from .people import People
 from .keyword import Keyword
 from .hashtag import Hashtag
 from .post import Post
@@ -9,4 +9,7 @@ from .playlist import Playlist
 from .movie import Movie
 from .ott import Ott
 from .genre import Genre
-from .mapping import UserInteraction, PlaylistMovie, MovieOtt
+
+from .mapping import (
+    UserInteraction, PlaylistMovie, MovieOtt, MovieActor
+)
