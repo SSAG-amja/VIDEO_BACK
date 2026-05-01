@@ -13,7 +13,6 @@ from app.schemas import auth as auth_schema
 
 from app.api import deps
 from app.api.deps import get_db
-from app.crud import user as crud_user
 from app.crud import user as user_crud
 
 router = APIRouter()
@@ -26,9 +25,9 @@ def create_user(
     db: Session = Depends(deps.get_db),
     user_in: auth_schema.SignUpRequest
 ):
-    if crud_user.get_active_user_by_email(db, email=user_in.email):
+    if user_crud.get_active_user_by_email(db, email=user_in.email):
         raise HTTPException(status_code=400, detail="이미 존재하는 이메일입니다.")
-    if user_in.nickname and crud_user.get_user_by_nickname(db, nickname=user_in.nickname):
+    if user_in.nickname and user_crud.get_user_by_nickname(db, nickname=user_in.nickname):
         raise HTTPException(status_code=400, detail="이미 존재하는 닉네임입니다.")
     user = user_crud.create_user(db, obj_in=user_in)
     if user is None:
@@ -42,7 +41,7 @@ def signin(
     db: Session = Depends(get_db),
     form_data: OAuth2PasswordRequestForm = Depends() # Swagger Authorize 활성화
 ) -> Any:
-    user = crud_user.get_active_user_by_email(db, email=form_data.username)
+    user = user_crud.get_active_user_by_email(db, email=form_data.username)
     if not user or not security.verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
