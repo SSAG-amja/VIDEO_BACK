@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, SecretStr
+from pydantic import BaseModel, EmailStr, Field, SecretStr, ConfigDict
 from datetime import date, datetime
 from typing import Optional, Literal
 from typing import List
@@ -21,7 +21,7 @@ class UserInfoResponse(UserBase):
     genres: List[Genre] = Field(default_factory=list)
     favorite_movies: List[Movie] = Field(default_factory=list)
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
 # 260404 김광원 
 # 회원정보 수정 시 요청받는 데이터 규격 (현재는 닉네임만 수정 가능하도록 설정)
@@ -31,3 +31,12 @@ class UserInfoUpdate(BaseModel):
 class UserPasswordUpdate(BaseModel):
     new_password: SecretStr = Field(..., min_length=8, description="새 비밀번호는 8자리 이상이어야 합니다.")
     new_password_confirm: SecretStr = Field(..., min_length=8, description="새 비밀번호 확인은 8자리 이상이어야 합니다.")
+
+class UserOttUpdateRequest(BaseModel):
+    ott_ids: List[int] = Field(default_factory=list, description="업데이트할 OTT ID 목록")
+
+class UserGenreUpdateRequest(BaseModel):
+    genre_ids: List[int] = Field(default_factory=list, description="업데이트할 장르 ID 목록")
+
+class UserMovieUpdateRequest(BaseModel):
+    movie_ids: List[int] = Field(default_factory=list, description="업데이트할 영화 ID 목록")
