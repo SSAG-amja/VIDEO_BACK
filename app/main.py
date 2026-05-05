@@ -1,11 +1,13 @@
 # app/main.py
+import os
+import logging
 from fastapi import FastAPI
-from app.api.v1.routers import api_router
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+from app.api.v1.routers import api_router
 from app.core.config import settings
 
-# 20260305 박현식
-app = FastAPI(title="Pinlm API")
+app = FastAPI(title="PINLM API")
 
 # 20260311 CORS 설정 반영
 app.add_middleware(
