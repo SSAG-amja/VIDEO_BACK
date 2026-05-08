@@ -3,6 +3,7 @@ from sqlalchemy import Table, Column, Integer, Boolean, DateTime, ForeignKey, fu
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
+# 해당 테이블들 조회할시 .c.tablename 형식으로 써야함
 movie_genres = Table(
     "movie_genres",
     Base.metadata,

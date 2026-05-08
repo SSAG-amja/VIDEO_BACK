@@ -1,11 +1,44 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from app.core.config import settings
+from app.schemas.movie import recommendedMovie
+from app.api import deps
+from sqlalchemy.orm import Session
+
+from app.crud import movie as movie_crud
+from app.crud import user as user_crud
+
 import httpx
+
+router = APIRouter()
+
+# 20260508 김광원
+# 사용자 선호 장르 기반 영화 추천 API
+@router.get("/movies/recommended", response_model=recommendedMovie)
+def get_recommended_movies(
+    db: Session = Depends(deps.get_db),
+    current_user = Depends(deps.get_current_user),
+    page: int = Query(1, description="페이지 번호 (기본값: 1)")
+):
+    limit = 200
+    skip = (page - 1) * limit
+    try:
+        recommended_movies = movie_crud.get_recommended_movies(db, current_user.id, skip=skip, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"data": recommended_movies}
+
+
+
+
+
+
+
+"""
+밑에는 임의로 작성됐던 코드
+"""
 
 # 20260330 박현식 
 #  탐색(Explore) 및 검색 관련 API
-
-router = APIRouter()
 
 BASE_URL = "https://api.themoviedb.org/3"
 

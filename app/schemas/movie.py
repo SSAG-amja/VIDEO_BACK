@@ -20,3 +20,6 @@ class Movie(BaseModel):
     poster_path: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+class recommendedMovie(BaseModel):
+    data: list[Movie]
