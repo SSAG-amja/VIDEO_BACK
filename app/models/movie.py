@@ -8,7 +8,7 @@ class Movie(Base):
     id = Column(Integer, Identity(always=True), primary_key=True, index=True)
     tmdb_id = Column(Integer, unique=True, index=True)
     imdb_id = Column(String(50))
-    title = Column(String(255))
+    title = Column(Text)
     title_ko = Column(String(255))
     original_title = Column(String(255))
     original_language = Column(String(50))

@@ -12,7 +12,6 @@ from app.schemas import user as user_schema
 from app.schemas import auth as auth_schema
 
 from app.api import deps
-from app.api.deps import get_db
 from app.crud import user as user_crud
 
 router = APIRouter()
@@ -38,7 +37,7 @@ def create_user(
 # 주석 및 리팩토링
 @router.post("/signin", response_model=auth_schema.SignInResponse)
 def signin(
-    db: Session = Depends(get_db),
+    db: Session = Depends(deps.get_db),
     form_data: OAuth2PasswordRequestForm = Depends() # Swagger Authorize 활성화
 ) -> Any:
     user = user_crud.get_active_user_by_email(db, email=form_data.username)

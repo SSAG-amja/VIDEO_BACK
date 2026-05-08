@@ -1,22 +1,36 @@
 # 20260305 박현식
 # Pinlm 서비스 통합 실행 설정
-version: '3.8'
 
 services:
   db:
     image: postgres:16
     container_name: PINLM_DB
     restart: always
-    env_file:
-      - .env
     environment:
-      POSTGRES_USER: ${DB_USER:-gookbob}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-gookbob}
-      POSTGRES_DB: ${DB_NAME:-ssag_algo}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     ports:
-      - "5432:5432"
+      - "${DB_PORT}:${DB_PORT}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+  db-seeder:
+    build: .
+    container_name: PINLM_DB_SEEDER
+    restart: "no"
+    command: ["/back/app/seeder.sh"]
+    depends_on:
+      - db
+    environment:
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=db
+      - FORCE_INIT=${FORCE_INIT:-false}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+    volumes:
+      - ./app/data:/back/app/data
 
   web:
     build: .
@@ -25,13 +39,18 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - .:/back
+    depends_on:
+      db-seeder:
+        condition: service_completed_successfully
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=db
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
       - TMDB_API_KEY=${TMDB_API_KEY}
-    depends_on:
-      - db
 
 volumes:
   postgres_data:
