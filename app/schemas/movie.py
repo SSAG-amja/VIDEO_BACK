@@ -23,3 +23,6 @@ class Movie(BaseModel):
 
 class recommendedMovie(BaseModel):
     data: list[Movie]
+
+class MovieSearchResponse(recommendedMovie):
+    total_results: int

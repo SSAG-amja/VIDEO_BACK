@@ -11,7 +11,7 @@ import httpx
 
 router = APIRouter()
 
-# 20260508 김광원
+# 260508 김광원
 # 사용자 선호 장르 기반 영화 추천 API
 @router.get("/movies/recommended", response_model=recommendedMovie)
 def get_recommended_movies(
@@ -27,11 +27,27 @@ def get_recommended_movies(
         raise HTTPException(status_code=500, detail=str(e))
     return {"data": recommended_movies}
 
+# 260508 김광원
+# 영화 검색
+@router.get("/movies/search")
+def search_movies(
+    db: Session = Depends(deps.get_db),
+    current_user = Depends(deps.get_current_user),
+    title: str | None = Query(None, description="검색할 영화 제목, 감독, 배우 이름"),
+    tag: str | None = Query(None, description="키워드/해시태그 기반 (예: #액션, #코미디)"),
+    genres: str | None = Query(None, description="검색할 장르 ID (쉼표로 구분된 장르 ID 목록)"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, le=500)
+):
+    try:
+        if not any([title, tag, genres]):
+            raise HTTPException(status_code=400, detail="최소한 하나의 검색 기준(title, tag, genres)을 제공해야 합니다.")
 
-
-
-
-
+        movies = movie_crud.search_movies(db, title=title, tag=tag, genres=genres, skip=skip, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    return {"data": movies}
 
 """
 밑에는 임의로 작성됐던 코드

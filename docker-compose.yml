@@ -19,7 +19,7 @@ services:
     build: .
     container_name: PINLM_DB_SEEDER
     restart: "no"
-    command: ["/back/app/seeder.sh"]
+    command: ["/bin/bash","/back/app/seeder.sh"]
     depends_on:
       - db
     environment:
