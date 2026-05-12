@@ -26,15 +26,7 @@ def read_user_me(
     user_profile = user_crud.get_user_with_preferences(db, user_id=current_user.id)
     if not user_profile:
         raise HTTPException(status_code=404, detail="User not found")
-    return {
-        "user_id": user_profile.id,
-        "birth_date": user_profile.birth_date,
-        "gender": user_profile.gender,
-        "is_onboarding_completed": user_profile.is_onboarding_completed,
-        "otts": [[ott.tmdb_id, ott.name_ko] for ott in user_profile.otts],
-        "genres": [[genre.tmdb_id, genre.name_ko] for genre in user_profile.genres],
-        "favorite_movies": [[movie.tmdb_id, movie.title_ko, movie.poster_path] for movie in user_profile.favorite_movies]
-    }
+    return user_profile
 
 # 260501 김광원
 # OTT 수정

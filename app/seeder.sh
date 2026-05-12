@@ -14,8 +14,6 @@ if [ -f "$MARKER_FILE" ]; then
     exit 0
 fi
 
-# 2. 최초/강제 실행 로직 시작
-# 🌟 5432 대신 환경변수를 받아서 유연하게 대기합니다. (값이 없으면 기본값 5432)
 echo "⏳ [1/4] PostgreSQL ${DB_PORT:-5432} 포트 응답 대기 중..."
 while ! nc -z db ${DB_PORT:-5432}; do
   sleep 1
