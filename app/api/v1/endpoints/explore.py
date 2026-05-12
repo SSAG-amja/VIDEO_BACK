@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.crud import movie as movie_crud
+from app.api.v1.endpoints.movie_load import _build_movie_detail
 from app.schemas.movie import MovieSearchResponse, recommendedMovie
 
 router = APIRouter()
@@ -48,6 +49,14 @@ def search_movies(
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"total_results": len(data), "data": data}
+
+
+@router.get("/movies/{movie_id}")
+async def get_movie_detail(
+    movie_id: int,
+    db: Session = Depends(deps.get_db),
+):
+    return await _build_movie_detail(db, movie_id)
 
 
 @router.get("/search")
