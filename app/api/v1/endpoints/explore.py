@@ -3,12 +3,14 @@ from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.crud import movie as movie_crud
-from app.api.v1.endpoints.movie_load import _build_movie_detail
+from app.crud import movie_detail as movie_detail_crud
 from app.schemas.movie import MovieSearchResponse, recommendedMovie
 
 router = APIRouter()
 
 
+# 2026.05.13 박현식
+# 사용자 선호 기반 추천 영화 목록을 반환한다.
 @router.get("/movies/recommended", response_model=recommendedMovie)
 def get_recommended_movies(
     db: Session = Depends(deps.get_db),
@@ -24,6 +26,8 @@ def get_recommended_movies(
     return {"data": recommended_movies}
 
 
+# 2026.05.13 박현식
+# 제목, 태그, 장르 조건으로 DB 영화 검색 결과를 반환한다.
 @router.get("/movies/search", response_model=MovieSearchResponse)
 def search_movies(
     db: Session = Depends(deps.get_db),
@@ -51,14 +55,18 @@ def search_movies(
     return {"total_results": len(data), "data": data}
 
 
+# 2026.05.13 박현식
+# 탐색 화면 영화 상세 조회를 DB 우선/TMDB 보강 상세 빌더로 위임한다.
 @router.get("/movies/{movie_id}")
 async def get_movie_detail(
     movie_id: int,
     db: Session = Depends(deps.get_db),
 ):
-    return await _build_movie_detail(db, movie_id)
+    return await movie_detail_crud.build_movie_detail(db, movie_id)
 
 
+# 2026.05.13 박현식
+# legacy 탐색 검색 path를 최신 DB 검색 로직에 연결한다.
 @router.get("/search")
 def search_db(
     q: str = Query(..., description="Movie title, actor, or director name"),
@@ -73,6 +81,8 @@ def search_db(
     return {"movies": cards}
 
 
+# 2026.05.13 박현식
+# legacy 태그 추천 path를 최신 DB 검색 로직에 연결한다.
 @router.get("/recommend")
 def get_recommendations(
     tag: str = Query("#대한민국 인기작", description="Selected mood/recommendation tag"),

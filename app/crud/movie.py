@@ -19,6 +19,8 @@ TAG_GENRE_MAP = {
 }
 
 
+# 2026.05.13 박현식
+# 사용자의 선호 장르 기반으로 인기 영화 추천 목록을 조회한다.
 def get_recommended_movies(db: Session, user_id: int, skip: int = 0, limit: int = 200) -> list[movie_model.Movie]:
     user = user_crud.get_user_with_preferences(db, user_id)
     if not user:
@@ -49,6 +51,8 @@ def get_recommended_movies(db: Session, user_id: int, skip: int = 0, limit: int 
     return db.execute(stmt).mappings().all()
 
 
+# 2026.05.13 박현식
+# 제목, 배우/감독명, 태그, 장르 조건을 조합해 DB 영화 검색 결과를 만든다.
 def search_movies(
     db: Session,
     title: str | None = None,
@@ -78,6 +82,8 @@ def search_movies(
     )
     people_relevance = literal(4).label("relevance")
 
+    # 2026.05.13 박현식
+    # 검색 결과에서 공통으로 사용하는 영화 select 구문을 만든다.
     def base_movie_select(relevance):
         return select(
             movie_model.Movie.tmdb_id,
@@ -88,6 +94,8 @@ def search_movies(
             relevance,
         ).where(movie_model.Movie.poster_path.is_not(None))
 
+    # 2026.05.13 박현식
+    # 장르와 태그 필터를 검색 쿼리에 적용한다.
     def apply_filters(stmt):
         if genre_ids:
             stmt = stmt.join(mapping_model.movie_genres).where(mapping_model.movie_genres.c.genre_id.in_(genre_ids))
@@ -99,6 +107,8 @@ def search_movies(
                 stmt = stmt.where(movie_model.Movie.vote_average.is_not(None))
         return stmt
 
+    # 2026.05.13 박현식
+    # 검색 결과 정렬과 limit 규칙을 적용한다.
     def finish(stmt, result_limit: int):
         return (
             apply_filters(stmt)
@@ -111,6 +121,8 @@ def search_movies(
             .limit(result_limit)
         )
 
+    # 2026.05.13 박현식
+    # 중복 TMDB id를 제거하며 검색 결과를 누적한다.
     def append_movies(movie_rows):
         for movie in movie_rows:
             if movie["tmdb_id"] in seen_tmdb_ids:
@@ -121,6 +133,8 @@ def search_movies(
             if len(rows) >= target_count:
                 break
 
+    # 2026.05.13 박현식
+    # 영화 제목, 감독, 배우명을 한 번에 검색해 우선순위대로 합친다.
     def search_title_people_movies():
         search_kw = f"%{title}%"
         title_stmt = base_movie_select(title_relevance).add_columns(literal(None).label("badge")).where(
@@ -168,6 +182,8 @@ def search_movies(
     return db.execute(stmt).mappings().all()[skip:target_count]
 
 
+# 2026.05.13 박현식
+# DB 검색 row를 프론트 공통 영화 카드 DTO로 변환한다.
 def to_movie_search_item(movie: dict) -> dict:
     return {
         "movie_id": movie.get("tmdb_id"),
@@ -179,6 +195,8 @@ def to_movie_search_item(movie: dict) -> dict:
     }
 
 
+# 2026.05.13 박현식
+# legacy explore 화면에서 쓰는 카드 shape으로 영화 DTO를 변환한다.
 def to_explore_card(movie: dict) -> dict:
     poster_path = movie.get("poster_path")
     return {
