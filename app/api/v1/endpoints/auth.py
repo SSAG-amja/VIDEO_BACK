@@ -59,14 +59,18 @@ def signin(
         "token_type" : "bearer",
     }
 
+# 2026.05.13 박현식
+# 클라이언트 토큰 폐기 흐름을 위한 로그아웃 성공 메시지를 반환한다.
 @router.post("/signout")
 def signout():
     return {"message": "로그아웃 완료"}
 
+# 2026.05.13 박현식
+# 민감 정보 수정 전 현재 비밀번호가 맞는지 확인한다.
 @router.post("/verify-password")
 def verify_password(
     request: auth_schema.VerifyPasswordRequest,
-    current_user: auth_schema.VerifyPasswordRequest = Depends(deps.get_current_user)
+    current_user = Depends(deps.get_current_user)
 ):
     if not security.verify_password(request.current_password.get_secret_value(), current_user.hashed_password):
         raise HTTPException(status_code=400, detail="현재 비밀번호가 일치하지 않습니다.")

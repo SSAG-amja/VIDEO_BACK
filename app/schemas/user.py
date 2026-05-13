@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, SecretStr, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, SecretStr, ConfigDict, model_validator
 from datetime import date, datetime
 from typing import Optional, Literal
 from typing import List
@@ -23,14 +23,26 @@ class UserInfoResponse(UserBase):
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
-# 260404 김광원 
-# 회원정보 수정 시 요청받는 데이터 규격 (현재는 닉네임만 수정 가능하도록 설정)
+# 2026.05.13 박현식
+# 개인정보 수정 API에서 변경 가능한 필드만 선택적으로 받아 기존 사용자 정보에 반영한다.
 class UserInfoUpdate(BaseModel):
-    nickname: Optional[str] = None
+    nickname: Optional[str] = Field(None, max_length=10)
+    birth_date: Optional[date] = None
+    gender: Optional[Literal['M', 'F', 'U']] = None
 
+# 2026.05.13 박현식
+# 새 비밀번호와 확인값을 함께 받아 평문 저장 없이 해시 갱신에 사용한다.
 class UserPasswordUpdate(BaseModel):
     new_password: SecretStr = Field(..., min_length=8, description="새 비밀번호는 8자리 이상이어야 합니다.")
     new_password_confirm: SecretStr = Field(..., min_length=8, description="새 비밀번호 확인은 8자리 이상이어야 합니다.")
+
+    # 2026.05.13 박현식
+    # 새 비밀번호와 확인값이 같은지 검증한다.
+    @model_validator(mode="after")
+    def validate_password_match(self):
+        if self.new_password.get_secret_value() != self.new_password_confirm.get_secret_value():
+            raise ValueError("새 비밀번호와 비밀번호 확인이 일치하지 않습니다.")
+        return self
 
 class UserOttUpdateRequest(BaseModel):
     ott_ids: List[int] = Field(default_factory=list, description="업데이트할 OTT ID 목록")

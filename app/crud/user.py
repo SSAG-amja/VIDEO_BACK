@@ -128,3 +128,21 @@ def update_user_onboarding_status(db: Session, user: user_model.User, is_complet
     user.is_onboarding_completed = is_completed
     db.commit()
     return user
+
+# 2026.05.13 박현식
+# 사용자의 개인정보 수정 가능 필드만 갱신한다.
+def update_user_profile(db: Session, user: user_model.User, obj_in: user_schema.UserInfoUpdate) -> user_model.User:
+    update_data = obj_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
+    return user
+
+# 2026.05.13 박현식
+# 새 비밀번호를 해시로 변환해 사용자 계정에 저장한다.
+def update_user_password(db: Session, user: user_model.User, obj_in: user_schema.UserPasswordUpdate) -> user_model.User:
+    user.hashed_password = get_password_hash(obj_in.new_password.get_secret_value())
+    db.commit()
+    db.refresh(user)
+    return user
