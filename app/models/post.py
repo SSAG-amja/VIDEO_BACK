@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Boolean, Text, DateTime, ForeignKey, Identity, func, text
+from sqlalchemy import Column, Integer, Boolean, String, Text, DateTime, ForeignKey, Identity, func, text
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
@@ -10,6 +10,7 @@ class Post(Base):
     movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), nullable=True)
     playlist_id = Column(Integer, ForeignKey("playlists.id", ondelete="CASCADE"), nullable=True)
     is_playlist = Column(Boolean, server_default=text("false"), nullable=False)
+    post_title = Column(String(255), nullable=False, server_default="")
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
