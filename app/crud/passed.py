@@ -48,6 +48,7 @@ def clear_passed_movies(db: Session, user_id: int) -> int:
 
     for interaction in interactions:
         interaction.is_passed = False
+        interaction.passed_at = None
     db.commit()
     return len(interactions)
 
@@ -59,5 +60,6 @@ def delete_passed_movie(db: Session, user_id: int, movie_id: int) -> passed_sche
     interaction = db.get(mapping_model.UserInteraction, {"user_id": user_id, "movie_id": movie.id})
     if interaction:
         interaction.is_passed = False
+        interaction.passed_at = None
         db.commit()
     return _passed_movie_summary(movie)

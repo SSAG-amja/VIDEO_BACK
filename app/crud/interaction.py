@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import mapping as mapping_model
@@ -79,12 +79,17 @@ def update_movie_interaction(
 
     if request.action_type == "pin":
         interaction.is_pinned = True
+        interaction.pinned_at = func.now()
         interaction.is_passed = False
+        interaction.passed_at = None
     elif request.action_type == "passed":
         interaction.is_passed = True
+        interaction.passed_at = func.now()
         interaction.is_pinned = False
+        interaction.pinned_at = None
     elif request.action_type == "watched":
         interaction.is_watched = True
+        interaction.watched_at = func.now()
     elif request.action_type == "saved":
         if request.playlist_id is None:
             raise HTTPException(status_code=422, detail="playlist_id is required.")

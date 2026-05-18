@@ -48,6 +48,7 @@ def clear_watched_movies(db: Session, user_id: int) -> int:
 
     for interaction in interactions:
         interaction.is_watched = False
+        interaction.watched_at = None
     db.commit()
     return len(interactions)
 
@@ -59,5 +60,6 @@ def delete_watched_movie(db: Session, user_id: int, movie_id: int) -> watched_sc
     interaction = db.get(mapping_model.UserInteraction, {"user_id": user_id, "movie_id": movie.id})
     if interaction:
         interaction.is_watched = False
+        interaction.watched_at = None
         db.commit()
     return _watched_movie_summary(movie)
