@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     ALGORITHM: str
     TOKEN_EXP_TIME: int
     TMDB_API_KEY: str
+    DOWNLOAD_DIR: str = "./downloads"
+    SCHEDULER_TIMEZONE: str = "Asia/Seoul"
+    SCHEDULER_HOUR: int = 23
+    SCHEDULER_MINUTE: int = 0
+    RUN_ON_STARTUP: bool = False
+    EXIT_AFTER_STARTUP_RUN: bool = False
 
     # CORS 설정 추가 (.env에서 고정으로 허용할 주소들만 받음)
     CORS_ORIGINS: str = ""

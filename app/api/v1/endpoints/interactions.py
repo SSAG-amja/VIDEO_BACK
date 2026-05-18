@@ -1,7 +1,21 @@
-# 제스처 관련 처리 로직
-# 먼가 프론트에서 한번에 받아서 처리하는게 나을것 같음 매번 호출하면 비효율적 수집 후 전달하는 느낌 -> 이후 업데이트할거임 
-# 제스처 정보 전송 / 제스처 정부 수정 / 내용 조회
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
-# @router.post("/")
-# def post_interactions():
+from app.api import deps
+from app.crud import interaction as interaction_crud
+from app.models import user as user_model
+from app.schemas import action as action_schema
 
+router = APIRouter()
+
+
+# 2026.05.13 박현식
+# 홈 피드와 상세 화면의 사용자 액션을 DB 상태로 저장한다.
+@router.patch("/{movie_id}", response_model=action_schema.InteractionUpdateResponse)
+def update_movie_interaction(
+    movie_id: int,
+    request: action_schema.InteractionUpdateRequest,
+    current_user: user_model.User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db),
+):
+    return interaction_crud.update_movie_interaction(db, current_user.id, movie_id, request)

@@ -1,132 +1,95 @@
-from fastapi import APIRouter, HTTPException, Query
-from app.core.config import settings
-import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
 
-# 20260330 박현식 
-#  탐색(Explore) 및 검색 관련 API
+from app.api import deps
+from app.crud import movie as movie_crud
+from app.crud import movie_detail as movie_detail_crud
+from app.schemas.movie import MovieSearchResponse, recommendedMovie
 
 router = APIRouter()
 
-BASE_URL = "https://api.themoviedb.org/3"
 
+# 2026.05.13 박현식
+# 사용자 선호 기반 추천 영화 목록을 반환한다.
+@router.get("/movies/recommended", response_model=recommendedMovie)
+def get_recommended_movies(
+    db: Session = Depends(deps.get_db),
+    current_user=Depends(deps.get_current_user),
+    page: int = Query(1, description="Page number"),
+):
+    limit = 200
+    skip = (page - 1) * limit
+    try:
+        recommended_movies = movie_crud.get_recommended_movies(db, current_user.id, skip=skip, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"data": recommended_movies}
+
+
+# 2026.05.13 박현식
+# 제목, 태그, 장르 조건으로 DB 영화 검색 결과를 반환한다.
+@router.get("/movies/search", response_model=MovieSearchResponse)
+def search_movies(
+    db: Session = Depends(deps.get_db),
+    title: str | None = Query(None, description="Legacy alias for query"),
+    query: str | None = Query(None, description="Movie title, actor, or director name"),
+    tag: str | None = Query(None, description="Legacy alias for tags"),
+    tags: str | None = Query(None, description="Hashtag filter"),
+    genres: str | None = Query(None, description="Comma-separated genre ids"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, le=500),
+):
+    try:
+        search_title = query or title
+        search_tag = tags or tag
+        if not any([search_title, search_tag, genres]):
+            raise HTTPException(status_code=400, detail="At least one search parameter(query, tags, genres) is required.")
+
+        movies = movie_crud.search_movies(db, title=search_title, tag=search_tag, genres=genres, skip=skip, limit=limit)
+        data = [movie_crud.to_movie_search_item(movie) for movie in movies]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"total_results": len(data), "data": data}
+
+
+# 2026.05.13 박현식
+# 탐색 화면 영화 상세 조회를 DB 우선/TMDB 보강 상세 빌더로 위임한다.
+@router.get("/movies/{movie_id}")
+async def get_movie_detail(
+    movie_id: int,
+    db: Session = Depends(deps.get_db),
+):
+    return await movie_detail_crud.build_movie_detail(db, movie_id)
+
+
+# 2026.05.13 박현식
+# legacy 탐색 검색 path를 최신 DB 검색 로직에 연결한다.
 @router.get("/search")
-async def search_tmdb(q: str = Query(..., description="검색할 영화 제목, 배우, 감독 이름")):
-    """
-    TMDB Multi Search API를 호출하여 영화, 인물 검색 결과를 프론트엔드 UI에 맞게 가공하여 반환합니다.
-    """
-    async with httpx.AsyncClient() as client:
-        url = f"{BASE_URL}/search/multi"
-        params = {
-            "api_key": settings.TMDB_API_KEY,
-            "query": q,
-            "language": "ko-KR",
-            "page": 1,
-            "include_adult": "false"
-        }
-        
-        res = await client.get(url, params=params)
-        
-        if res.status_code != 200:
-            raise HTTPException(status_code=res.status_code, detail="TMDB API 호출 실패")
-            
-        data = res.json()
-        results = data.get("results", [])
-        
-        formatted_movies = []
-        
-        for item in results:
-            # 1. 일반 영화 검색 결과인 경우
-            if item.get("media_type") == "movie" and item.get("poster_path"):
-                formatted_movies.append({
-                    "id": str(item["id"]),
-                    "title": item.get("title") or item.get("original_title", ""),
-                    "rating": round(item.get("vote_average", 0), 1),
-                    "image": f"https://image.tmdb.org/t/p/w500{item['poster_path']}",
-                    "badge": None # 배지 없음
-                })
-                
-            # 2. 인물(배우/감독) 검색 결과인 경우 -> 대표작(known_for) 추출
-            elif item.get("media_type") == "person":
-                person_name = item.get("name", "")
-                dept = item.get("known_for_department", "")
-                
-                # 감독인지 카메오/배우인지 구분
-                role_text = "감독작" if dept == "Directing" else "출연작"
-                badge_text = f"{person_name} {role_text}"
-                
-                for known in item.get("known_for", []):
-                    # 대표작 중 '영화'이고 포스터가 있는 것만 추출
-                    if known.get("media_type") == "movie" and known.get("poster_path"):
-                        formatted_movies.append({
-                            "id": str(known["id"]),
-                            "title": known.get("title") or known.get("original_title", ""),
-                            "rating": round(known.get("vote_average", 0), 1),
-                            "image": f"https://image.tmdb.org/t/p/w500{known['poster_path']}",
-                            "badge": badge_text # 예: "송강호 출연작", "봉준호 감독작"
-                        })
-                        
-        # 중복된 영화 제거 (같은 영화가 여러 번 들어가는 것 방지)
-        seen_ids = set()
-        final_movies = []
-        for m in formatted_movies:
-            if m["id"] not in seen_ids:
-                seen_ids.add(m["id"])
-                final_movies.append(m)
+def search_db(
+    q: str = Query(..., description="Movie title, actor, or director name"),
+    sort: str = Query("latest", description="latest, likes, rating"),
+    db: Session = Depends(deps.get_db),
+):
+    movies = movie_crud.search_movies(db, title=q, limit=50)
+    data = [movie_crud.to_movie_search_item(movie) for movie in movies]
+    cards = [movie_crud.to_explore_card(movie) for movie in data]
+    if sort == "rating":
+        cards.sort(key=lambda movie: movie["rating"], reverse=True)
+    return {"movies": cards}
 
-        return {"movies": final_movies}
-    
 
-#260330 박현식
-#탐색탭 메인화면 로직 및 해쉬태그별 검색
-
+# 2026.05.13 박현식
+# legacy 태그 추천 path를 최신 DB 검색 로직에 연결한다.
 @router.get("/recommend")
-async def get_recommendations(tag: str = Query("#대한민국 인기작", description="선택된 무드/추천 태그")):
-    """
-    프론트엔드에서 선택한 태그에 따라 맞춤형 결과를 반환합니다.
-    """
-    async with httpx.AsyncClient() as client:
-        base_params = {
-            "api_key": settings.TMDB_API_KEY,
-            "language": "ko-KR",
-            "page": 1
-        }
-        
-        # 1. 태그별 TMDB API 분기 처리
-        if tag == "#전세계 인기작":
-            url = f"{BASE_URL}/movie/popular"
-        elif tag == "#대한민국 인기작":
-            url = f"{BASE_URL}/movie/popular"
-            base_params["region"] = "KR" 
-        elif tag == "#평점 높은 명작":
-            url = f"{BASE_URL}/movie/top_rated"
-        elif tag == "#도파민 폭발 액션":
-            url = f"{BASE_URL}/discover/movie"
-            base_params["with_genres"] = "28,53" # 액션, 스릴러
-            base_params["sort_by"] = "popularity.desc"
-        elif tag == "#가볍게 웃기 좋은":
-            url = f"{BASE_URL}/discover/movie"
-            base_params["with_genres"] = "35" # 코미디
-            base_params["sort_by"] = "popularity.desc"
-        else:
-            url = f"{BASE_URL}/movie/popular" # 기본값
-
-        res = await client.get(url, params=base_params)
-        
-        if res.status_code != 200:
-            raise HTTPException(status_code=res.status_code, detail="TMDB 추천 API 호출 실패")
-            
-        data = res.json()
-        results = data.get("results", [])
-        
-        # 2. 프론트엔드 형식에 맞게 데이터 가공
-        formatted_movies = []
-        for item in results:
-            if item.get("poster_path"):
-                formatted_movies.append({
-                    "id": str(item["id"]),
-                    "title": item.get("title") or item.get("original_title", ""),
-                    "rating": round(item.get("vote_average", 0), 1),
-                    "image": f"https://image.tmdb.org/t/p/w500{item['poster_path']}"
-                })
-
-        return {"movies": formatted_movies}
+def get_recommendations(
+    tag: str = Query("#대한민국 인기작", description="Selected mood/recommendation tag"),
+    page: int = Query(1, ge=1),
+    db: Session = Depends(deps.get_db),
+):
+    skip = (page - 1) * 50
+    movies = movie_crud.search_movies(db, tag=tag, skip=skip, limit=50)
+    data = [movie_crud.to_movie_search_item(movie) for movie in movies]
+    return {"movies": [movie_crud.to_explore_card(movie) for movie in data]}

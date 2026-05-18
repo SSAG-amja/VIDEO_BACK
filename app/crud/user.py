@@ -61,7 +61,7 @@ def get_user_by_nickname(db: Session, nickname: str) -> user_model.User | None:
     return db.scalars(stmt).first()
 
 # 260501 김광원
-# 유저 정보 조회 (OTT, 장르, 영화 포함)
+# 유저 선호 정보 조회 (OTT, 장르, 영화)
 def get_user_with_preferences(db: Session, user_id: int) -> user_model.User | None:
     stmt = select(user_model.User).where(
         user_model.User.id == user_id,
@@ -74,11 +74,11 @@ def get_user_with_preferences(db: Session, user_id: int) -> user_model.User | No
     return db.scalars(stmt).first()
 
 # 260501 김광원
-# OTT 입력
+# OTT 입력 (scalars사용시 id값만)
 def update_user_otts(db: Session, user: user_model.User, ott_ids: List[int]) -> user_model.User:
     if ott_ids:
         unique_ids = list(set(ott_ids))
-        stmt = select(ott_model.Ott).where(ott_model.Ott.id.in_(unique_ids))
+        stmt = select(ott_model.Ott).where(ott_model.Ott.tmdb_id.in_(unique_ids))
         valid_otts = db.scalars(stmt).all()
         
         if len(valid_otts) != len(unique_ids):
@@ -95,7 +95,7 @@ def update_user_otts(db: Session, user: user_model.User, ott_ids: List[int]) -> 
 def update_user_genres(db: Session, user: user_model.User, genre_ids: List[int]) -> user_model.User:
     if genre_ids:
         unique_ids = list(set(genre_ids))
-        stmt = select(genre_model.Genre).where(genre_model.Genre.id.in_(unique_ids))
+        stmt = select(genre_model.Genre).where(genre_model.Genre.tmdb_id.in_(unique_ids))
         valid_genres = db.scalars(stmt).all()
         
         if len(valid_genres) != len(unique_ids):
@@ -112,7 +112,7 @@ def update_user_genres(db: Session, user: user_model.User, genre_ids: List[int])
 def update_user_favorite_movies(db: Session, user: user_model.User, movie_ids: List[int]) -> user_model.User:
     if movie_ids:
         unique_ids = list(set(movie_ids))
-        stmt = select(movie_model.Movie).where(movie_model.Movie.id.in_(unique_ids))
+        stmt = select(movie_model.Movie).where(movie_model.Movie.tmdb_id.in_(unique_ids))
         valid_movies = db.scalars(stmt).all()
         
         if len(valid_movies) != len(unique_ids):
@@ -127,4 +127,22 @@ def update_user_favorite_movies(db: Session, user: user_model.User, movie_ids: L
 def update_user_onboarding_status(db: Session, user: user_model.User, is_completed: bool) -> user_model.User:
     user.is_onboarding_completed = is_completed
     db.commit()
+    return user
+
+# 2026.05.13 박현식
+# 사용자의 개인정보 수정 가능 필드만 갱신한다.
+def update_user_profile(db: Session, user: user_model.User, obj_in: user_schema.UserInfoUpdate) -> user_model.User:
+    update_data = obj_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
+    return user
+
+# 2026.05.13 박현식
+# 새 비밀번호를 해시로 변환해 사용자 계정에 저장한다.
+def update_user_password(db: Session, user: user_model.User, obj_in: user_schema.UserPasswordUpdate) -> user_model.User:
+    user.hashed_password = get_password_hash(obj_in.new_password.get_secret_value())
+    db.commit()
+    db.refresh(user)
     return user

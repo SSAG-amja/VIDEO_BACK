@@ -1,8 +1,9 @@
 # models/mapping.py
-from sqlalchemy import Table, Column, Integer, Boolean, DateTime, ForeignKey, func, text, String
+from sqlalchemy import Table, Column, Integer, Boolean, DateTime, ForeignKey, func, text, String, Text
 from sqlalchemy.orm import relationship
 from app.db.base import Base
 
+# 해당 테이블들 조회할시 .c.tablename 형식으로 써야함
 movie_genres = Table(
     "movie_genres",
     Base.metadata,
@@ -64,7 +65,7 @@ class MovieActor(Base):
     
     movie_id = Column(Integer, ForeignKey("movies.id", ondelete="CASCADE"), primary_key=True)
     actor_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), primary_key=True)
-    cast_name = Column(String(100))
+    cast_name = Column(Text)
 
     movie = relationship("Movie", back_populates="movie_actors")
     actor = relationship("People", back_populates="movie_actors")

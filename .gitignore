@@ -1,5 +1,7 @@
 venv/
 __pycache__/
+downloads/
+failed_sync_ids.jsonl
 .env
 .vscode/
 *.pyc"

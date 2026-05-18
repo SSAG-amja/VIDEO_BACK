@@ -28,6 +28,40 @@ def read_user_me(
         raise HTTPException(status_code=404, detail="User not found")
     return user_profile
 
+# 2026.05.13 박현식
+# 현재 로그인한 사용자의 개인정보를 수정하고 닉네임 중복으로 인한 응답 계약 충돌을 방지한다.
+@router.patch("/me")
+def update_user_me(
+    request: user_schema.UserInfoUpdate,
+    current_user: user_model.User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db)
+):
+    if request.nickname and request.nickname != current_user.nickname:
+        existing_user = user_crud.get_user_by_nickname(db, nickname=request.nickname)
+        if existing_user and existing_user.id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 존재하는 닉네임입니다.")
+
+    user = user_crud.update_user_profile(db, user=current_user, obj_in=request)
+    return {
+        "message": "회원 정보가 수정되었습니다.",
+        "data": {
+            "nickname": user.nickname,
+            "birth_date": user.birth_date,
+            "gender": user.gender,
+        },
+    }
+
+# 2026.05.13 박현식
+# 비밀번호 변경 요청을 받아 새 비밀번호를 해시로 저장하고 성공 메시지만 반환한다.
+@router.patch("/me/new-password")
+def update_user_password(
+    request: user_schema.UserPasswordUpdate,
+    current_user: user_model.User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db)
+):
+    user_crud.update_user_password(db, user=current_user, obj_in=request)
+    return {"message": "비밀번호가 변경되었습니다."}
+
 # 260501 김광원
 # OTT 수정
 @router.put("/user/otts")
