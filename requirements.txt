@@ -10,6 +10,11 @@ python-jose[cryptography]
 python-multipart
 requests
 httpx
+aiohttp
+asyncpg
+APScheduler
+ijson
 pydantic-settings
 passlib[bcrypt]
 bcrypt==4.0.1
+pandas
