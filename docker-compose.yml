@@ -52,5 +52,29 @@ services:
       - DB_NAME=${DB_NAME}
       - TMDB_API_KEY=${TMDB_API_KEY}
 
+  video-updater:
+    build: .
+    container_name: PINLM_VIDEO_UPDATER
+    restart: always
+    command: python -m app.jobs.video_updater.main
+    volumes:
+      - .:/back
+    depends_on:
+      db-seeder:
+        condition: service_completed_successfully
+    environment:
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_HOST=db
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      - DOWNLOAD_DIR=${DOWNLOAD_DIR:-./downloads}
+      - SCHEDULER_TIMEZONE=${SCHEDULER_TIMEZONE:-Asia/Seoul}
+      - SCHEDULER_HOUR=${SCHEDULER_HOUR:-23}
+      - SCHEDULER_MINUTE=${SCHEDULER_MINUTE:-0}
+      - RUN_ON_STARTUP=${RUN_ON_STARTUP:-false}
+      - EXIT_AFTER_STARTUP_RUN=${EXIT_AFTER_STARTUP_RUN:-false}
+
 volumes:
   postgres_data:
