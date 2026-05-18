@@ -78,6 +78,9 @@ class UserInteraction(Base):
     is_pinned = Column(Boolean, server_default=text("false"), nullable=False)
     is_watched = Column(Boolean, server_default=text("false"), nullable=False)
     is_passed = Column(Boolean, server_default=text("false"), nullable=False)
+    pinned_at = Column(DateTime)
+    watched_at = Column(DateTime)
+    passed_at = Column(DateTime)
 
     user = relationship("User", back_populates="interactions")
     movie = relationship("Movie", back_populates="interactions")
