@@ -10,7 +10,6 @@
 │   │       ├── endpoints/
 │   │       │   ├── login.py      # 로그인 & OAuth2 토큰 발행
 │   │       │   └── user.py       # 회원가입 & /me 내 정보 조회
-│   │       │   └── movie_load.py # 홈피드와 TMDB연결 영화 데이터 조회(임시)
 │   │       └── routers.py        # 모든 엔드포인트를 'users' 태그로 통합
 │   ├── core/
 │   │   ├── config.py             # 환경변수 (SECRET_KEY, TOKEN_EXP 등)
@@ -79,17 +78,11 @@
 ## 1. 마이그레이션 적용 (테이블 생성/변경)
 
 ```
-cd app/db
-alembic revision --autogenerate -m "[message]"
-alembic upgrade head
-
-1. 모델 변경 시 새로운 마이그레이션 파일 생성
-docker-compose exec web alembic revision --autogenerate -m "변경 내용 메시지"
-
-2. DB에 최신 변경 사항 적용 (팀원 최초 실행 시 필수)
+1. DB에 최신 변경 사항 적용 (팀원 최초 실행 시 필수)
 docker-compose exec web alembic upgrade head
 
-3. docker-compose exec web alembic downgrade -1
+2. 모델 변경 시 새로운 마이그레이션 파일 생성
+docker-compose exec web alembic revision --autogenerate -m "변경 내용 메시지"
 ```
 
 # 5. DB 직접 접속 (CLI)

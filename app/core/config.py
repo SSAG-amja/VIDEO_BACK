@@ -1,74 +1,32 @@
+# app/core/config.py
 import os
-import socket
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import computed_field
 
-# 260311 김호영 - 개발 환경에서 현재 노트북의 IP를 자동으로 찾아내어 CORS 허용 리스트에 추가하는 기능 구현
-# 현재 와이파이의 내부 IP를 자동으로 찾아내는 함수
-def get_local_ip():
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(('8.8.8.8', 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "127.0.0.1"
+load_dotenv()
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Pinlm_Backend"
+    
+    # 20260305 박현식: 자물쇠(Authorize) 경로 에러 해결을 위해 추가
     API_V1_STR: str = "/api/v1"
     
-    # 개발 환경인지 배포 환경인지 구분하는 변수 추가 (기본값은 development)
-    ENVIRONMENT: str = "development" 
+    # .env의 개별 항목들을 조합하여 DATABASE_URL 생성
+    DB_USER: str = os.getenv("DB_USER")
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD")
+    DB_HOST: str = os.getenv("DB_HOST")
+    DB_PORT: str = os.getenv("DB_PORT")
+    DB_NAME: str = os.getenv("DB_NAME")
     
-    # DB 설정
-    DB_USER: str
-    DB_PASSWORD: str
-    DB_HOST: str
-    DB_PORT: str
-    DB_NAME: str
+    # SQLAlchemy용 드라이버(+psycopg2)를 포함한 URL 조합
+    DATABASE_URL: str = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     
-    @computed_field
-    @property
-    def DATABASE_URL(self) -> str:
-        return f"postgresql+psycopg2://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
-    
-    SECRET_KEY: str
-    ALGORITHM: str
-    TOKEN_EXP_TIME: int
-    TMDB_API_KEY: str
-    DOWNLOAD_DIR: str = "./downloads"
-    SCHEDULER_TIMEZONE: str = "Asia/Seoul"
-    SCHEDULER_HOUR: int = 23
-    SCHEDULER_MINUTE: int = 0
-    RUN_ON_STARTUP: bool = False
-    EXIT_AFTER_STARTUP_RUN: bool = False
+    SECRET_KEY: str = os.getenv("SECRET_KEY")
+    ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
+    TOKEN_EXP_TIME: int = int(os.getenv("TOKEN_EXP_TIME", 30))
 
-    # CORS 설정 추가 (.env에서 고정으로 허용할 주소들만 받음)
-    CORS_ORIGINS: str = ""
-
-    @property
-    def cors_origins_list(self) -> list[str]:
-        # 1. .env에 적힌 기본 주소들을 파싱(production 환경에서는 이 주소들만 허용)
-        origins = [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
-        
-        # 2. 개발(development) 환경일 경우, 현재 노트북의 IP를 자동으로 CORS 리스트에 추가!
-        if self.ENVIRONMENT == "development":
-            local_ip = get_local_ip()
-            dynamic_origins = [
-                f"http://localhost:8081",
-                f"http://127.0.0.1:8081",
-                f"http://{local_ip}:8081",  # Expo 프론트엔드 포트
-                f"http://{local_ip}:8000",  # 백엔드 자신
-            ]
-            # 기존 origins와 합치고 중복 제거
-            origins = list(set(origins + dynamic_origins))
-            
-        return origins
-
+    # 20260305 박현식: SERVER_PORT 등 정의되지 않은 .env 변수가 있어도 에러 무시
     model_config = SettingsConfigDict(
-        env_file=".env",
         extra="ignore"
     )
 
