@@ -1,11 +1,6 @@
 venv/
 __pycache__/
-downloads/
-failed_sync_ids.jsonl
 .env
 .vscode/
 *.pyc"
 .DS_Store
-test/
-test*
-data/
