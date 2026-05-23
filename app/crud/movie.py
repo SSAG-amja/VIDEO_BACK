@@ -10,6 +10,11 @@ from app.models import people as people_model
 TAG_HIGH_RATING = "#\ud3c9\uc810 \ub192\uc740 \uba85\uc791"
 TAG_ACTION = "#\ub3c4\ud30c\ubbfc \ud3ed\ubc1c \uc561\uc158"
 TAG_COMEDY = "#\uac00\ubccd\uac8c \uc6c3\uae30 \uc88b\uc740"
+HIGH_RATING_MIN_VOTE_COUNT = 1000
+TAG_QUALITY_MIN_VOTE_COUNT = 300
+HIGH_RATING_WEIGHTED_AVERAGE = (
+    movie_model.Movie.vote_average * func.log(func.greatest(movie_model.Movie.vote_count, 1))
+)
 DIRECTOR_ROLE = "\uac10\ub3c5\uc791"
 ACTOR_ROLE = "\ucd9c\uc5f0\uc791"
 
@@ -17,6 +22,7 @@ TAG_GENRE_MAP = {
     TAG_ACTION: [28, 53],
     TAG_COMEDY: [35],
 }
+QUALITY_SCORE_TAGS = {TAG_HIGH_RATING, TAG_ACTION, TAG_COMEDY}
 
 
 # 2026.05.13 박현식
@@ -51,6 +57,8 @@ def get_recommended_movies(db: Session, user_id: int, skip: int = 0, limit: int 
     return db.execute(stmt).mappings().all()
 
 
+# 2026.05.23 김호영
+# 태그 기반 탐색 정렬에서 투표수와 평점을 함께 반영해 품질 점수를 계산한다.
 # 2026.05.13 박현식
 # 제목, 배우/감독명, 태그, 장르 조건을 조합해 DB 영화 검색 결과를 만든다.
 def search_movies(
@@ -90,7 +98,9 @@ def search_movies(
             movie_model.Movie.title_ko,
             movie_model.Movie.poster_path,
             movie_model.Movie.vote_average,
+            movie_model.Movie.vote_count,
             movie_model.Movie.popularity,
+            HIGH_RATING_WEIGHTED_AVERAGE.label("high_rating_score"),
             relevance,
         ).where(movie_model.Movie.poster_path.is_not(None))
 
@@ -103,8 +113,13 @@ def search_movies(
             tag_genre_ids = TAG_GENRE_MAP.get(tag)
             if tag_genre_ids:
                 stmt = stmt.join(mapping_model.movie_genres).where(mapping_model.movie_genres.c.genre_id.in_(tag_genre_ids))
-            if tag == TAG_HIGH_RATING:
-                stmt = stmt.where(movie_model.Movie.vote_average.is_not(None))
+            if tag in QUALITY_SCORE_TAGS:
+                stmt = stmt.where(
+                    movie_model.Movie.vote_average.is_not(None),
+                    movie_model.Movie.vote_count >= (
+                        HIGH_RATING_MIN_VOTE_COUNT if tag == TAG_HIGH_RATING else TAG_QUALITY_MIN_VOTE_COUNT
+                    ),
+                )
         return stmt
 
     # 2026.05.13 박현식
@@ -115,8 +130,9 @@ def search_movies(
             .distinct()
             .order_by(
                 "relevance",
-                desc(movie_model.Movie.vote_average if tag == TAG_HIGH_RATING else movie_model.Movie.popularity),
-                desc(movie_model.Movie.popularity),
+                desc("high_rating_score" if tag in QUALITY_SCORE_TAGS else movie_model.Movie.popularity),
+                desc(movie_model.Movie.popularity if tag in (TAG_ACTION, TAG_COMEDY) else movie_model.Movie.vote_average),
+                desc(movie_model.Movie.vote_average if tag in (TAG_ACTION, TAG_COMEDY) else movie_model.Movie.vote_count),
             )
             .limit(result_limit)
         )
