@@ -207,3 +207,25 @@ def to_explore_card(movie: dict) -> dict:
         "poster_path": poster_path,
         "badge": movie.get("badge"),
     }
+
+
+# 2026.05.23 김호영
+# VIDEO_RECSYS가 반환한 내부 movie id 순서를 유지해 프론트 영화 카드 DTO를 조회한다.
+# 2026.05.22 VIDEO_RECSYS가 반환한 내부 movie id 순서를 유지해 프론트 영화 카드 DTO를 조회한다.
+def get_movies_by_internal_ids_preserve_order(db: Session, movie_ids: list[int]) -> list[dict]:
+    if not movie_ids:
+        return []
+
+    rows = db.execute(
+        select(
+            movie_model.Movie.id,
+            movie_model.Movie.tmdb_id,
+            movie_model.Movie.title_ko,
+            movie_model.Movie.poster_path,
+            movie_model.Movie.vote_average,
+            movie_model.Movie.popularity,
+        ).where(movie_model.Movie.id.in_(movie_ids))
+    ).mappings().all()
+
+    movie_by_id = {row["id"]: row for row in rows}
+    return [movie_by_id[movie_id] for movie_id in movie_ids if movie_id in movie_by_id]

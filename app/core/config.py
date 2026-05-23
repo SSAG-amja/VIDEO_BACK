@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     ALGORITHM: str
     TOKEN_EXP_TIME: int
     TMDB_API_KEY: str
+
+    # 2026.05.23 김호영
+    # VIDEO_BACK에서 VIDEO_RECSYS API를 호출하기 위한 base url과 timeout 설정을 추가한다.
+    RECSYS_BASE_URL: str = "http://recsys-api:8000"
+    RECSYS_TIMEOUT_SECONDS: float = 2.0
+
     DOWNLOAD_DIR: str = "./downloads"
     SCHEDULER_TIMEZONE: str = "Asia/Seoul"
     SCHEDULER_HOUR: int = 23

@@ -13,6 +13,7 @@ from app.schemas import user as user_schema
 from app.schemas import auth as auth_schema
 
 from app.crud import user as user_crud
+from app.services import recsys_client
 
 router = APIRouter()
 
@@ -97,6 +98,8 @@ def update_genres(
         )
 
 
+# 2026.05.23 김호영
+# 온보딩 선호 영화 저장 완료 후 VIDEO_RECSYS 콜드스타트 추천 풀 생성을 요청한다.
 # 260501 김광원
 # 선호 영화 수정
 @router.put("/user/favorite-movies")
@@ -108,6 +111,7 @@ def update_favorite_movies(
     try:
         user_crud.update_user_favorite_movies(db, user=current_user, movie_ids=request.movie_ids)
         user_crud.update_user_onboarding_status(db, user=current_user, is_completed=True)
+        recsys_client.create_cold_start_pool(current_user.id)
         return {"message": "성공적으로 업데이트되었습니다."}
     except ValueError as e:
         raise HTTPException(
