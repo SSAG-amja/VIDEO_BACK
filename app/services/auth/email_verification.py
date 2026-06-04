@@ -74,7 +74,46 @@ def send_verification_email(email: str, code: str) -> None:
     message["Subject"] = "[발신전용] PINLM 이메일 인증 코드"
     message["From"] = settings.SMTP_SENDER_EMAIL
     message["To"] = email
-    message.set_content(f"인증 코드는 {code} 입니다. 3분 안에 입력해 주세요.")
+    message.set_content(
+        "\n".join(
+            [
+                "PINLM 이메일 인증",
+                "",
+                "아래 인증 코드를 3분 안에 입력해 주세요.",
+                "",
+                f"인증 코드: {code}",
+                "",
+                "이 코드는 회원가입 인증에만 사용할 수 있습니다.",
+                "본인이 요청하지 않았다면 이 메일을 무시해 주세요.",
+            ]
+        )
+    )
+    message.add_alternative(
+        (
+            "<html><body style=\"margin:0;padding:16px;background:#f8fafc;"
+            "font-family:Arial,sans-serif;color:#111827;\">"
+            "<div style=\"max-width:480px;margin:0 auto;background:#ffffff;"
+            "border:1px solid #e5e7eb;border-radius:16px;overflow:hidden;\">"
+            "<div style=\"padding:16px 20px;background:#111827;color:#ffffff;\">"
+            "<div style=\"font-size:12px;letter-spacing:0.12em;opacity:0.85;\">PINLM</div>"
+            "<div style=\"margin-top:6px;font-size:20px;font-weight:700;line-height:1.3;\">이메일 인증 코드</div>"
+            "</div>"
+            "<div style=\"padding:18px 20px 20px;\">"
+            "<p style=\"margin:0 0 12px;font-size:14px;line-height:1.6;color:#374151;\">"
+            "<strong style=\"color:#111827;\">3분 안에</strong> 아래 코드를 입력해 주세요."
+            "</p>"
+            "<div style=\"padding:18px 16px;background:#f8fafc;"
+            "border:1px solid #dbe3ef;border-radius:12px;text-align:center;\">"
+            "<div style=\"font-size:12px;color:#64748b;\">인증 코드</div>"
+            f"<div style=\"margin-top:8px;font-size:30px;font-weight:700;letter-spacing:0.18em;color:#0f172a;\">{code}</div>"
+            "</div>"
+            "<p style=\"margin:12px 0 0;font-size:12px;line-height:1.6;color:#64748b;\">"
+            "회원가입 인증용 코드입니다. 요청하지 않았다면 무시해 주세요."
+            "</p>"
+            "</div></div></body></html>"
+        ),
+        subtype="html",
+    )
 
     with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as smtp:
         if settings.SMTP_USE_TLS:
