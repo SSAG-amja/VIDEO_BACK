@@ -9,6 +9,7 @@ from .playlist import Playlist
 from .movie import Movie
 from .ott import Ott
 from .genre import Genre
+from .recommendations import Recommendation
 
 from .mapping import (
     UserInteraction, PlaylistMovie, MovieOtt, MovieActor

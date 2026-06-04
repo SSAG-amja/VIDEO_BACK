@@ -55,7 +55,11 @@ PY
     schema_check_status=$?
     set -e
     if [ $schema_check_status -eq 0 ]; then
-        echo "⏩ [SKIP] Alembic 마이그레이션과 데이터 시딩(Seeding)을 건너뜁니다."
+        echo "🛠️ [MIGRATION] 핵심 테이블이 존재하므로 데이터 시딩은 건너뛰고 Alembic 마이그레이션만 최신화합니다."
+        cd /back
+        alembic -c /back/alembic.ini upgrade head
+        echo "✅ [MIGRATION] 마이그레이션 최신화 완료!"
+        echo "⏩ [SKIP] 데이터 시딩(Seeding)을 건너뜁니다."
         exit 0
     fi
 

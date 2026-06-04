@@ -1,0 +1,196 @@
+services:
+  db:
+    image: postgres:16
+    container_name: PINLM_DB
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "${DB_HOST_PORT:-5442}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    container_name: PINLM_REDIS
+    restart: always
+    ports:
+      - "${REDIS_HOST_PORT:-6389}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  back-seeder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pinlm-back
+    container_name: PINLM_DB_SEEDER
+    restart: "no"
+    command: ["/bin/bash", "/back/app/seeder.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      FORCE_INIT: ${FORCE_INIT:-false}
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM}
+      TOKEN_EXP_TIME: ${TOKEN_EXP_TIME}
+      TMDB_API_KEY: ${TMDB_API_KEY}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_BLACKLIST_TTL_SECONDS: ${REDIS_BLACKLIST_TTL_SECONDS:-2592000}
+      REDIS_RECENT_ACTION_LIMIT: ${REDIS_RECENT_ACTION_LIMIT:-50}
+    volumes:
+      - .:/back
+      - ./app/data:/back/app/data
+
+  back-api:
+    image: pinlm-back
+    container_name: PINLM_BACK
+    restart: always
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      back-seeder:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    ports:
+      - "${BACK_API_HOST_PORT:-8010}:8000"
+    environment:
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM}
+      TOKEN_EXP_TIME: ${TOKEN_EXP_TIME}
+      TMDB_API_KEY: ${TMDB_API_KEY}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_BLACKLIST_TTL_SECONDS: ${REDIS_BLACKLIST_TTL_SECONDS:-2592000}
+      REDIS_RECENT_ACTION_LIMIT: ${REDIS_RECENT_ACTION_LIMIT:-50}
+      RECOMMENDATION_POOL_SIZE: ${RECOMMENDATION_POOL_SIZE:-500}
+      WORKER_MIN_CANDIDATE_COUNT: ${WORKER_MIN_CANDIDATE_COUNT:-100}
+      WORKER_RETRY_ATTEMPTS: ${WORKER_RETRY_ATTEMPTS:-3}
+      SUBSCRIBED_OTT_BONUS: ${SUBSCRIBED_OTT_BONUS:-1.15}
+    volumes:
+      - .:/back
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/\", timeout=2)'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  video-updater:
+    image: pinlm-back
+    container_name: PINLM_VIDEO_UPDATER
+    restart: always
+    command: python -m app.jobs.video_updater.main
+    depends_on:
+      back-seeder:
+        condition: service_completed_successfully
+    environment:
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM}
+      TOKEN_EXP_TIME: ${TOKEN_EXP_TIME}
+      TMDB_API_KEY: ${TMDB_API_KEY}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      DOWNLOAD_DIR: ${DOWNLOAD_DIR:-./downloads}
+      SCHEDULER_TIMEZONE: ${SCHEDULER_TIMEZONE:-Asia/Seoul}
+      SCHEDULER_HOUR: ${SCHEDULER_HOUR:-23}
+      SCHEDULER_MINUTE: ${SCHEDULER_MINUTE:-0}
+      RUN_ON_STARTUP: ${RUN_ON_STARTUP:-false}
+      EXIT_AFTER_STARTUP_RUN: ${EXIT_AFTER_STARTUP_RUN:-false}
+    volumes:
+      - .:/back
+
+  recsys-worker:
+    profiles: ["manual"]
+    image: pinlm-back
+    container_name: PINLM_RECSYS_WORKER
+    restart: "no"
+    command: python -m app.jobs.recsys.rec_pipeline
+    depends_on:
+      back-seeder:
+        condition: service_completed_successfully
+    environment:
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM}
+      TOKEN_EXP_TIME: ${TOKEN_EXP_TIME}
+      TMDB_API_KEY: ${TMDB_API_KEY}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
+      RECOMMENDATION_POOL_SIZE: ${RECOMMENDATION_POOL_SIZE:-500}
+      WORKER_MIN_CANDIDATE_COUNT: ${WORKER_MIN_CANDIDATE_COUNT:-100}
+      WORKER_RETRY_ATTEMPTS: ${WORKER_RETRY_ATTEMPTS:-3}
+      SUBSCRIBED_OTT_BONUS: ${SUBSCRIBED_OTT_BONUS:-1.15}
+    volumes:
+      - .:/back
+
+  recsys-worker-scheduler:
+    image: pinlm-back
+    container_name: PINLM_RECSYS_WORKER_SCHEDULER
+    restart: always
+    command: python -m app.jobs.recsys.scheduler
+    depends_on:
+      back-seeder:
+        condition: service_completed_successfully
+    environment:
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM}
+      TOKEN_EXP_TIME: ${TOKEN_EXP_TIME}
+      TMDB_API_KEY: ${TMDB_API_KEY}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
+      RECOMMENDATION_POOL_SIZE: ${RECOMMENDATION_POOL_SIZE:-500}
+      WORKER_MIN_CANDIDATE_COUNT: ${WORKER_MIN_CANDIDATE_COUNT:-100}
+      WORKER_RETRY_ATTEMPTS: ${WORKER_RETRY_ATTEMPTS:-3}
+      WORKER_SCHEDULE_HOUR: ${WORKER_SCHEDULE_HOUR:-6}
+      WORKER_SCHEDULE_MINUTE: ${WORKER_SCHEDULE_MINUTE:-0}
+      WORKER_SCHEDULE_TIMEZONE: ${WORKER_SCHEDULE_TIMEZONE:-Asia/Seoul}
+      SUBSCRIBED_OTT_BONUS: ${SUBSCRIBED_OTT_BONUS:-1.15}
+    volumes:
+      - .:/back
+
+volumes:
+  postgres_data:

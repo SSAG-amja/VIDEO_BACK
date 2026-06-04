@@ -2,14 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.core.config import settings
+from app.core.redis import get_redis
 from app.crud import movie as movie_crud
-from app.services import recsys_client
 from app.crud import movie_detail as movie_detail_crud
 from app.schemas.movie import MovieSearchResponse, recommendedMovie
+from app.schemas.recsys import RecommendationMode
+from app.services.recsys.recommendation import RecommendationOptions, get_recommendations
 
 router = APIRouter()
 
 
+# 2026.06.04 김호영
+# 탐색 추천 목록을 BACK 내부 추천 service 우선으로 조회하고 실패 시 기존 DB 추천으로 대체한다.
 # 2026.05.23 김호영
 # 탐색 추천 목록을 VIDEO_RECSYS 결과 우선으로 조회하고 실패 시 기존 DB 추천으로 대체한다.
 # 2026.05.13 박현식
@@ -23,12 +28,20 @@ def get_recommended_movies(
     limit = 200
     skip = (page - 1) * limit
     try:
-        recommended_movies = []
-        recsys_movie_ids = recsys_client.get_recommendation_movie_ids(current_user.id, limit=limit, offset=skip)
-        if recsys_movie_ids is not None:
-            recommended_movies = movie_crud.get_movies_by_internal_ids_preserve_order(db, recsys_movie_ids)
-
-        if recsys_movie_ids is None:
+        try:
+            recommendation = get_recommendations(
+                db,
+                get_redis(),
+                settings,
+                RecommendationOptions(
+                    user_id=current_user.id,
+                    mode=RecommendationMode.ALL,
+                    limit=limit,
+                    offset=skip,
+                ),
+            )
+            recommended_movies = movie_crud.get_movies_by_internal_ids_preserve_order(db, recommendation.movie_ids)
+        except Exception:
             recommended_movies = movie_crud.get_recommended_movies(db, current_user.id, skip=skip, limit=limit)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

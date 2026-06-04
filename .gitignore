@@ -1,6 +1,7 @@
 venv/
 __pycache__/
 downloads/
+logs/
 failed_sync_ids.jsonl
 .env
 .vscode/
@@ -9,3 +10,6 @@ failed_sync_ids.jsonl
 test/
 test*
 data/
+assets/ml_models/*
+!assets/ml_models/.gitkeep
+!assets/ml_models/README.md

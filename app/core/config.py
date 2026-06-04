@@ -39,10 +39,25 @@ class Settings(BaseSettings):
     TOKEN_EXP_TIME: int
     TMDB_API_KEY: str
 
-    # 2026.05.23 김호영
-    # VIDEO_BACK에서 VIDEO_RECSYS API를 호출하기 위한 base url과 timeout 설정을 추가한다.
-    RECSYS_BASE_URL: str = "http://recsys-api:8000"
-    RECSYS_TIMEOUT_SECONDS: float = 2.0
+    # 2026.06.04 김호영
+    # VIDEO_RECSYS 흡수 이후 추천 blacklist와 최근 행동 cache에 사용할 Redis 설정을 추가한다.
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_BLACKLIST_TTL_SECONDS: int = 60 * 60 * 24 * 30
+    REDIS_RECENT_ACTION_LIMIT: int = 50
+
+    RECOMMENDATION_POOL_SIZE: int = 500
+    WORKER_MIN_CANDIDATE_COUNT: int = 100
+    WORKER_RETRY_ATTEMPTS: int = 3
+    WORKER_SCHEDULE_HOUR: int = 6
+    WORKER_SCHEDULE_MINUTE: int = 0
+    WORKER_SCHEDULE_TIMEZONE: str = "Asia/Seoul"
+    SUBSCRIBED_OTT_BONUS: float = 1.15
+
+    @property
+    def redis_url(self) -> str:
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
     DOWNLOAD_DIR: str = "./downloads"
     SCHEDULER_TIMEZONE: str = "Asia/Seoul"

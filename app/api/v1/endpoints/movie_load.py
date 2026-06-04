@@ -6,9 +6,11 @@ from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.core.config import settings
+from app.core.redis import get_redis
 from app.crud import movie as movie_crud
 from app.crud import movie_detail as movie_detail_crud
-from app.services import recsys_client
+from app.schemas.recsys import RecommendationMode
+from app.services.recsys.recommendation import RecommendationOptions, get_recommendations
 
 router = APIRouter()
 
@@ -90,26 +92,36 @@ async def _fetch_popular_fallback(page: int) -> list[dict]:
         return await _fetch_shorts_cards([movie["id"] for movie in movies])
 
 
+# 2026.06.04 김호영
+# VIDEO_RECSYS HTTP 호출 대신 BACK 내부 추천 service를 사용해 홈 숏츠 후보를 조회한다.
 # 2026.05.23 김호영
 # VIDEO_RECSYS 추천 후보를 홈 숏츠 카드 형태로 반환한다.
-# 2026.05.23 VIDEO_RECSYS 추천 후보를 홈 숏츠 카드 형태로 반환한다.
 @router.get("/shorts")
 async def get_shorts_movies(
     db: Session = Depends(deps.get_db),
     current_user=Depends(deps.get_current_user),
     page: int = Query(1, ge=1, description="Page number"),
+    shuffle_seed: str | None = Query(None, description="Stable shuffle seed for a refresh session"),
 ):
     offset = (page - 1) * SHORTS_PAGE_SIZE
-    recsys_movie_ids = recsys_client.get_recommendation_movie_ids(
-        current_user.id,
-        limit=SHORTS_PAGE_SIZE,
-        offset=offset,
-    )
-
-    if recsys_movie_ids is None:
+    redis = get_redis()
+    try:
+        recommendation = get_recommendations(
+            db,
+            redis,
+            settings,
+            RecommendationOptions(
+                user_id=current_user.id,
+                mode=RecommendationMode.ALL,
+                limit=SHORTS_PAGE_SIZE,
+                offset=offset,
+                shuffle_seed=shuffle_seed,
+            ),
+        )
+    except Exception:
         return {"movies": await _fetch_popular_fallback(page), "source": "fallback"}
 
-    recommended_movies = movie_crud.get_movies_by_internal_ids_preserve_order(db, recsys_movie_ids)
+    recommended_movies = movie_crud.get_movies_by_internal_ids_preserve_order(db, recommendation.movie_ids)
     tmdb_movie_ids = [movie["tmdb_id"] for movie in recommended_movies]
     return {"movies": await _fetch_shorts_cards(tmdb_movie_ids), "source": "recsys"}
 

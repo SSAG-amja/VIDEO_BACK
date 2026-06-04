@@ -1,5 +1,6 @@
 # 사용자 관련 처리 로직
 # 정보 수정, 조회, 온보딩 데이터 저장, OTT 조회, 수정
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, selectinload
@@ -11,11 +12,13 @@ from app.api import deps
 
 from app.schemas import user as user_schema
 from app.schemas import auth as auth_schema
+from app.schemas.recsys import ColdStartRequest
 
 from app.crud import user as user_crud
-from app.services import recsys_client
+from app.services.recsys.dynamic_retriever import build_cold_start_pool
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # 260501 김광원
 # 사용자 정보 조회
@@ -98,6 +101,8 @@ def update_genres(
         )
 
 
+# 2026.06.04 김호영
+# 온보딩 선호 영화 저장 완료 후 BACK 내부 추천 service로 콜드스타트 추천 풀을 생성한다.
 # 2026.05.23 김호영
 # 온보딩 선호 영화 저장 완료 후 VIDEO_RECSYS 콜드스타트 추천 풀 생성을 요청한다.
 # 260501 김광원
@@ -111,7 +116,10 @@ def update_favorite_movies(
     try:
         user_crud.update_user_favorite_movies(db, user=current_user, movie_ids=request.movie_ids)
         user_crud.update_user_onboarding_status(db, user=current_user, is_completed=True)
-        recsys_client.create_cold_start_pool(current_user.id)
+        try:
+            build_cold_start_pool(db, ColdStartRequest(user_id=current_user.id))
+        except Exception:
+            logger.warning("cold-start recommendation generation failed user_id=%s", current_user.id, exc_info=True)
         return {"message": "성공적으로 업데이트되었습니다."}
     except ValueError as e:
         raise HTTPException(
