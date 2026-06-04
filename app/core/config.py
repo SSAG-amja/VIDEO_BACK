@@ -38,6 +38,27 @@ class Settings(BaseSettings):
     ALGORITHM: str
     TOKEN_EXP_TIME: int
     TMDB_API_KEY: str
+
+    # 2026.06.04 김호영
+    # VIDEO_RECSYS 흡수 이후 추천 blacklist와 최근 행동 cache에 사용할 Redis 설정을 추가한다.
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_BLACKLIST_TTL_SECONDS: int = 60 * 60 * 24 * 30
+    REDIS_RECENT_ACTION_LIMIT: int = 50
+
+    RECOMMENDATION_POOL_SIZE: int = 500
+    WORKER_MIN_CANDIDATE_COUNT: int = 100
+    WORKER_RETRY_ATTEMPTS: int = 3
+    WORKER_SCHEDULE_HOUR: int = 6
+    WORKER_SCHEDULE_MINUTE: int = 0
+    WORKER_SCHEDULE_TIMEZONE: str = "Asia/Seoul"
+    SUBSCRIBED_OTT_BONUS: float = 1.15
+
+    @property
+    def redis_url(self) -> str:
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+
     DOWNLOAD_DIR: str = "./downloads"
     SCHEDULER_TIMEZONE: str = "Asia/Seoul"
     SCHEDULER_HOUR: int = 23

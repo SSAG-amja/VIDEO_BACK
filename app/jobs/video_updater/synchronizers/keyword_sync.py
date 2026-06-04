@@ -17,6 +17,8 @@ class KeywordSynchronizer:
         self.db = db_session
         self.dump_fetcher = TMDBDumpFetcher()
 
+    # 2026.05.23 김호영
+    # 키워드 이름 변경 시 기존 unique name과 충돌하는 항목은 건너뛰어 동기화 실패를 방지한다.
     # 26.05.17 김광원
     # TMDB keyword dump를 기준으로 keywords 테이블을 일괄 동기화한다.
     async def sync_keywords(self, date_str: str):
@@ -34,6 +36,7 @@ class KeywordSynchronizer:
         db_name_lookup = build_normalized_lookup(rows, "name")
         dump_ids = set()
         new_keywords = []
+        skipped_name_conflicts = 0
 
         logger.info("덤프 파일 스트리밍 대조 시작...")
         for item in self.dump_fetcher.get_dump_iterator(file_path):
@@ -45,11 +48,17 @@ class KeywordSynchronizer:
             if tmdb_id in db_ids:
                 existing_row = db_rows_by_tmdb_id.get(tmdb_id)
                 if existing_row and normalize_compare_text(existing_row.name) != normalized_name:
+                    conflicting_row = db_name_lookup.get(normalized_name)
+                    if conflicting_row and conflicting_row.id != existing_row.id:
+                        skipped_name_conflicts += 1
+                        continue
+
                     await self.db.execute(
                         update(Keyword)
                         .where(Keyword.id == existing_row.id)
                         .values(name=keyword_name)
                     )
+                    db_name_lookup.pop(normalize_compare_text(existing_row.name), None)
                     db_rows_by_tmdb_id[tmdb_id] = SimpleNamespace(
                         id=existing_row.id,
                         tmdb_id=tmdb_id,
@@ -78,6 +87,12 @@ class KeywordSynchronizer:
             new_keywords.append({"tmdb_id": tmdb_id, "name": keyword_name})
             db_ids.add(tmdb_id)
             db_name_lookup[normalized_name] = SimpleNamespace(id=None, tmdb_id=tmdb_id, name=keyword_name)
+
+        if skipped_name_conflicts:
+            logger.warning(
+                "%s개의 키워드 이름 변경은 기존 unique name과 충돌하여 건너뛰었습니다.",
+                skipped_name_conflicts,
+            )
 
         if new_keywords:
             chunk_size = 5000
