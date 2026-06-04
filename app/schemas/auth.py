@@ -24,3 +24,10 @@ class SignUpResponse(UserBase):
 
 class VerifyPasswordRequest(BaseModel):
     current_password: SecretStr = Field(..., min_length=8, description="비밀번호는 8자리 이상이어야 합니다.")
+
+class EmailSendRequest(BaseModel):
+    email: EmailStr
+
+class EmailVerifyRequest(BaseModel):
+    email: EmailStr
+    verification_code: str = Field(..., min_length=6, max_length=6, description="인증 코드는 6자리여야 합니다.")
