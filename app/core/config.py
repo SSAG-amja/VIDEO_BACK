@@ -1,5 +1,6 @@
 import os
 import socket
+from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import computed_field
 
@@ -38,6 +39,12 @@ class Settings(BaseSettings):
     ALGORITHM: str
     TOKEN_EXP_TIME: int
     TMDB_API_KEY: str
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_SENDER_EMAIL: Optional[str] = None
+    SMTP_USE_TLS: bool = True
 
     # 2026.06.04 김호영
     # VIDEO_RECSYS 흡수 이후 추천 blacklist와 최근 행동 cache에 사용할 Redis 설정을 추가한다.
