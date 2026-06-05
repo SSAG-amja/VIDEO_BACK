@@ -34,6 +34,11 @@ class SignUpResponse(UserBase):
 class VerifyPasswordRequest(BaseModel):
     current_password: SecretStr = Field(..., min_length=8, description="비밀번호는 8자리 이상이어야 합니다.")
 
+
+class VerifyPasswordResponse(BaseModel):
+    message: str
+    password_change_token: str
+
 class EmailSendRequest(BaseModel):
     email: EmailStr
 
@@ -50,3 +55,23 @@ class EmailSendResponse(BaseModel):
 class EmailVerifyResponse(BaseModel):
     message: str
     signup_token: str
+
+
+class PasswordResetVerifyResponse(BaseModel):
+    message: str
+    reset_token: str
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    email: EmailStr
+    reset_token: str = Field(..., min_length=1, description="비밀번호 재설정 인증 완료 후 발급되는 임시 토큰")
+    new_password: SecretStr = Field(..., min_length=8, description="새 비밀번호는 8자리 이상이어야 합니다.")
+    new_password_confirm: SecretStr = Field(..., min_length=8, description="새 비밀번호 확인은 8자리 이상이어야 합니다.")
+
+    # 26.06.04 김광원
+    # 비밀번호 재설정 시 새 비밀번호와 확인값이 일치하는지 검증한다.
+    @model_validator(mode="after")
+    def validate_password_match(self):
+        if self.new_password.get_secret_value() != self.new_password_confirm.get_secret_value():
+            raise ValueError("새 비밀번호와 비밀번호 확인이 일치하지 않습니다.")
+        return self

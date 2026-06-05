@@ -142,7 +142,13 @@ def update_user_profile(db: Session, user: user_model.User, obj_in: user_schema.
 # 2026.05.13 박현식
 # 새 비밀번호를 해시로 변환해 사용자 계정에 저장한다.
 def update_user_password(db: Session, user: user_model.User, obj_in: user_schema.UserPasswordUpdate) -> user_model.User:
-    user.hashed_password = get_password_hash(obj_in.new_password.get_secret_value())
+    return set_user_password(db, user=user, password=obj_in.new_password.get_secret_value())
+
+
+# 26.06.04 김광원
+# 전달받은 평문 비밀번호를 해시로 변환해 사용자 계정에 저장한다.
+def set_user_password(db: Session, user: user_model.User, password: str) -> user_model.User:
+    user.hashed_password = get_password_hash(password)
     db.commit()
     db.refresh(user)
     return user
