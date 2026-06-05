@@ -15,6 +15,9 @@ from app.schemas import auth as auth_schema
 from app.schemas.recsys import ColdStartRequest
 
 from app.crud import user as user_crud
+from app.core.redis import get_redis
+from app.core import security
+from app.services.auth import email_verification
 from app.services.recsys.dynamic_retriever import build_cold_start_pool
 
 router = APIRouter()
@@ -55,15 +58,31 @@ def update_user_me(
         },
     }
 
-# 2026.05.13 박현식
-# 비밀번호 변경 요청을 받아 새 비밀번호를 해시로 저장하고 성공 메시지만 반환한다.
+# 26.06.04 김광원
+# 비밀번호 변경 인증 토큰을 검증한 뒤 새 비밀번호를 해시로 저장하고 성공 메시지만 반환한다.
 @router.patch("/me/new-password")
 def update_user_password(
     request: user_schema.UserPasswordUpdate,
     current_user: user_model.User = Depends(deps.get_current_user),
     db: Session = Depends(deps.get_db)
 ):
+    try:
+        email_verification.validate_password_change_token(get_redis(), current_user.id, request.password_change_token)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    if security.verify_password(request.new_password.get_secret_value(), current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="현재 비밀번호와 새 비밀번호가 동일합니다.")
+
     user_crud.update_user_password(db, user=current_user, obj_in=request)
+
+    try:
+        email_verification.delete_password_change_token(get_redis(), request.password_change_token)
+    except RuntimeError:
+        pass
+
     return {"message": "비밀번호가 변경되었습니다."}
 
 # 260501 김광원
