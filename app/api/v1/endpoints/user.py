@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.models import user as user_model
 
 from app.api import deps
+from app.core.config import settings
 
 from app.schemas import user as user_schema
 from app.schemas import auth as auth_schema
@@ -18,7 +19,7 @@ from app.crud import user as user_crud
 from app.core.redis import get_redis
 from app.core import security
 from app.services.auth import email_verification
-from app.services.recsys.dynamic_retriever import build_cold_start_pool
+from app.services.recsys.v1.dynamic_retriever import build_cold_start_pool
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -135,10 +136,11 @@ def update_favorite_movies(
     try:
         user_crud.update_user_favorite_movies(db, user=current_user, movie_ids=request.movie_ids)
         user_crud.update_user_onboarding_status(db, user=current_user, is_completed=True)
-        try:
-            build_cold_start_pool(db, ColdStartRequest(user_id=current_user.id))
-        except Exception:
-            logger.warning("cold-start recommendation generation failed user_id=%s", current_user.id, exc_info=True)
+        if settings.RECOMMENDATION_ENGINE.lower() == "v1":
+            try:
+                build_cold_start_pool(db, ColdStartRequest(user_id=current_user.id))
+            except Exception:
+                logger.warning("cold-start recommendation generation failed user_id=%s", current_user.id, exc_info=True)
         return {"message": "성공적으로 업데이트되었습니다."}
     except ValueError as e:
         raise HTTPException(

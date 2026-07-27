@@ -10,7 +10,7 @@ from app.core.redis import get_redis
 from app.crud import movie as movie_crud
 from app.crud import movie_detail as movie_detail_crud
 from app.schemas.recsys import RecommendationMode
-from app.services.recsys.recommendation import RecommendationOptions, get_recommendations
+from app.services.recsys.v1.recommendation import RecommendationOptions, get_recommendations
 
 router = APIRouter()
 

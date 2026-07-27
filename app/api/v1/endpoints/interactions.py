@@ -8,7 +8,7 @@ from app.crud import interaction as interaction_crud
 from app.models import user as user_model
 from app.schemas import action as action_schema
 from app.schemas.recsys import InteractionAction, InteractionCreate
-from app.services.recsys.interaction_cache import record_interaction_cache
+from app.services.recsys.v1.interaction_cache import record_interaction_cache
 
 router = APIRouter()
 

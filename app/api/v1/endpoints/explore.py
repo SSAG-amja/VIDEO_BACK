@@ -8,7 +8,9 @@ from app.crud import movie as movie_crud
 from app.crud import movie_detail as movie_detail_crud
 from app.schemas.movie import MovieSearchResponse, recommendedMovie
 from app.schemas.recsys import RecommendationMode
-from app.services.recsys.recommendation import RecommendationOptions, get_recommendations
+from app.services.recsys.v1.recommendation import RecommendationOptions, get_recommendations as get_v1_recommendations
+from app.services.recsys.v2.config import MAX_PAGE_SIZE as V2_MAX_PAGE_SIZE
+from app.services.recsys.v2.recommender import get_recommendations as get_v2_recommendations
 
 router = APIRouter()
 
@@ -25,21 +27,31 @@ def get_recommended_movies(
     current_user=Depends(deps.get_current_user),
     page: int = Query(1, ge=1, description="Page number"),
 ):
-    limit = 200
+    is_v2 = settings.RECOMMENDATION_ENGINE.lower() == "v2"
+    limit = V2_MAX_PAGE_SIZE if is_v2 else 200
     skip = (page - 1) * limit
     try:
         try:
-            recommendation = get_recommendations(
-                db,
-                get_redis(),
-                settings,
-                RecommendationOptions(
+            if is_v2:
+                recommendation = get_v2_recommendations(
+                    db,
                     user_id=current_user.id,
                     mode=RecommendationMode.ALL,
                     limit=limit,
                     offset=skip,
-                ),
-            )
+                )
+            else:
+                recommendation = get_v1_recommendations(
+                    db,
+                    get_redis(),
+                    settings,
+                    RecommendationOptions(
+                        user_id=current_user.id,
+                        mode=RecommendationMode.ALL,
+                        limit=limit,
+                        offset=skip,
+                    ),
+                )
             recommended_movies = movie_crud.get_movies_by_internal_ids_preserve_order(db, recommendation.movie_ids)
         except Exception:
             recommended_movies = movie_crud.get_recommended_movies(db, current_user.id, skip=skip, limit=limit)
