@@ -1,0 +1,45 @@
+{
+  "total_user_count": 10,
+  "evaluated_user_count": 10,
+  "skipped_user_count": 0,
+  "total_rating_count": 1677,
+  "total_used_movie_count": 1669,
+  "total_missing_count": 8,
+  "total_candidate_count": 503,
+  "total_rated_candidate_count": 503,
+  "min_ratings": 100,
+  "min_mapped_ratings": 30,
+  "train_ratio": 0.7,
+  "candidate_scope": "all_holdout",
+  "limit_arg": 100,
+  "user_filters": {
+    "start_user_id": null,
+    "end_user_id": null,
+    "user_ids": [
+      8119,
+      52415,
+      59030,
+      61716,
+      65129,
+      76376,
+      99222,
+      100210,
+      121096,
+      154941
+    ],
+    "max_users": 10
+  },
+  "rating_policy": {
+    "pass": "0.5~1.5",
+    "neutral": "2.0~3.0",
+    "pin": "3.5~4.5",
+    "saved": "5.0",
+    "pin_min": 3.5,
+    "pass_max": 1.5,
+    "saved_rating": 5.0,
+    "neutral_action": "watched"
+  },
+  "elapsed_seconds": 68.424,
+  "results_path": "ontol_test/outputs/evaluation_results.jsonl",
+  "skipped_path": "ontol_test/outputs/skipped_users.jsonl"
+}
