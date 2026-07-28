@@ -5,7 +5,9 @@ from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.logging import configure_logging
-from app.jobs.recsys.rec_pipeline import run_pipeline
+# 2026.07.28 김광원
+# 추천 배치를 LightFM 기반 lightfm_pipeline으로 실행한다.
+from app.jobs.recsys.lightfm_pipeline import run_pipeline
 
 
 logger = logging.getLogger(__name__)
