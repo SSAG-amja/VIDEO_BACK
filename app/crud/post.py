@@ -79,6 +79,32 @@ def get_or_create_hashtag(db: Session, raw_name: str | None) -> hashtag_model.Ha
 
 
 # 2026.05.18 박현식
+# 2026.08.14 임재준 수정: 대댓글 및 댓글 좋아요 정보 포함 DTO 반환
+# 댓글 ORM 객체를 작성자, 부모댓글, 좋아요 및 내 댓글 여부가 포함된 응답 요약으로 변환한다.
+def to_reply_summary(reply: reply_model.Reply, current_user_id: int) -> post_schema.ReplySummary:
+    liked_by = getattr(reply, "liked_by", [])
+    likes_count = len(liked_by) if liked_by is not None else getattr(reply, "likes_count", 0)
+    is_liked = any(u.id == current_user_id for u in liked_by) if liked_by else False
+
+    parent_id = getattr(reply, "parent_id", None)
+    parent_reply = getattr(reply, "parent", None)
+    reply_to_user = parent_reply.user.nickname if (parent_reply and parent_reply.user) else None
+
+    return post_schema.ReplySummary(
+        nickname=reply.user.nickname if reply.user else None,
+        reply_id=reply.id,
+        reply_content=reply.content,
+        reply_elapsed_time=elapsed_minutes(reply.created_at),
+        reply_is_mine=reply.user_id == current_user_id,
+        parent_id=parent_id,
+        reply_to_user=reply_to_user,
+        reply_likes=likes_count,
+        reply_is_liked=is_liked,
+    )
+
+
+# 2026.05.18 박현식
+# 2026.08.14 임재준 수정: 댓글 목록 변환 시 to_reply_summary를 활용하여 대댓글 및 좋아요 정보 반영
 # 게시물 ORM 객체를 커뮤니티 화면에서 사용하는 영화/플레이리스트/댓글 포함 DTO로 변환한다.
 def to_post_response(
     db: Session,
@@ -135,13 +161,7 @@ def to_post_response(
     replies = []
     if include_replies:
         replies = [
-            post_schema.ReplySummary(
-                nickname=reply.user.nickname if reply.user else None,
-                reply_id=reply.id,
-                reply_content=reply.content,
-                reply_elapsed_time=elapsed_minutes(reply.created_at),
-                reply_is_mine=reply.user_id == current_user_id,
-            )
+            to_reply_summary(reply, current_user_id)
             for reply in sorted(post.replies, key=lambda item: item.created_at)
         ]
 
@@ -236,18 +256,6 @@ def get_post(db: Session, post_id: int, current_user_id: int) -> post_schema.Pos
 
 
 # 2026.05.18 박현식
-# 댓글 ORM 객체를 작성자와 내 댓글 여부가 포함된 응답 요약으로 변환한다.
-def to_reply_summary(reply: reply_model.Reply, current_user_id: int) -> post_schema.ReplySummary:
-    return post_schema.ReplySummary(
-        nickname=reply.user.nickname if reply.user else None,
-        reply_id=reply.id,
-        reply_content=reply.content,
-        reply_elapsed_time=elapsed_minutes(reply.created_at),
-        reply_is_mine=reply.user_id == current_user_id,
-    )
-
-
-# 2026.05.18 박현식
 # 게시물에 속한 댓글을 조회하고 없으면 404 예외를 발생시킨다.
 def get_reply_or_404(db: Session, post_id: int, reply_id: int) -> reply_model.Reply:
     reply = db.scalar(
@@ -261,6 +269,7 @@ def get_reply_or_404(db: Session, post_id: int, reply_id: int) -> reply_model.Re
 
 
 # 2026.05.18 박현식
+# 2026.08.14 임재준 수정: 대댓글(parent_id) 유효성 검증 및 생성 지원
 # 댓글 내용을 검증한 뒤 현재 사용자 댓글을 생성하고 요약 DTO로 반환한다.
 def create_reply(
     db: Session,
@@ -273,7 +282,20 @@ def create_reply(
     if not content:
         raise HTTPException(status_code=422, detail="reply_content cannot be empty")
 
-    reply = reply_model.Reply(user_id=current_user.id, post_id=post_id, content=content)
+    parent_id = None
+    if request.parent_id is not None:
+        parent_reply = get_reply_or_404(db, post_id, request.parent_id)
+        parent_id = parent_reply.id
+
+    reply_kwargs = {
+        "user_id": current_user.id,
+        "post_id": post_id,
+        "content": content,
+    }
+    if hasattr(reply_model.Reply, "parent_id"):
+        reply_kwargs["parent_id"] = parent_id
+
+    reply = reply_model.Reply(**reply_kwargs)
     db.add(reply)
     db.commit()
     return to_reply_summary(get_reply_or_404(db, post_id, reply.id), current_user.id)
@@ -311,6 +333,73 @@ def delete_reply(db: Session, post_id: int, reply_id: int, current_user: user_mo
     db.delete(reply)
     db.commit()
     return reply_id
+
+
+# 2026.08.14 임재준
+# 댓글 좋아요를 멱등하게 추가하고 서버 기준 댓글 좋아요 수와 상태를 반환한다.
+def like_reply(
+    db: Session,
+    post_id: int,
+    reply_id: int,
+    current_user: user_model.User,
+) -> post_schema.ReplyLikeResponse:
+    reply = get_reply_or_404(db, post_id, reply_id)
+
+    if hasattr(mapping_model, "reply_likes"):
+        exists = db.execute(
+            select(mapping_model.reply_likes).where(
+                mapping_model.reply_likes.c.user_id == current_user.id,
+                mapping_model.reply_likes.c.reply_id == reply_id,
+            )
+        ).first()
+
+        if not exists:
+            db.execute(
+                mapping_model.reply_likes.insert().values(user_id=current_user.id, reply_id=reply_id)
+            )
+            db.commit()
+
+    reply = get_reply_or_404(db, post_id, reply_id)
+    liked_by = getattr(reply, "liked_by", [])
+    likes_count = len(liked_by) if liked_by is not None else getattr(reply, "likes_count", 0)
+
+    return post_schema.ReplyLikeResponse(
+        message="Reply liked.",
+        reply_id=reply.id,
+        reply_likes=likes_count,
+        reply_is_liked=True,
+    )
+
+
+# 2026.08.14 임재준
+# 댓글 좋아요를 멱등하게 제거하고 서버 기준 댓글 좋아요 수와 상태를 반환한다.
+def unlike_reply(
+    db: Session,
+    post_id: int,
+    reply_id: int,
+    current_user: user_model.User,
+) -> post_schema.ReplyLikeResponse:
+    reply = get_reply_or_404(db, post_id, reply_id)
+
+    if hasattr(mapping_model, "reply_likes"):
+        db.execute(
+            mapping_model.reply_likes.delete().where(
+                mapping_model.reply_likes.c.user_id == current_user.id,
+                mapping_model.reply_likes.c.reply_id == reply_id,
+            )
+        )
+        db.commit()
+
+    reply = get_reply_or_404(db, post_id, reply_id)
+    liked_by = getattr(reply, "liked_by", [])
+    likes_count = len(liked_by) if liked_by is not None else getattr(reply, "likes_count", 0)
+
+    return post_schema.ReplyLikeResponse(
+        message="Reply unliked.",
+        reply_id=reply.id,
+        reply_likes=likes_count,
+        reply_is_liked=False,
+    )
 
 
 # 2026.05.18 박현식

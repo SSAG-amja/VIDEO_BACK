@@ -56,6 +56,7 @@ def update_post(
 
 
 # 2026.05.18 박현식
+# 2026.08.14 임재준 수정: 대댓글(parent_id) 및 유저 멘션이 포함된 댓글 생성 요청 처리
 # 댓글 작성 요청을 Reply 분류 API로 받고 생성된 댓글 요약을 반환한다.
 @router.post("/{post_id}/replies", response_model=post_schema.ReplyMutationResponse, tags=["Reply"])
 def create_reply(
@@ -93,6 +94,30 @@ def delete_reply(
 ):
     deleted_id = post_crud.delete_reply(db, post_id, reply_id, current_user)
     return {"message": "Reply deleted.", "reply_id": deleted_id}
+
+
+# 2026.08.14 임재준
+# 댓글 좋아요 요청을 Like/Reply 분류 API로 받고 보정된 댓글 좋아요 상태를 반환한다.
+@router.post("/{post_id}/replies/{reply_id}/likes", response_model=post_schema.ReplyLikeResponse, tags=["Like"])
+def like_reply(
+    post_id: int,
+    reply_id: int,
+    current_user: user_model.User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db),
+):
+    return post_crud.like_reply(db, post_id, reply_id, current_user)
+
+
+# 2026.08.14 임재준
+# 댓글 좋아요 취소 요청을 Like/Reply 분류 API로 받고 보정된 댓글 좋아요 상태를 반환한다.
+@router.delete("/{post_id}/replies/{reply_id}/likes", response_model=post_schema.ReplyLikeResponse, tags=["Like"])
+def unlike_reply(
+    post_id: int,
+    reply_id: int,
+    current_user: user_model.User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db),
+):
+    return post_crud.unlike_reply(db, post_id, reply_id, current_user)
 
 
 # 2026.05.18 박현식

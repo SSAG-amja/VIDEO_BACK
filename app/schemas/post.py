@@ -50,16 +50,25 @@ class OttSummary(BaseModel):
     type: str
 
 
+# 2026.05.18 박현식
+# 2026.08.14 임재준 수정: 대댓글 부모 ID, 멘션 대상, 댓글 좋아요 필드 추가
 class ReplySummary(BaseModel):
     nickname: str | None
     reply_id: int
     reply_content: str
     reply_elapsed_time: int
     reply_is_mine: bool
+    parent_id: int | None = None
+    reply_to_user: str | None = None
+    reply_likes: int = 0
+    reply_is_liked: bool = False
 
 
+# 2026.05.18 박현식
+# 2026.08.14 임재준 수정: 대댓글 등록을 위한 parent_id 옵셔널 필드 추가
 class ReplyRequest(BaseModel):
     reply_content: str
+    parent_id: int | None = None
 
 
 class ReplyMutationResponse(BaseModel):
@@ -70,6 +79,15 @@ class ReplyMutationResponse(BaseModel):
 class ReplyDeleteResponse(BaseModel):
     message: str
     reply_id: int
+
+
+# 2026.08.14 임재준
+# 댓글 좋아요 및 좋아요 취소 결과에 필요한 응답 스키마를 정의한다.
+class ReplyLikeResponse(BaseModel):
+    message: str
+    reply_id: int
+    reply_likes: int
+    reply_is_liked: bool
 
 
 class PostLikeResponse(BaseModel):
