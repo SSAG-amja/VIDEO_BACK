@@ -10,6 +10,7 @@ router = APIRouter()
 
 
 # 2026.05.18 박현식
+# 2026.08.14 임재준 수정: 투표 데이터(poll)가 포함된 게시물 생성 요청 처리
 # 게시물 생성 요청의 인증 사용자와 본문을 crud 계층으로 전달하고 생성 응답 메시지를 구성한다.
 @router.post("", response_model=post_schema.PostMutationResponse, tags=["Post"])
 def create_post(
@@ -53,6 +54,18 @@ def update_post(
 ):
     post = post_crud.update_post(db, post_id, current_user, request)
     return {"message": "Post updated.", "data": post}
+
+
+# 2026.08.14 임재준
+# 특정 게시물에 첨부된 투표에 참여하고 갱신된 투표 결과를 반환한다.
+@router.post("/{post_id}/poll/vote", response_model=post_schema.PollVoteResponse, tags=["Poll"])
+def vote_post_poll(
+    post_id: int,
+    request: post_schema.PollVoteRequest,
+    current_user: user_model.User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db),
+):
+    return post_crud.vote_poll(db, post_id, request.option_id, current_user)
 
 
 # 2026.05.18 박현식

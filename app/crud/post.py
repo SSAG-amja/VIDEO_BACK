@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.models import hashtag as hashtag_model
 from app.models import movie as movie_model
 from app.models import playlist as playlist_model
+from app.models import poll as poll_model
 from app.models import post as post_model
 from app.models import reply as reply_model
 from app.models import mapping as mapping_model
@@ -25,7 +26,8 @@ def elapsed_minutes(created_at: datetime | None) -> int:
 
 
 # 2026.05.18 박현식
-# 게시물 응답에 필요한 작성자, 태그, 좋아요, 댓글, 영화, 플레이리스트 관계를 한 번에 로드한다.
+# 2026.08.14 임재준 수정: 투표(poll) 및 투표 선택지/투표자 관계 eager load 추가
+# 게시물 응답에 필요한 작성자, 태그, 좋아요, 댓글, 영화, 플레이리스트, 투표 관계를 한 번에 로드한다.
 def post_query():
     return select(post_model.Post).options(
         joinedload(post_model.Post.user),
@@ -43,6 +45,10 @@ def post_query():
         joinedload(post_model.Post.playlist)
         .joinedload(playlist_model.Playlist.playlist_movies)
         .joinedload(mapping_model.PlaylistMovie.movie),
+        joinedload(post_model.Post.poll)
+        .joinedload(poll_model.Poll.options)
+        .joinedload(poll_model.PollOption.votes),
+        joinedload(post_model.Post.poll).joinedload(poll_model.Poll.votes),
     )
 
 
@@ -78,6 +84,37 @@ def get_or_create_hashtag(db: Session, raw_name: str | None) -> hashtag_model.Ha
     return hashtag
 
 
+# 2026.08.14 임재준
+# 투표 ORM 객체를 사용자 투표 여부 및 선택지별 득표수가 포함된 DTO로 변환한다.
+def to_poll_summary(poll: poll_model.Poll | None, current_user_id: int) -> post_schema.PollSummary | None:
+    if not poll:
+        return None
+
+    user_voted_option_id = None
+    for vote in poll.votes:
+        if vote.user_id == current_user_id:
+            user_voted_option_id = vote.option_id
+            break
+
+    options_summary = [
+        post_schema.PollOptionSummary(
+            id=opt.id,
+            text=opt.text,
+            votes=len(opt.votes),
+        )
+        for opt in poll.options
+    ]
+
+    return post_schema.PollSummary(
+        id=poll.id,
+        question=poll.question,
+        options=options_summary,
+        total_votes=len(poll.votes),
+        user_voted_option_id=user_voted_option_id,
+        is_closed=poll.is_closed,
+    )
+
+
 # 2026.05.18 박현식
 # 2026.08.14 임재준 수정: 대댓글 및 댓글 좋아요 정보 포함 DTO 반환
 # 댓글 ORM 객체를 작성자, 부모댓글, 좋아요 및 내 댓글 여부가 포함된 응답 요약으로 변환한다.
@@ -104,8 +141,8 @@ def to_reply_summary(reply: reply_model.Reply, current_user_id: int) -> post_sch
 
 
 # 2026.05.18 박현식
-# 2026.08.14 임재준 수정: 댓글 목록 변환 시 to_reply_summary를 활용하여 대댓글 및 좋아요 정보 반영
-# 게시물 ORM 객체를 커뮤니티 화면에서 사용하는 영화/플레이리스트/댓글 포함 DTO로 변환한다.
+# 2026.08.14 임재준 수정: 투표(poll) 정보 포함 DTO 변환
+# 게시물 ORM 객체를 커뮤니티 화면에서 사용하는 영화/플레이리스트/댓글/투표 포함 DTO로 변환한다.
 def to_post_response(
     db: Session,
     post: post_model.Post,
@@ -189,11 +226,13 @@ def to_post_response(
         post_is_mine=post.user_id == current_user_id,
         post_is_liked=any(user.id == current_user_id for user in post.liked_by),
         replies=replies,
+        poll=to_poll_summary(post.poll, current_user_id),
     )
 
 
 # 2026.05.18 박현식
-# 영화 또는 내 공개 플레이리스트를 대상으로 게시물을 생성하고 해시태그 관계를 저장한다.
+# 2026.08.14 임재준 수정: 게시물 생성 시 첨부된 투표 및 선택지 함께 생성
+# 영화 또는 내 공개 플레이리스트를 대상으로 게시물을 생성하고 해시태그 및 투표 관계를 저장한다.
 def create_post(
     db: Session,
     user_id: int,
@@ -234,10 +273,75 @@ def create_post(
             if hashtag is not None
         ],
     )
-
     db.add(post)
+    db.flush()
+
+    # 투표 첨부 데이터가 있는 경우 Poll 및 PollOption 생성
+    if request.poll and request.poll.options:
+        valid_options = [opt.strip() for opt in request.poll.options if opt.strip()]
+        if len(valid_options) >= 2:
+            new_poll = poll_model.Poll(
+                post_id=post.id,
+                question=request.poll.question.strip() if request.poll.question else None,
+            )
+            db.add(new_poll)
+            db.flush()
+
+            for opt_text in valid_options:
+                db.add(poll_model.PollOption(poll_id=new_poll.id, text=opt_text))
+
     db.commit()
     return to_post_response(db, get_post_or_404(db, post.id), user_id, include_replies=True)
+
+
+# 2026.08.14 임재준
+# 특정 게시글의 투표에 참여하고 최신 투표 결과 요약을 반환한다.
+def vote_poll(
+    db: Session,
+    post_id: int,
+    option_id: int,
+    current_user: user_model.User,
+) -> post_schema.PollVoteResponse:
+    post = get_post_or_404(db, post_id)
+    if not post.poll:
+        raise HTTPException(status_code=404, detail="Poll not found on this post")
+    if post.poll.is_closed:
+        raise HTTPException(status_code=400, detail="This poll is closed")
+
+    # 선택지가 해당 투표의 것인지 검증
+    target_option = db.scalar(
+        select(poll_model.PollOption).where(
+            poll_model.PollOption.id == option_id,
+            poll_model.PollOption.poll_id == post.poll.id,
+        )
+    )
+    if not target_option:
+        raise HTTPException(status_code=404, detail="Poll option not found")
+
+    # 이미 투표했는지 검증
+    existing_vote = db.scalar(
+        select(poll_model.PollVote).where(
+            poll_model.PollVote.poll_id == post.poll.id,
+            poll_model.PollVote.user_id == current_user.id,
+        )
+    )
+    if existing_vote:
+        # 기존 투표 선택지 변경 허용
+        existing_vote.option_id = option_id
+    else:
+        new_vote = poll_model.PollVote(
+            poll_id=post.poll.id,
+            option_id=option_id,
+            user_id=current_user.id,
+        )
+        db.add(new_vote)
+
+    db.commit()
+    updated_post = get_post_or_404(db, post_id)
+    return post_schema.PollVoteResponse(
+        message="Vote registered successfully.",
+        poll=to_poll_summary(updated_post.poll, current_user.id),
+    )
 
 
 # 2026.05.18 박현식

@@ -21,3 +21,6 @@ class Post(Base):
     hashtags = relationship("Hashtag", secondary="post_hashtags", back_populates="posts")
     liked_by = relationship("User", secondary="likes", back_populates="liked_posts")
     replies = relationship("Reply", back_populates="post", cascade="all, delete-orphan")
+
+    # 2026.08.14 임재준: 투표 1:1 관계 추가
+    poll = relationship("Poll", back_populates="post", uselist=False, cascade="all, delete-orphan")

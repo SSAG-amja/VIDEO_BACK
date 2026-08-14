@@ -10,6 +10,7 @@ from .movie import Movie
 from .ott import Ott
 from .genre import Genre
 from .recommendations import Recommendation
+from app.models.poll import Poll, PollOption, PollVote
 
 from .mapping import (
     UserInteraction, PlaylistMovie, MovieOtt, MovieActor
