@@ -294,8 +294,10 @@ def create_post(
     return to_post_response(db, get_post_or_404(db, post.id), user_id, include_replies=True)
 
 
+# app/crud/post.py 내 vote_poll 함수 수정
+
 # 2026.08.14 임재준
-# 특정 게시글의 투표에 참여하고 최신 투표 결과 요약을 반환한다.
+# 특정 게시글의 투표에 참여하거나, 이미 투표한 항목을 다시 누르면 투표를 취소하고 최신 결과를 반환한다.
 def vote_poll(
     db: Session,
     post_id: int,
@@ -318,28 +320,37 @@ def vote_poll(
     if not target_option:
         raise HTTPException(status_code=404, detail="Poll option not found")
 
-    # 이미 투표했는지 검증
+    # 기존 투표 내역 확인
     existing_vote = db.scalar(
         select(poll_model.PollVote).where(
             poll_model.PollVote.poll_id == post.poll.id,
             poll_model.PollVote.user_id == current_user.id,
         )
     )
+
     if existing_vote:
-        # 기존 투표 선택지 변경 허용
-        existing_vote.option_id = option_id
+        if existing_vote.option_id == option_id:
+            # 2026.08.14 임재준: 동일한 항목을 다시 누르면 투표 취소
+            db.delete(existing_vote)
+            message = "Vote cancelled successfully."
+        else:
+            # 다른 항목을 누르면 선택지 변경
+            existing_vote.option_id = option_id
+            message = "Vote changed successfully."
     else:
+        # 최초 투표 등록
         new_vote = poll_model.PollVote(
             poll_id=post.poll.id,
             option_id=option_id,
             user_id=current_user.id,
         )
         db.add(new_vote)
+        message = "Vote registered successfully."
 
     db.commit()
     updated_post = get_post_or_404(db, post_id)
     return post_schema.PollVoteResponse(
-        message="Vote registered successfully.",
+        message=message,
         poll=to_poll_summary(updated_post.poll, current_user.id),
     )
 
