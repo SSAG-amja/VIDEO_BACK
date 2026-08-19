@@ -1,0 +1,13 @@
+{
+  "dataset_version": "movielens-32m-fixed-v1",
+  "generated_at": "2026-08-20T00:45:28+09:00",
+  "source_archive": "ml-32m.zip",
+  "source_sha256": "d7f8d9558897e9cbf4480d5d30cf0cc6c61f1d527eb5864d56ae36c8ee223e7e",
+  "users": 500,
+  "source_ratings": 182975,
+  "prepared_ratings": 182967,
+  "movies": 18545,
+  "split": "precomputed chronological 70/30 from test_ids.csv",
+  "mapping": "filtered_links.csv videoBackMovieId",
+  "duplicate_policy": "keep latest per split; exclude train movies from test"
+}

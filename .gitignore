@@ -8,8 +8,9 @@ failed_sync_ids.jsonl
 *.pyc"
 .DS_Store
 test/
-test*
-data/
+/data/
+/app/data/
+/evaluation_results/
 assets/ml_models/*
 !assets/ml_models/.gitkeep
 !assets/ml_models/README.md
