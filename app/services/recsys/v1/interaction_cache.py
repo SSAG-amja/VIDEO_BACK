@@ -55,3 +55,19 @@ def get_blacklisted_movie_ids(redis: Redis, user_id: int) -> set[int]:
     except RedisError:
         logger.warning("redis blacklist unavailable user_id=%s", user_id, exc_info=True)
         return set()
+
+
+def remove_blacklisted_movie_ids(redis: Redis, user_id: int, movie_ids: set[int]) -> bool:
+    if not movie_ids:
+        return True
+    try:
+        redis.srem(_blacklist_key(user_id), *movie_ids)
+        return True
+    except RedisError:
+        logger.warning(
+            "redis blacklist cleanup unavailable user_id=%s movie_ids=%s",
+            user_id,
+            sorted(movie_ids),
+            exc_info=True,
+        )
+        return False

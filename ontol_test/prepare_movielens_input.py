@@ -26,7 +26,7 @@ def main() -> None:
     parser.add_argument(
         "--neutral-action",
         choices=["watched", "ignore"],
-        default="watched",
+        default="ignore",
         help="How to handle ratings between pass-max and pin-min",
     )
     parser.add_argument("--limit", type=int, default=100)

@@ -7,6 +7,7 @@ class UserProfile:
     user_id: int
     profile_type: str
     favorite_movie_ids: set[int] = field(default_factory=set)
+    saved_movie_ids: set[int] = field(default_factory=set)
     subscribed_ott_ids: set[int] = field(default_factory=set)
     genre_scores: dict[int, float] = field(default_factory=dict)
     keyword_scores: dict[int, float] = field(default_factory=dict)

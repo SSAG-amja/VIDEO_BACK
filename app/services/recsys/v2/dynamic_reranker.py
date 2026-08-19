@@ -23,4 +23,7 @@ def rerank_for_session(candidates: list[CandidateScore], *, session_profile: Ses
                 metadata=candidate.metadata,
             )
         )
-    return sorted(adjusted, key=lambda item: item.score, reverse=True)
+    return sorted(
+        adjusted,
+        key=lambda item: (-round(item.score, 12), item.movie_id),
+    )

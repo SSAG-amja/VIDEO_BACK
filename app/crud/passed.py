@@ -36,6 +36,18 @@ def get_passed_movies(db: Session, user_id: int, limit: int) -> passed_schema.Pa
     )
 
 
+def load_unwatched_passed_movie_ids(db: Session, user_id: int) -> set[int]:
+    return set(
+        db.scalars(
+            select(mapping_model.UserInteraction.movie_id).where(
+                mapping_model.UserInteraction.user_id == user_id,
+                mapping_model.UserInteraction.is_passed.is_(True),
+                mapping_model.UserInteraction.is_watched.is_(False),
+            )
+        ).all()
+    )
+
+
 # 2026.05.13 박현식
 # 현재 사용자의 모든 관심없음 상태를 false로 변경한다.
 def clear_passed_movies(db: Session, user_id: int) -> int:

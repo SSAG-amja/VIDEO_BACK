@@ -10,14 +10,20 @@ from sqlalchemy import text
 
 from app.crud.recsys.ontology import get_active_build
 from app.db.session import SessionLocal
+from app.services.recsys.v2.config import FALLBACK_NEGATIVE_PENALTY_SCALE
 from app.services.recsys.v2.candidate_generator import (
-    build_feature_values_sql,
+    GRAPH_FEATURE_TYPES,
     build_profile_feature_rows,
+    candidate_quality_params,
+    capped_negative_penalty,
+    load_candidate_feature_details,
+    load_negative_feature_matches,
+    movie_basic_quality_filter_sql,
     normalize_popularity,
     normalize_rating,
 )
 from app.services.recsys.v2.ranker import rank_candidates
-from app.services.recsys.v2.schemas import CandidateScore, SessionProfile
+from app.services.recsys.v2.schemas import CandidateScore, SessionProfile, UserProfile
 from app.services.recsys.v2.scorer import score_candidates
 from ontol_test.prepare_movielens_input import (
     build_recommend_input,
@@ -41,7 +47,7 @@ def main() -> None:
     parser.add_argument("--pin-min", type=float, default=3.5)
     parser.add_argument("--pass-max", type=float, default=1.5)
     parser.add_argument("--saved-rating", type=float, default=5.0)
-    parser.add_argument("--neutral-action", choices=["watched", "ignore"], default="watched")
+    parser.add_argument("--neutral-action", choices=["watched", "ignore"], default="ignore")
     parser.add_argument("--seed", type=int, default=42, help="Kept for compatibility; timestamp split does not use it")
     parser.add_argument("--max-users", type=int, default=None, help="Optional smoke-test cap")
     parser.add_argument("--start-user-id", type=int, default=None)
@@ -326,24 +332,50 @@ def rank_holdout_candidates(
 ) -> list[CandidateScore]:
     profile = build_profile_from_payload(db, payload)
     session_profile = SessionProfile(feed_session_key="movielens_holdout_eval")
-    holdout_movie_ids = sorted({int(item["db_movie_id"]) for item in holdout_items})
+    holdout_movie_ids = list(
+        dict.fromkeys(int(item["db_movie_id"]) for item in holdout_items)
+    )
     if not holdout_movie_ids:
         return []
 
     active_build = get_active_build(db)
     feature_rows = build_profile_feature_rows(profile)
     if active_build is None or not feature_rows:
-        candidates = build_quality_only_holdout_candidates(db, holdout_movie_ids)
+        candidates = build_quality_only_holdout_candidates(
+            db,
+            holdout_movie_ids,
+            build_id=int(active_build.id) if active_build else None,
+            profile=profile,
+        )
     else:
         candidates = build_graph_holdout_candidates(
             db,
             build_id=int(active_build.id),
             feature_rows=feature_rows,
             candidate_movie_ids=holdout_movie_ids,
+            profile=profile,
         )
 
     scored = score_candidates(candidates, profile=profile, session_profile=session_profile)
-    return rank_candidates(scored)
+    ranked = rank_candidates(scored)
+    ranked_movie_ids = {candidate.movie_id for candidate in ranked}
+    filtered_tail = [
+        CandidateScore(
+            movie_id=movie_id,
+            score=0.0,
+            source="quality_filtered_holdout_tail",
+            source_scores={},
+            explanation_tags=[],
+            metadata={
+                "candidate_pool": "holdout",
+                "quality_eligible": False,
+                "profile_type": profile.profile_type,
+            },
+        )
+        for movie_id in holdout_movie_ids
+        if movie_id not in ranked_movie_ids
+    ]
+    return [*ranked, *filtered_tail]
 
 
 def build_graph_holdout_candidates(
@@ -352,112 +384,178 @@ def build_graph_holdout_candidates(
     build_id: int,
     feature_rows: list[tuple[str, str, float]],
     candidate_movie_ids: list[int],
+    profile: UserProfile,
 ) -> list[CandidateScore]:
-    values_sql, params = build_feature_values_sql(feature_rows)
-    rows = db.execute(
-        text(
-            f"""
-            WITH profile_feature(node_type, ref_id, profile_score) AS (
-                VALUES {values_sql}
-            ),
-            graph_matches AS (
-                SELECT
-                    movie_node.ref_id::integer AS movie_id,
-                    sum(edge.weight * edge.confidence * profile_feature.profile_score) AS graph_score,
-                    count(DISTINCT feature_node.id) AS matched_feature_count,
-                    json_object_agg(
-                        profile_feature.node_type || ':' || profile_feature.ref_id,
-                        edge.weight * edge.confidence * profile_feature.profile_score
-                    ) AS matched_features
-                FROM profile_feature
-                JOIN ontology_nodes feature_node
-                    ON feature_node.build_id = :build_id
-                    AND feature_node.node_type = profile_feature.node_type
-                    AND feature_node.ref_id = profile_feature.ref_id
-                JOIN ontology_edges edge
-                    ON edge.build_id = :build_id
-                    AND edge.target_node_id = feature_node.id
-                    AND edge.relation_type IN (
-                        'has_genre', 'has_keyword', 'has_actor', 'has_director', 'has_theme', 'has_mood'
-                    )
-                JOIN ontology_nodes movie_node
-                    ON movie_node.id = edge.source_node_id
-                    AND movie_node.node_type = 'movie'
-                WHERE movie_node.node_type = 'movie'
-                  AND movie_node.ref_id::integer = ANY(:candidate_movie_ids)
-                GROUP BY movie_node.ref_id
-            )
-            SELECT
-                movie.id AS movie_id,
-                COALESCE(graph_matches.graph_score, 0.0) AS graph_score,
-                movie.popularity,
-                movie.vote_average,
-                COALESCE(graph_matches.matched_feature_count, 0) AS matched_feature_count,
-                COALESCE(graph_matches.matched_features, '{{}}'::json) AS matched_features
-            FROM movies movie
-            LEFT JOIN graph_matches
-                ON graph_matches.movie_id = movie.id
-            WHERE movie.id = ANY(:candidate_movie_ids)
-              AND movie.adult IS FALSE
-            """
-        ),
-        {
-            **params,
-            "build_id": build_id,
-            "candidate_movie_ids": candidate_movie_ids,
-        },
+    rows = load_quality_holdout_movies(db, candidate_movie_ids)
+    eligible_movie_ids = [int(row.movie_id) for row in rows]
+    feature_details = load_candidate_feature_details(
+        db,
+        build_id=build_id,
+        feature_rows=feature_rows,
+        movie_ids=eligible_movie_ids,
+    )
+    negative_matches = load_negative_feature_matches(
+        db,
+        build_id=build_id,
+        movie_ids=eligible_movie_ids,
+        negative_movie_ids=profile.negative_movie_ids,
     )
     candidates: list[CandidateScore] = []
     for row in rows:
+        movie_id = int(row.movie_id)
+        feature_detail = feature_details.get(movie_id, {})
+        negative_match = negative_matches.get(movie_id, {})
+        if not feature_detail:
+            candidates.append(
+                build_quality_holdout_candidate(
+                    row,
+                    negative_match=negative_match,
+                    profile_type=profile.profile_type,
+                )
+            )
+            continue
+        graph_type_scores = {
+            node_type: float((feature_detail.get("graph_type_scores") or {}).get(node_type, 0.0))
+            for node_type in GRAPH_FEATURE_TYPES
+        }
+        graph_type_raw_scores = feature_detail.get("graph_type_raw_scores") or {}
+        graph_score = sum(graph_type_scores.values())
+        graph_raw_score = sum(
+            float(graph_type_raw_scores.get(node_type, 0.0))
+            for node_type in GRAPH_FEATURE_TYPES
+        )
+        negative_raw_score = float(negative_match.get("negative_raw_score", 0.0))
+        negative_penalty = capped_negative_penalty(graph_score, negative_raw_score)
         popularity_score = normalize_popularity(row.popularity)
         rating_score = normalize_rating(row.vote_average)
-        graph_score = float(row.graph_score or 0.0)
+        matched_features: dict[str, float] = {}
+        for node_type in GRAPH_FEATURE_TYPES:
+            matched_features.update(
+                (feature_detail.get("matched_features_by_type") or {}).get(node_type, {}) or {}
+            )
         candidates.append(
             CandidateScore(
-                movie_id=int(row.movie_id),
-                score=graph_score + popularity_score + rating_score,
+                movie_id=movie_id,
+                score=graph_score - negative_penalty + popularity_score + rating_score,
                 source="ontology_holdout_rerank",
                 source_scores={
                     "graph": graph_score,
+                    "graph_raw": graph_raw_score,
+                    **{
+                        f"graph_{node_type}": score
+                        for node_type, score in graph_type_scores.items()
+                    },
+                    "negative_raw": negative_raw_score,
+                    "negative_penalty": -negative_penalty,
                     "popularity": popularity_score,
                     "rating": rating_score,
+                    "ott_bonus": 0.0,
                 },
-                explanation_tags=list((row.matched_features or {}).keys())[:8],
+                explanation_tags=list(matched_features.keys())[:8],
                 metadata={
-                    "matched_feature_count": int(row.matched_feature_count or 0),
+                    "matched_feature_count": int(feature_detail.get("matched_feature_count", 0)),
+                    "matched_feature_counts": {
+                        node_type: int(
+                            (feature_detail.get("matched_feature_counts") or {}).get(node_type, 0)
+                        )
+                        for node_type in GRAPH_FEATURE_TYPES
+                    },
+                    "graph_type_raw_scores": {
+                        node_type: float(graph_type_raw_scores.get(node_type, 0.0))
+                        for node_type in GRAPH_FEATURE_TYPES
+                    },
+                    "negative_feature_count": int(
+                        negative_match.get("negative_feature_count", 0)
+                    ),
+                    "negative_explanation_tags": negative_match.get(
+                        "negative_explanation_tags", []
+                    ),
                     "candidate_pool": "holdout",
+                    "is_subscribed": False,
+                    "profile_type": profile.profile_type,
                 },
             )
         )
     return candidates
 
 
-def build_quality_only_holdout_candidates(db, candidate_movie_ids: list[int]) -> list[CandidateScore]:
-    rows = db.execute(
-        text(
-            """
-            SELECT id, popularity, vote_average
-            FROM movies
-            WHERE id = ANY(:candidate_movie_ids)
-              AND adult IS FALSE
-            """
-        ),
-        {"candidate_movie_ids": candidate_movie_ids},
+def build_quality_only_holdout_candidates(
+    db,
+    candidate_movie_ids: list[int],
+    *,
+    build_id: int | None,
+    profile: UserProfile,
+) -> list[CandidateScore]:
+    rows = load_quality_holdout_movies(db, candidate_movie_ids)
+    negative_matches = load_negative_feature_matches(
+        db,
+        build_id=build_id,
+        movie_ids=[int(row.movie_id) for row in rows],
+        negative_movie_ids=profile.negative_movie_ids,
     )
     return [
-        CandidateScore(
-            movie_id=int(row.id),
-            score=normalize_popularity(row.popularity) + normalize_rating(row.vote_average),
-            source="quality_holdout_rerank",
-            source_scores={
-                "popularity": normalize_popularity(row.popularity),
-                "rating": normalize_rating(row.vote_average),
-            },
-            explanation_tags=["quality"],
-            metadata={"candidate_pool": "holdout"},
+        build_quality_holdout_candidate(
+            row,
+            negative_match=negative_matches.get(int(row.movie_id), {}),
+            profile_type=profile.profile_type,
         )
         for row in rows
     ]
+
+
+def build_quality_holdout_candidate(
+    row,
+    *,
+    negative_match: dict,
+    profile_type: str,
+) -> CandidateScore:
+    popularity_score = normalize_popularity(row.popularity)
+    rating_score = normalize_rating(row.vote_average)
+    base_score = popularity_score + rating_score
+    negative_raw_score = float(negative_match.get("negative_raw_score", 0.0))
+    negative_penalty = capped_negative_penalty(
+        base_score,
+        negative_raw_score * FALLBACK_NEGATIVE_PENALTY_SCALE,
+    )
+    return CandidateScore(
+        movie_id=int(row.movie_id),
+        score=base_score - negative_penalty,
+        source="quality_holdout_rerank",
+        source_scores={
+            "popularity": popularity_score,
+            "rating": rating_score,
+            "negative_raw": negative_raw_score,
+            "negative_penalty": -negative_penalty,
+        },
+        explanation_tags=["quality"],
+        metadata={
+            "candidate_pool": "holdout",
+            "negative_feature_count": int(negative_match.get("negative_feature_count", 0)),
+            "negative_explanation_tags": negative_match.get("negative_explanation_tags", []),
+            "profile_type": profile_type,
+        },
+    )
+
+
+def load_quality_holdout_movies(db, candidate_movie_ids: list[int]):
+    return db.execute(
+        text(
+            f"""
+            SELECT movie.id AS movie_id, movie.popularity, movie.vote_average
+            FROM movies movie
+            JOIN movie_genres movie_genre
+                ON movie_genre.movie_id = movie.id
+            WHERE movie.id = ANY(:candidate_movie_ids)
+              AND {movie_basic_quality_filter_sql("movie")}
+            GROUP BY movie.id
+            HAVING count(DISTINCT movie_genre.genre_id) BETWEEN 1 AND :max_genre_count
+            """
+        ),
+        {
+            "candidate_movie_ids": candidate_movie_ids,
+            **candidate_quality_params(),
+        },
+    ).all()
 
 
 def candidate_to_evaluation_item(

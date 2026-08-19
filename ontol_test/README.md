@@ -19,7 +19,7 @@ MovieLens 평점 데이터를 사용해서 온톨로지 기반 추천 랭킹 품
 
 ```text
 0.5~1.5: pass
-2.0~3.0: watched/neutral
+2.0~3.0: ignore/neutral
 3.5~4.5: pin
 5.0: saved/favorite
 ```

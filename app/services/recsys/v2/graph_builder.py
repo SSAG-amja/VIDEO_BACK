@@ -10,20 +10,12 @@ from app.jobs.recsys.v2.overview_signal_extractor import EXTRACTOR_VERSION
 from app.jobs.recsys.v2.validate_assets import ASSET_DIR
 from app.models.ontology import OntologyBuild
 from app.services.recsys.v2.config import (
+    DIRECT_RELATION_WEIGHTS,
     ENABLE_ACTOR_EDGES_IN_GRAPH_BUILD,
     ENABLE_ACTOR_NODES_IN_GRAPH_BUILD,
     ENABLE_OVERVIEW_DERIVATION_IN_GRAPH_BUILD,
     GRAPH_BUILD_BATCH_SIZE,
 )
-
-
-DIRECT_RELATION_WEIGHTS = {
-    "has_genre": 1.0,
-    "has_keyword": 0.7,
-    "has_actor": 0.5,
-    "has_director": 0.9,
-    "available_on": 0.0,
-}
 
 
 def start_graph_build(db: Session, *, version: str, source_hash: str, properties: dict | None = None) -> OntologyBuild:

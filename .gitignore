@@ -13,3 +13,5 @@ data/
 assets/ml_models/*
 !assets/ml_models/.gitkeep
 !assets/ml_models/README.md
+z_inter_docs/
+z_recsys_docs/ontol_test/inputs/ratings.csv

@@ -8,7 +8,10 @@ from app.crud import interaction as interaction_crud
 from app.models import user as user_model
 from app.schemas import action as action_schema
 from app.schemas.recsys import InteractionAction, InteractionCreate
-from app.services.recsys.v1.interaction_cache import record_interaction_cache
+from app.services.recsys.v1.interaction_cache import (
+    record_interaction_cache,
+    remove_blacklisted_movie_ids,
+)
 
 router = APIRouter()
 
@@ -41,4 +44,6 @@ def update_movie_interaction(
             settings,
             InteractionCreate(user_id=current_user.id, movie_id=movie.id, action=recsys_action),
         )
+    if request.action_type == "pin" and not response.data.is_watched:
+        remove_blacklisted_movie_ids(get_redis(), current_user.id, {movie.id})
     return response
