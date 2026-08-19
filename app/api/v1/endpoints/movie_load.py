@@ -6,11 +6,11 @@ from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.core.config import settings
-from app.core.redis import get_redis
 from app.crud import movie as movie_crud
 from app.crud import movie_detail as movie_detail_crud
 from app.schemas.recsys import RecommendationMode
-from app.services.recsys.recommendation import RecommendationOptions, get_recommendations
+from app.services.recsys.contracts import RecommendationQuery
+from app.services.recsys.registry import get_recommendation_adapter
 
 router = APIRouter()
 
@@ -104,13 +104,10 @@ async def get_shorts_movies(
     shuffle_seed: str | None = Query(None, description="Stable shuffle seed for a refresh session"),
 ):
     offset = (page - 1) * SHORTS_PAGE_SIZE
-    redis = get_redis()
     try:
-        recommendation = get_recommendations(
+        recommendation = get_recommendation_adapter().get_recommendations(
             db,
-            redis,
-            settings,
-            RecommendationOptions(
+            RecommendationQuery(
                 user_id=current_user.id,
                 mode=RecommendationMode.ALL,
                 limit=SHORTS_PAGE_SIZE,

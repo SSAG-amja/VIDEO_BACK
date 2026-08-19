@@ -1,0 +1,24 @@
+from dataclasses import dataclass
+from typing import Protocol
+
+from sqlalchemy.orm import Session
+
+from app.schemas.recsys import RecommendationMode, RecommendationResponse
+
+
+@dataclass(frozen=True, slots=True)
+class RecommendationQuery:
+    user_id: int
+    mode: RecommendationMode
+    limit: int
+    offset: int = 0
+    shuffle_seed: str | None = None
+
+
+class RecommendationEngineAdapter(Protocol):
+    name: str
+    max_page_size: int
+
+    def get_recommendations(self, db: Session, query: RecommendationQuery) -> RecommendationResponse: ...
+
+    def refresh_cold_start(self, db: Session, user_id: int) -> None: ...

@@ -1,16 +1,18 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api import deps
-from app.core.config import settings
-from app.core.redis import get_redis
 from app.crud import movie as movie_crud
 from app.crud import movie_detail as movie_detail_crud
 from app.schemas.movie import MovieSearchResponse, recommendedMovie
 from app.schemas.recsys import RecommendationMode
-from app.services.recsys.recommendation import RecommendationOptions, get_recommendations
+from app.services.recsys.contracts import RecommendationQuery
+from app.services.recsys.registry import get_recommendation_adapter
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # 2026.06.04 김호영
@@ -25,15 +27,14 @@ def get_recommended_movies(
     current_user=Depends(deps.get_current_user),
     page: int = Query(1, ge=1, description="Page number"),
 ):
-    limit = 200
-    skip = (page - 1) * limit
     try:
+        adapter = get_recommendation_adapter()
+        limit = adapter.max_page_size
+        skip = (page - 1) * limit
         try:
-            recommendation = get_recommendations(
+            recommendation = adapter.get_recommendations(
                 db,
-                get_redis(),
-                settings,
-                RecommendationOptions(
+                RecommendationQuery(
                     user_id=current_user.id,
                     mode=RecommendationMode.ALL,
                     limit=limit,
@@ -42,6 +43,12 @@ def get_recommended_movies(
             )
             recommended_movies = movie_crud.get_movies_by_internal_ids_preserve_order(db, recommendation.movie_ids)
         except Exception:
+            logger.warning(
+                "recommendation engine failed engine=%s user_id=%s",
+                adapter.name,
+                current_user.id,
+                exc_info=True,
+            )
             recommended_movies = movie_crud.get_recommended_movies(db, current_user.id, skip=skip, limit=limit)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -10,6 +10,9 @@ from .movie import Movie
 from .ott import Ott
 from .genre import Genre
 from .recommendations import Recommendation
+from .ontology import MovieOverviewSemanticSignal, OntologyBuild, OntologyNode, OntologyEdge
+from .recommendation_runs import RecommendationRun
+from .ontology_recommendations import OntologyRecommendation, RecommendationFeedEvent
 
 from .mapping import (
     UserInteraction, PlaylistMovie, MovieOtt, MovieActor
