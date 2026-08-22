@@ -610,3 +610,76 @@ def delete_post(db: Session, post_id: int, current_user: user_model.User) -> int
     db.delete(post)
     db.commit()
     return post_id
+
+
+from app.models import report as report_model
+
+
+# 2026.08.22 임재준
+# 게시글 신고 내역을 저장하며 동일 유저의 중복 신고를 방지한다.
+def report_post(
+    db: Session,
+    post_id: int,
+    current_user: user_model.User,
+    request: post_schema.ReportCreateRequest,
+) -> post_schema.ReportResponse:
+    post = get_post_or_404(db, post_id)
+    if post.user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot report your own post.")
+
+    existing = db.scalar(
+        select(report_model.Report).where(
+            report_model.Report.reporter_id == current_user.id,
+            report_model.Report.target_type == "post",
+            report_model.Report.post_id == post_id,
+        )
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Already reported this post.")
+
+    report = report_model.Report(
+        reporter_id=current_user.id,
+        target_type="post",
+        post_id=post_id,
+        reason=request.reason.strip(),
+        details=request.details.strip() if request.details else None,
+    )
+    db.add(report)
+    db.commit()
+    return post_schema.ReportResponse(message="Report submitted successfully.", report_id=report.id)
+
+
+# 2026.08.22 임재준
+# 댓글 신고 내역을 저장하며 동일 유저의 중복 신고를 방지한다.
+def report_reply(
+    db: Session,
+    post_id: int,
+    reply_id: int,
+    current_user: user_model.User,
+    request: post_schema.ReportCreateRequest,
+) -> post_schema.ReportResponse:
+    reply = get_reply_or_404(db, post_id, reply_id)
+    if reply.user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot report your own reply.")
+
+    existing = db.scalar(
+        select(report_model.Report).where(
+            report_model.Report.reporter_id == current_user.id,
+            report_model.Report.target_type == "reply",
+            report_model.Report.reply_id == reply_id,
+        )
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Already reported this reply.")
+
+    report = report_model.Report(
+        reporter_id=current_user.id,
+        target_type="reply",
+        reply_id=reply_id,
+        post_id=post_id,
+        reason=request.reason.strip(),
+        details=request.details.strip() if request.details else None,
+    )
+    db.add(report)
+    db.commit()
+    return post_schema.ReportResponse(message="Report submitted successfully.", report_id=report.id)

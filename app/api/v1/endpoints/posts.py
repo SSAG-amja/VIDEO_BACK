@@ -165,3 +165,28 @@ def delete_post(
 ):
     deleted_id = post_crud.delete_post(db, post_id, current_user)
     return {"message": "Post deleted.", "post_id": deleted_id}
+
+
+# 2026.08.22 임재준
+# 게시글 신고 엔드포인트
+@router.post("/{post_id}/report", response_model=post_schema.ReportResponse, tags=["Report"])
+def report_post_endpoint(
+    post_id: int,
+    request: post_schema.ReportCreateRequest,
+    current_user: user_model.User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db),
+):
+    return post_crud.report_post(db, post_id, current_user, request)
+
+
+# 2026.08.22 임재준
+# 댓글 신고 엔드포인트
+@router.post("/{post_id}/replies/{reply_id}/report", response_model=post_schema.ReportResponse, tags=["Report"])
+def report_reply_endpoint(
+    post_id: int,
+    reply_id: int,
+    request: post_schema.ReportCreateRequest,
+    current_user: user_model.User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db),
+):
+    return post_crud.report_reply(db, post_id, reply_id, current_user, request)

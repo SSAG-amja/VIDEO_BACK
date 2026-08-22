@@ -11,6 +11,7 @@ from .ott import Ott
 from .genre import Genre
 from .recommendations import Recommendation
 from app.models.poll import Poll, PollOption, PollVote
+from app.models.report import Report
 
 from .mapping import (
     UserInteraction, PlaylistMovie, MovieOtt, MovieActor
