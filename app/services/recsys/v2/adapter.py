@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.schemas.recsys import RecommendationResponse
-from app.services.recsys.contracts import RecommendationQuery
+from app.services.recsys.contracts import EvaluationEngine, RecommendationQuery
 from app.services.recsys.v2.config import MAX_PAGE_SIZE
 from app.services.recsys.v2.recommender import get_recommendations as get_v2_recommendations
 
@@ -21,3 +21,11 @@ class V2RecommendationAdapter:
 
     def refresh_cold_start(self, db: Session, user_id: int) -> None:
         return None
+
+    def create_evaluation_engine(self) -> EvaluationEngine:
+        from app.services.recsys.v2.evaluation import V2EvaluationEngine
+
+        return V2EvaluationEngine()
+
+
+RecommendationAdapter = V2RecommendationAdapter

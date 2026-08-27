@@ -525,6 +525,36 @@ def movie_score(movie: Movie) -> float:
     return ((movie.popularity or 0.0) * POPULARITY_WEIGHT) + ((movie.vote_average or 0.0) * VOTE_AVERAGE_WEIGHT)
 
 
+def score_content_movie_ids(
+    db: Session,
+    profile: PreferenceProfile,
+    movie_ids: list[int],
+) -> dict[int, float]:
+    """Apply V1 content weights to an explicit offline candidate set."""
+    scores = {
+        int(movie.id): movie_score(movie)
+        for movie in db.scalars(select(Movie).where(Movie.id.in_(movie_ids), Movie.adult.is_(False)))
+    }
+    mappings = (
+        (movie_genres.c.movie_id, movie_genres.c.genre_id, profile.genre_scores, GENRE_MATCH_WEIGHT),
+        (movie_keywords.c.movie_id, movie_keywords.c.keyword_id, profile.keyword_scores, KEYWORD_MATCH_WEIGHT),
+        (movie_directors.c.movie_id, movie_directors.c.director_id, profile.director_scores, DIRECTOR_MATCH_WEIGHT),
+        (MovieActor.movie_id, MovieActor.actor_id, profile.actor_scores, ACTOR_MATCH_WEIGHT),
+    )
+    for movie_column, feature_column, feature_scores, weight in mappings:
+        if not feature_scores:
+            continue
+        rows = db.execute(
+            select(movie_column, feature_column).where(
+                movie_column.in_(movie_ids),
+                feature_column.in_(feature_scores),
+            )
+        )
+        for movie_id, feature_id in rows:
+            scores[int(movie_id)] = scores.get(int(movie_id), 0.0) + feature_scores[int(feature_id)] * weight
+    return scores
+
+
 def select_source_quotas(
     candidates_by_source: dict[str, list[CandidateScore]],
     quotas_by_source: dict[str, int],

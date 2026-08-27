@@ -68,6 +68,74 @@ def build_user_profile(db: Session, user_id: int) -> UserProfile:
     return profile
 
 
+def build_evaluation_profile(
+    db: Session,
+    *,
+    user_id: int,
+    favorite_movie_ids: set[int],
+    pinned_movie_ids: set[int],
+    watched_movie_ids: set[int],
+    passed_movie_ids: set[int],
+) -> UserProfile:
+    """Build the normal V2 feature profile from fixed offline interactions."""
+    positive_movie_ids = favorite_movie_ids | pinned_movie_ids | watched_movie_ids
+    interaction_count = len(pinned_movie_ids | watched_movie_ids | passed_movie_ids)
+    profile = UserProfile(
+        user_id=user_id,
+        profile_type=_profile_type(bool(positive_movie_ids), interaction_count),
+        favorite_movie_ids=favorite_movie_ids,
+        subscribed_ott_ids=set(),
+        excluded_movie_ids=watched_movie_ids | passed_movie_ids,
+        negative_movie_ids=passed_movie_ids,
+    )
+    _add_evaluation_movie_feature_scores(db, profile, favorite_movie_ids, action="favorite")
+    _add_evaluation_movie_feature_scores(db, profile, pinned_movie_ids, action="pinned")
+    _add_evaluation_movie_feature_scores(db, profile, watched_movie_ids, action="watched")
+    theme_scores, mood_scores = load_movie_semantic_scores(db, movie_ids=positive_movie_ids)
+    profile.theme_scores.update(theme_scores)
+    profile.mood_scores.update(mood_scores)
+    return profile
+
+
+def _add_evaluation_movie_feature_scores(
+    db: Session,
+    profile: UserProfile,
+    movie_ids: set[int],
+    *,
+    action: str,
+) -> None:
+    if not movie_ids:
+        return
+    weights = PROFILE_ACTION_FEATURE_WEIGHTS[action]
+    feature_loaders = (
+        ("genre_scores", "genre", load_movie_genre_ids),
+        ("keyword_scores", "keyword", load_movie_keyword_ids),
+        ("actor_scores", "actor", load_movie_actor_ids),
+        ("director_scores", "director", load_movie_director_ids),
+    )
+    movie_id_list = list(movie_ids)
+    for score_attribute, feature_type, loader in feature_loaders:
+        # Fixed-v1 used a set before top-feature truncation; preserve that tie order
+        # so this refactor remains an exact score regression, not a new baseline.
+        add_scores(
+            getattr(profile, score_attribute),
+            set(loader(db, movie_id_list)),
+            weights[feature_type],
+        )
+
+
+def _profile_type(has_profile: bool, interaction_count: int) -> str:
+    if not has_profile:
+        return "no-profile"
+    if interaction_count == 0:
+        return "onboarding-only"
+    if interaction_count < 5:
+        return "sparse-profile"
+    if interaction_count < 20:
+        return "light-profile"
+    return "established-profile"
+
+
 def load_saved_movie_ids(db: Session, user_id: int) -> set[int]:
     stmt = (
         select(PlaylistMovie.movie_id)

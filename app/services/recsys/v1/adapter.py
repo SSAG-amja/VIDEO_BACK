@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.redis import get_redis
 from app.schemas.recsys import ColdStartRequest, RecommendationResponse
-from app.services.recsys.contracts import RecommendationQuery
+from app.services.recsys.contracts import EvaluationEngine, RecommendationQuery
 from app.services.recsys.v1.dynamic_retriever import build_cold_start_pool
 from app.services.recsys.v1.recommendation import RecommendationOptions
 from app.services.recsys.v1.recommendation import get_recommendations as get_v1_recommendations
@@ -29,3 +29,11 @@ class V1RecommendationAdapter:
 
     def refresh_cold_start(self, db: Session, user_id: int) -> None:
         build_cold_start_pool(db, ColdStartRequest(user_id=user_id))
+
+    def create_evaluation_engine(self) -> EvaluationEngine:
+        from app.services.recsys.v1.evaluation import V1EvaluationEngine
+
+        return V1EvaluationEngine()
+
+
+RecommendationAdapter = V1RecommendationAdapter

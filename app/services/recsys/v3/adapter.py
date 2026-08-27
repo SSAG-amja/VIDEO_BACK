@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.schemas.recsys import RecommendationResponse
-from app.services.recsys.contracts import RecommendationQuery
+from app.services.recsys.contracts import EvaluationEngine, RecommendationQuery
 from app.services.recsys.v3.config import MAX_PAGE_SIZE
 from app.services.recsys.v3.recommender import get_recommendations as get_v3_recommendations
 from app.services.recsys.v3.recommender import refresh_cold_start as refresh_v3_cold_start
@@ -23,3 +23,11 @@ class V3RecommendationAdapter:
 
     def refresh_cold_start(self, db: Session, user_id: int) -> None:
         refresh_v3_cold_start(db, user_id=user_id)
+
+    def create_evaluation_engine(self) -> EvaluationEngine:
+        from app.services.recsys.v3.errors import V3NotReadyError
+
+        raise V3NotReadyError("V3 evaluation engine is unavailable until V3 is implemented")
+
+
+RecommendationAdapter = V3RecommendationAdapter

@@ -87,6 +87,187 @@ def generate_candidates(
     return candidates
 
 
+def generate_candidates_for_movie_ids(
+    db: Session,
+    *,
+    profile: UserProfile,
+    movie_ids: list[int],
+) -> tuple[list[CandidateScore], list[int]]:
+    """Apply the V2 candidate score inputs to an explicit, ordered movie set."""
+    ordered_movie_ids = list(dict.fromkeys(int(movie_id) for movie_id in movie_ids))
+    if not ordered_movie_ids:
+        return [], []
+    rows = _load_selected_quality_movies(db, ordered_movie_ids)
+    eligible_movie_ids = [int(row.movie_id) for row in rows]
+    active_build = get_active_build(db)
+    feature_rows = build_profile_feature_rows(profile)
+    if active_build is None or not feature_rows:
+        candidates = _build_selected_quality_candidates(
+            db,
+            rows,
+            build_id=int(active_build.id) if active_build else None,
+            profile=profile,
+        )
+    else:
+        candidates = _build_selected_graph_candidates(
+            db,
+            rows,
+            build_id=int(active_build.id),
+            feature_rows=feature_rows,
+            profile=profile,
+        )
+    eligible = set(eligible_movie_ids)
+    return candidates, [movie_id for movie_id in ordered_movie_ids if movie_id not in eligible]
+
+
+def _build_selected_graph_candidates(
+    db: Session,
+    rows,
+    *,
+    build_id: int,
+    feature_rows: list[tuple[str, str, float]],
+    profile: UserProfile,
+) -> list[CandidateScore]:
+    movie_ids = [int(row.movie_id) for row in rows]
+    feature_details = load_candidate_feature_details(
+        db,
+        build_id=build_id,
+        feature_rows=feature_rows,
+        movie_ids=movie_ids,
+    )
+    negative_matches = load_negative_feature_matches(
+        db,
+        build_id=build_id,
+        movie_ids=movie_ids,
+        negative_movie_ids=profile.negative_movie_ids,
+    )
+    candidates: list[CandidateScore] = []
+    for row in rows:
+        movie_id = int(row.movie_id)
+        feature_detail = feature_details.get(movie_id, {})
+        negative_match = negative_matches.get(movie_id, {})
+        if not feature_detail:
+            candidates.append(
+                _build_selected_quality_candidate(
+                    row,
+                    negative_match=negative_match,
+                    profile_type=profile.profile_type,
+                )
+            )
+            continue
+        graph_type_scores = {
+            node_type: float((feature_detail.get("graph_type_scores") or {}).get(node_type, 0.0))
+            for node_type in GRAPH_FEATURE_TYPES
+        }
+        graph_type_raw_scores = feature_detail.get("graph_type_raw_scores") or {}
+        graph_score = sum(graph_type_scores.values())
+        graph_raw_score = sum(
+            float(graph_type_raw_scores.get(node_type, 0.0))
+            for node_type in GRAPH_FEATURE_TYPES
+        )
+        negative_raw_score = float(negative_match.get("negative_raw_score", 0.0))
+        negative_penalty = capped_negative_penalty(graph_score, negative_raw_score)
+        popularity_score = normalize_popularity(row.popularity)
+        rating_score = normalize_rating(row.vote_average)
+        matched_features: dict[str, float] = {}
+        for node_type in GRAPH_FEATURE_TYPES:
+            matched_features.update(
+                (feature_detail.get("matched_features_by_type") or {}).get(node_type, {}) or {}
+            )
+        candidates.append(
+            CandidateScore(
+                movie_id=movie_id,
+                score=graph_score - negative_penalty + popularity_score + rating_score,
+                source="ontology_evaluation",
+                source_scores={
+                    "graph": graph_score,
+                    "graph_raw": graph_raw_score,
+                    **{
+                        f"graph_{node_type}": score
+                        for node_type, score in graph_type_scores.items()
+                    },
+                    "negative_raw": negative_raw_score,
+                    "negative_penalty": -negative_penalty,
+                    "popularity": popularity_score,
+                    "rating": rating_score,
+                    "ott_bonus": 0.0,
+                },
+                explanation_tags=list(matched_features.keys())[:8],
+                metadata={"profile_type": profile.profile_type},
+            )
+        )
+    return candidates
+
+
+def _build_selected_quality_candidates(
+    db: Session,
+    rows,
+    *,
+    build_id: int | None,
+    profile: UserProfile,
+) -> list[CandidateScore]:
+    negative_matches = load_negative_feature_matches(
+        db,
+        build_id=build_id,
+        movie_ids=[int(row.movie_id) for row in rows],
+        negative_movie_ids=profile.negative_movie_ids,
+    )
+    return [
+        _build_selected_quality_candidate(
+            row,
+            negative_match=negative_matches.get(int(row.movie_id), {}),
+            profile_type=profile.profile_type,
+        )
+        for row in rows
+    ]
+
+
+def _build_selected_quality_candidate(
+    row,
+    *,
+    negative_match: dict,
+    profile_type: str,
+) -> CandidateScore:
+    popularity_score = normalize_popularity(row.popularity)
+    rating_score = normalize_rating(row.vote_average)
+    base_score = popularity_score + rating_score
+    negative_raw_score = float(negative_match.get("negative_raw_score", 0.0))
+    negative_penalty = capped_negative_penalty(
+        base_score,
+        negative_raw_score * FALLBACK_NEGATIVE_PENALTY_SCALE,
+    )
+    return CandidateScore(
+        movie_id=int(row.movie_id),
+        score=base_score - negative_penalty,
+        source="quality_evaluation",
+        source_scores={
+            "popularity": popularity_score,
+            "rating": rating_score,
+            "negative_raw": negative_raw_score,
+            "negative_penalty": -negative_penalty,
+        },
+        explanation_tags=["quality"],
+        metadata={"profile_type": profile_type},
+    )
+
+
+def _load_selected_quality_movies(db: Session, movie_ids: list[int]):
+    return db.execute(
+        text(
+            f"""
+            SELECT movie.id AS movie_id, movie.popularity, movie.vote_average
+            FROM movies movie
+            JOIN movie_genres movie_genre ON movie_genre.movie_id = movie.id
+            WHERE movie.id = ANY(:movie_ids)
+              AND {movie_basic_quality_filter_sql("movie")}
+            GROUP BY movie.id
+            HAVING count(DISTINCT movie_genre.genre_id) BETWEEN 1 AND :max_genre_count
+            """
+        ),
+        {"movie_ids": movie_ids, **candidate_quality_params()},
+    ).all()
+
+
 def build_profile_feature_rows(profile: UserProfile) -> list[tuple[str, str, float]]:
     rows: list[tuple[str, str, float]] = []
     rows.extend(top_feature_rows("genre", profile.genre_scores, limit=PROFILE_FEATURE_LIMITS["genre"]))
