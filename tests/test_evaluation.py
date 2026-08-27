@@ -1,8 +1,18 @@
-import unittest
+import gzip
+import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
+import unittest
+from unittest.mock import patch
 
 from evaluation.benchmark import evaluate_ranking, load_cohorts
 from evaluation.contracts import Interaction, RecommendationInput
+from evaluation.datasets import resolve_dataset, resolve_movie_identities
+from evaluation.engine import get_evaluation_engine
+from app.services.recsys.registry import (
+    UnsupportedRecommendationEngineError,
+    get_recommendation_adapter,
+)
 
 
 class FixedCohortTest(unittest.TestCase):
@@ -45,6 +55,69 @@ class ContractTest(unittest.TestCase):
         )
         self.assertFalse(hasattr(input_data, "ground_truth"))
         self.assertEqual(input_data.candidate_movie_ids, (20, 30))
+
+    def test_evaluation_engine_delegates_to_the_selected_app_adapter(self) -> None:
+        evaluator = object()
+
+        class Adapter:
+            def create_evaluation_engine(self):
+                return evaluator
+
+        with patch("evaluation.engine.get_recommendation_adapter", return_value=Adapter()):
+            self.assertIs(get_evaluation_engine("v2"), evaluator)
+
+    def test_dataset_versions_use_isolated_paths(self) -> None:
+        fixed_v1 = resolve_dataset("fixed-v1")
+        fixed_v2 = resolve_dataset("fixed-v2")
+        self.assertNotEqual(fixed_v1.cases, fixed_v2.cases)
+        self.assertNotEqual(fixed_v1.movie_identities, fixed_v2.movie_identities)
+        self.assertEqual(fixed_v2.cases.name, "cases.jsonl.gz")
+        self.assertEqual(fixed_v2.cases.parent.name, "fixed-v2")
+
+    def test_movie_identity_resolution_remaps_changed_internal_ids(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "movie_identities.json.gz"
+            with gzip.open(path, "wt", encoding="utf-8") as output:
+                json.dump(
+                    {
+                        "schema_version": 1,
+                        "identity": "tmdb_id",
+                        "movies": [[10, 101], [20, 202]],
+                    },
+                    output,
+                )
+            with patch(
+                "evaluation.datasets.load_current_movie_ids_by_tmdb",
+                return_value={101: 9001, 202: 9002},
+            ):
+                resolution = resolve_movie_identities(path, {10, 20})
+        self.assertEqual(resolution.movie_id_map, {10: 9001, 20: 9002})
+        self.assertEqual(resolution.metadata["remapped_movie_count"], 2)
+
+    def test_movie_identity_resolution_rejects_movies_missing_from_db(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "movie_identities.json.gz"
+            with gzip.open(path, "wt", encoding="utf-8") as output:
+                json.dump(
+                    {
+                        "schema_version": 1,
+                        "identity": "tmdb_id",
+                        "movies": [[10, 101], [20, 202]],
+                    },
+                    output,
+                )
+            with patch(
+                "evaluation.datasets.load_current_movie_ids_by_tmdb",
+                return_value={101: 9001},
+            ):
+                with self.assertRaisesRegex(ValueError, "TMDB movies are missing"):
+                    resolve_movie_identities(path, {10, 20})
+
+    def test_registry_discovers_versioned_adapters_by_convention(self) -> None:
+        self.assertEqual(get_recommendation_adapter("v1").name, "v1")
+        self.assertEqual(get_recommendation_adapter("v2").name, "v2")
+        with self.assertRaises(UnsupportedRecommendationEngineError):
+            get_recommendation_adapter("v999")
 
 
 if __name__ == "__main__":

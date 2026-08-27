@@ -3,11 +3,15 @@
   "generated_at": "2026-08-20T00:45:28+09:00",
   "source_archive": "ml-32m.zip",
   "source_sha256": "d7f8d9558897e9cbf4480d5d30cf0cc6c61f1d527eb5864d56ae36c8ee223e7e",
+  "cases_sha256": "6902dc04e5292a29335732bff3998e7a868bb5941c33f5185379e7aad91b85b9",
+  "cohorts_sha256": "c35f54078419b5db89baf931c48c2a2ad3efc68d71e519fcff1d4630436905b4",
+  "movie_identities_sha256": "ef17dbba5351c4baac25366cafeac2c974204910b184cb6b7f7e46f5dbcdbe47",
   "users": 500,
   "source_ratings": 182975,
   "prepared_ratings": 182967,
   "movies": 18545,
   "split": "precomputed chronological 70/30 from test_ids.csv",
   "mapping": "filtered_links.csv videoBackMovieId",
+  "stable_identity": "tmdb_id",
   "duplicate_policy": "keep latest per split; exclude train movies from test"
 }

@@ -1,52 +1,30 @@
 import argparse
-import importlib
-import os
+from functools import partial
 from pathlib import Path
-from typing import Callable, cast
 
-from evaluation.benchmark import run_benchmark
-from evaluation.contracts import EvaluationEngine
-
-
-DEFAULT_ENGINE_FACTORY = "app.services.recsys.evaluation:get_evaluation_engine"
+from evaluation.benchmark import run_benchmark, summary_path_for
+from evaluation.datasets import resolve_dataset
+from evaluation.engine import get_evaluation_engine
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run all fixed recommendation benchmark cohorts.")
     parser.add_argument("test_name", help="Name used to group this benchmark run")
-    parser.add_argument(
-        "--cases",
-        type=Path,
-        default=Path("evaluation/data/fixed_cases.jsonl.gz"),
-        help="Prepared fixed benchmark cases",
-    )
-    parser.add_argument(
-        "--engine-factory",
-        default=os.getenv("EVALUATION_ENGINE_FACTORY", DEFAULT_ENGINE_FACTORY),
-        help="Import path in module:function form; defaults to the active app engine",
-    )
+    parser.add_argument("--engine", help="Engine version; defaults to RECOMMENDATION_ENGINE")
+    parser.add_argument("--dataset", default="fixed-v1", help="Fixed dataset version")
     parser.add_argument("--output", type=Path, default=Path("evaluation_results"))
     args = parser.parse_args()
-    factory = _load_factory(args.engine_factory)
+    dataset = resolve_dataset(args.dataset)
     output_path = run_benchmark(
         test_name=args.test_name,
-        cases_path=args.cases,
+        cases_path=dataset.cases,
         output_root=args.output,
-        engine_factory=factory,
+        engine_factory=partial(get_evaluation_engine, args.engine),
+        cohorts_path=dataset.cohorts,
+        manifest_path=dataset.manifest,
+        movie_identities_path=dataset.movie_identities,
     )
-    print(output_path)
-
-
-def _load_factory(import_path: str) -> Callable[[], EvaluationEngine]:
-    try:
-        module_name, function_name = import_path.split(":", 1)
-    except ValueError as exc:
-        raise ValueError("engine factory must use module:function format") from exc
-    function = getattr(importlib.import_module(module_name), function_name)
-    if not callable(function):
-        raise TypeError(f"{import_path} is not callable")
-    return cast(Callable[[], EvaluationEngine], function)
-
-
+    print(f"json: {output_path}")
+    print(f"summary: {summary_path_for(output_path)}")
 if __name__ == "__main__":
     main()
