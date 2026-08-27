@@ -13,6 +13,8 @@ from .recommendations import Recommendation
 from .ontology import MovieOverviewSemanticSignal, OntologyBuild, OntologyNode, OntologyEdge
 from .recommendation_runs import RecommendationRun
 from .ontology_recommendations import OntologyRecommendation, RecommendationFeedEvent
+from app.models.poll import Poll, PollOption, PollVote
+from app.models.report import Report
 
 from .mapping import (
     UserInteraction, PlaylistMovie, MovieOtt, MovieActor
