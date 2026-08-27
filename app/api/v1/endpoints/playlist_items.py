@@ -2,9 +2,16 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.core.config import settings
+from app.core.redis import get_redis
+from app.crud import interaction as interaction_crud
 from app.crud import playlist as playlist_crud
 from app.models import user as user_model
+from app.models.mapping import PlaylistMovie
+from app.schemas.recsys import InteractionAction, InteractionCreate
 from app.schemas import playlist as playlist_schema
+from app.services.recsys.profile_change import mark_short_term_positive_removed
+from app.services.recsys.v1.interaction_cache import record_interaction_cache
 
 router = APIRouter()
 
@@ -29,7 +36,23 @@ def add_playlist_movie(
     current_user: user_model.User = Depends(deps.get_current_user),
     db: Session = Depends(deps.get_db),
 ):
+    playlist_crud.get_owned_playlist(db, playlist_id, current_user.id)
+    internal_movie = interaction_crud.get_movie_by_tmdb_id(db, request.movie_id)
+    existed = db.get(
+        PlaylistMovie,
+        {"playlist_id": playlist_id, "movie_id": internal_movie.id},
+    )
     movie = playlist_crud.add_playlist_movie(db, current_user.id, playlist_id, request)
+    if existed is None:
+        record_interaction_cache(
+            get_redis(),
+            settings,
+            InteractionCreate(
+                user_id=current_user.id,
+                movie_id=internal_movie.id,
+                action=InteractionAction.SAVED,
+            ),
+        )
     return {"message": "플레이리스트에 영화가 추가되었습니다.", "data": movie}
 
 
@@ -42,7 +65,15 @@ def delete_playlist_movie(
     current_user: user_model.User = Depends(deps.get_current_user),
     db: Session = Depends(deps.get_db),
 ):
+    playlist_crud.get_owned_playlist(db, playlist_id, current_user.id)
+    internal_movie = interaction_crud.get_movie_by_tmdb_id(db, movie_id)
+    existed = db.get(
+        PlaylistMovie,
+        {"playlist_id": playlist_id, "movie_id": internal_movie.id},
+    )
     movie = playlist_crud.delete_playlist_movie(db, current_user.id, playlist_id, movie_id)
+    if existed is not None:
+        mark_short_term_positive_removed(get_redis(), current_user.id)
     return {"message": "플레이리스트에서 영화가 삭제되었습니다.", "data": movie}
 
 
@@ -55,4 +86,6 @@ def delete_all_playlist_movies(
     db: Session = Depends(deps.get_db),
 ):
     count = playlist_crud.delete_all_playlist_movies(db, current_user.id, playlist_id)
+    if count:
+        mark_short_term_positive_removed(get_redis(), current_user.id)
     return {"message": "플레이리스트의 모든 영화가 삭제되었습니다.", "count": count}

@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.core.redis import get_redis
 from app.crud import watched as watched_crud
 from app.models import user as user_model
 from app.schemas import watched as watched_schema
+from app.services.recsys.profile_change import mark_short_term_positive_removed
 
 router = APIRouter()
 
@@ -28,6 +30,8 @@ def delete_all_watched_movies(
     db: Session = Depends(deps.get_db),
 ):
     count = watched_crud.clear_watched_movies(db, current_user.id)
+    if count:
+        mark_short_term_positive_removed(get_redis(), current_user.id)
     return {"message": "본 영화 목록이 초기화되었습니다.", "count": count}
 
 
@@ -40,4 +44,5 @@ def delete_watched_movie(
     db: Session = Depends(deps.get_db),
 ):
     movie = watched_crud.delete_watched_movie(db, current_user.id, movie_id)
+    mark_short_term_positive_removed(get_redis(), current_user.id)
     return {"message": "본 영화 목록에서 삭제되었습니다.", "data": movie}

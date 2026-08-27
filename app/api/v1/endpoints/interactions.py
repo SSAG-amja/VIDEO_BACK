@@ -6,12 +6,14 @@ from app.core.config import settings
 from app.core.redis import get_redis
 from app.crud import interaction as interaction_crud
 from app.models import user as user_model
+from app.models.mapping import PlaylistMovie, UserInteraction
 from app.schemas import action as action_schema
 from app.schemas.recsys import InteractionAction, InteractionCreate
 from app.services.recsys.v1.interaction_cache import (
     record_interaction_cache,
     remove_blacklisted_movie_ids,
 )
+from app.services.recsys.profile_change import mark_short_term_positive_removed
 
 router = APIRouter()
 
@@ -19,6 +21,7 @@ RECSYS_ACTION_BY_BACK_ACTION = {
     "pin": InteractionAction.PINNED,
     "passed": InteractionAction.PASSED,
     "watched": InteractionAction.WATCHED,
+    "saved": InteractionAction.SAVED,
 }
 
 
@@ -36,14 +39,28 @@ def update_movie_interaction(
     db: Session = Depends(deps.get_db),
 ):
     movie = interaction_crud.get_movie_by_tmdb_id(db, movie_id)
+    previous = db.get(UserInteraction, {"user_id": current_user.id, "movie_id": movie.id})
+    removed_pin = bool(
+        request.action_type == "passed" and previous is not None and previous.is_pinned
+    )
+    saved_already_exists = bool(
+        request.action_type == "saved"
+        and request.playlist_id is not None
+        and db.get(
+            PlaylistMovie,
+            {"playlist_id": request.playlist_id, "movie_id": movie.id},
+        )
+    )
     response = interaction_crud.update_movie_interaction(db, current_user.id, movie_id, request)
     recsys_action = RECSYS_ACTION_BY_BACK_ACTION.get(request.action_type)
-    if recsys_action:
+    if recsys_action and not saved_already_exists:
         record_interaction_cache(
             get_redis(),
             settings,
             InteractionCreate(user_id=current_user.id, movie_id=movie.id, action=recsys_action),
         )
+    if removed_pin:
+        mark_short_term_positive_removed(get_redis(), current_user.id)
     if request.action_type == "pin" and not response.data.is_watched:
         remove_blacklisted_movie_ids(get_redis(), current_user.id, {movie.id})
     return response

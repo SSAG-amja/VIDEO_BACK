@@ -4,7 +4,6 @@ from app.schemas.recsys import RecommendationResponse
 from app.services.recsys.contracts import RecommendationQuery
 from app.services.recsys.v3.config import MAX_PAGE_SIZE
 from app.services.recsys.v3.recommender import get_recommendations as get_v3_recommendations
-from app.services.recsys.v3.recommender import refresh_cold_start as refresh_v3_cold_start
 
 
 class V3RecommendationAdapter:
@@ -22,4 +21,5 @@ class V3RecommendationAdapter:
         )
 
     def refresh_cold_start(self, db: Session, user_id: int) -> None:
-        refresh_v3_cold_start(db, user_id=user_id)
+        # V3 detects onboarding changes and refreshes candidates on the next request.
+        return None

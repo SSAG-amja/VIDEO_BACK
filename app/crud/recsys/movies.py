@@ -1,4 +1,4 @@
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.mapping import MovieOtt, movie_genres
@@ -84,6 +84,42 @@ def load_existing_movie_ids(db: Session, movie_ids: list[int]) -> set[int]:
     if not movie_ids:
         return set()
     return set(db.scalars(select(Movie.id).where(Movie.id.in_(movie_ids))).all())
+
+
+def load_movies_by_ids(db: Session, movie_ids: list[int]) -> list[Movie]:
+    """Load bounded recommendation metadata without preserving caller duplicates."""
+    if not movie_ids:
+        return []
+    return list(db.scalars(select(Movie).where(Movie.id.in_(set(movie_ids)))))
+
+
+def load_quality_fallback_movies(
+    db: Session,
+    *,
+    excluded_movie_ids: set[int],
+    limit: int,
+) -> list[Movie]:
+    if limit <= 0:
+        return []
+    vote_confidence = func.coalesce(Movie.vote_count, 0) / (
+        func.coalesce(Movie.vote_count, 0) + 100.0
+    )
+    reliable_rating = vote_confidence * func.coalesce(Movie.vote_average, 0)
+    stmt = (
+        select(Movie)
+        .where(
+            Movie.adult.is_(False),
+            or_(
+                func.nullif(func.trim(Movie.title_ko), "").is_not(None),
+                func.nullif(func.trim(Movie.title), "").is_not(None),
+            ),
+        )
+        .order_by(desc(reliable_rating), desc(Movie.vote_count), Movie.id)
+        .limit(limit)
+    )
+    if excluded_movie_ids:
+        stmt = stmt.where(Movie.id.not_in(excluded_movie_ids))
+    return list(db.scalars(stmt))
 
 
 # 2026.06.04 김호영

@@ -1,0 +1,57 @@
+{
+  "status": "ok",
+  "serving_bundle_id": "bundle-e37a34d21fe66fd44224a736",
+  "policy_config_version": "v3-policy-s8-v3",
+  "ontology_build_id": 22,
+  "candidate_snapshot_id": "cand-d15b8684735ed00876b01616",
+  "unit_tests_passed": 89,
+  "genre_only_rule_retrieval": {
+    "elapsed_seconds": 2.43,
+    "candidate_count": 100,
+    "trusted_candidate_count": 100,
+    "trusted_vote_count": 20,
+    "minimum_vote_count": 1,
+    "semantic_weight": 0.65,
+    "quality_weight": 0.35
+  },
+  "validation_cases": [
+    {
+      "user_id": 1001,
+      "profile": "official_onboarding_genre_and_favorite",
+      "measurement": "new_process_first_request",
+      "response_seconds": 11.916,
+      "result_count": 20,
+      "favorite_overlap_before": 4,
+      "favorite_overlap_after": 0
+    },
+    {
+      "user_id": 1009,
+      "profile": "defensive_genre_only",
+      "measurement": "same_process_warm_request",
+      "response_seconds": 3.62,
+      "result_count": 20,
+      "previous_top10_vote_count_range": [0, 91],
+      "current_top10_vote_count_range": [1077, 16081],
+      "current_final_top20_min_vote_count": 797,
+      "current_final_top20_zero_vote_count": 0,
+      "current_top10_titles": [
+        "싸이코",
+        "겟 아웃",
+        "유전",
+        "셔터",
+        "컨저링 3: 악마가 시켰다",
+        "디 아더스",
+        "베스와 베라",
+        "살인소설",
+        "딥 레드",
+        "아이 씨 유"
+      ]
+    }
+  ],
+  "notes": [
+    "Onboarding favorites are excluded from both feature-only model and ontology rule candidates.",
+    "Genre-only quality tiers are applied before the bounded top-100 ontology analysis.",
+    "Semantic raw, overview support, genre relevance, reliable quality, and rule selection scores remain separate in diagnostics.",
+    "The 20-vote trust threshold and 0.65/0.35 weights remain provisional tuning inputs."
+  ]
+}

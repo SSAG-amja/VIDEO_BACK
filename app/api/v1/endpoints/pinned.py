@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.core.redis import get_redis
 from app.crud import pinned as pinned_crud
 from app.models import user as user_model
 from app.schemas import pinned as pinned_schema
+from app.services.recsys.profile_change import mark_short_term_positive_removed
 
 router = APIRouter()
 
@@ -28,6 +30,8 @@ def delete_all_pinned_movies(
     db: Session = Depends(deps.get_db),
 ):
     count = pinned_crud.clear_pinned_movies(db, current_user.id)
+    if count:
+        mark_short_term_positive_removed(get_redis(), current_user.id)
     return {"message": "핀 보관함이 초기화되었습니다.", "count": count}
 
 
@@ -40,4 +44,5 @@ def delete_pinned_movie(
     db: Session = Depends(deps.get_db),
 ):
     movie = pinned_crud.delete_pinned_movie(db, current_user.id, movie_id)
+    mark_short_term_positive_removed(get_redis(), current_user.id)
     return {"message": "핀 보관함에서 삭제되었습니다.", "data": movie}

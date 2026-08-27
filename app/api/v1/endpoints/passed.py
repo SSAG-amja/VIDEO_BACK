@@ -9,6 +9,7 @@ from app.models.mapping import UserInteraction
 from app.models import user as user_model
 from app.schemas import passed as passed_schema
 from app.services.recsys.v1.interaction_cache import remove_blacklisted_movie_ids
+from app.services.recsys.profile_change import mark_recommendation_profile_changed
 
 router = APIRouter()
 
@@ -34,6 +35,8 @@ def delete_all_passed_movies(
     blacklist_removal_ids = passed_crud.load_unwatched_passed_movie_ids(db, current_user.id)
     count = passed_crud.clear_passed_movies(db, current_user.id)
     remove_blacklisted_movie_ids(get_redis(), current_user.id, blacklist_removal_ids)
+    if count:
+        mark_recommendation_profile_changed(get_redis(), current_user.id)
     return {"message": "관심없음 목록이 초기화되었습니다.", "count": count}
 
 
@@ -50,4 +53,5 @@ def delete_passed_movie(
     movie = passed_crud.delete_passed_movie(db, current_user.id, movie_id)
     if interaction is None or not interaction.is_watched:
         remove_blacklisted_movie_ids(get_redis(), current_user.id, {internal_movie.id})
+    mark_recommendation_profile_changed(get_redis(), current_user.id)
     return {"message": "관심없음 목록에서 삭제되었습니다.", "data": movie}

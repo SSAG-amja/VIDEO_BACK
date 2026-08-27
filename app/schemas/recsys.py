@@ -12,6 +12,7 @@ class InteractionAction(StrEnum):
     PASSED = "passed"
     PINNED = "pinned"
     WATCHED = "watched"
+    SAVED = "saved"
 
 
 class RecommendationResponse(BaseModel):

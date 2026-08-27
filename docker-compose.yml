@@ -3,6 +3,7 @@ services:
     image: postgres:16
     container_name: PINLM_DB
     restart: always
+    shm_size: 256mb
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -166,6 +167,34 @@ services:
       WORKER_MIN_CANDIDATE_COUNT: ${WORKER_MIN_CANDIDATE_COUNT:-100}
       WORKER_RETRY_ATTEMPTS: ${WORKER_RETRY_ATTEMPTS:-3}
       SUBSCRIBED_OTT_BONUS: ${SUBSCRIBED_OTT_BONUS:-1.15}
+    volumes:
+      - .:/back
+
+  recsys-v3-short-term-worker:
+    profiles: ["v3"]
+    image: pinlm-back
+    container_name: PINLM_RECSYS_V3_SHORT_TERM_WORKER
+    restart: always
+    command: python -m app.jobs.recsys.v3.workers.short_term_candidate_worker
+    depends_on:
+      back-seeder:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      SECRET_KEY: ${SECRET_KEY}
+      ALGORITHM: ${ALGORITHM}
+      TOKEN_EXP_TIME: ${TOKEN_EXP_TIME}
+      TMDB_API_KEY: ${TMDB_API_KEY}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: ${REDIS_DB:-0}
+      RECOMMENDATION_ENGINE: v3
     volumes:
       - .:/back
 

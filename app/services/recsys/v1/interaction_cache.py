@@ -1,10 +1,15 @@
 import logging
+from datetime import datetime
 
 from redis import Redis
 from redis.exceptions import RedisError
 
 from app.core.config import Settings
 from app.schemas.recsys import InteractionAction, InteractionCreate
+from app.services.recsys.profile_change import (
+    mark_recommendation_profile_changed,
+    record_short_term_positive_change,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -12,6 +17,11 @@ logger = logging.getLogger(__name__)
 BLACKLIST_ACTIONS = {
     InteractionAction.PASSED,
     InteractionAction.WATCHED,
+}
+SHORT_TERM_POSITIVE_ACTION_WEIGHTS = {
+    InteractionAction.PINNED: 1.0,
+    InteractionAction.SAVED: 1.0,
+    InteractionAction.WATCHED: 0.75,
 }
 
 
@@ -25,7 +35,13 @@ def _recent_action_key(user_id: int) -> str:
 
 # 2026.06.04 김호영
 # 사용자 행동을 Redis 최근 행동/blacklist cache에 기록하되 실패해도 DB 저장 성공을 막지 않는다.
-def record_interaction_cache(redis: Redis, settings: Settings, payload: InteractionCreate) -> bool:
+def record_interaction_cache(
+    redis: Redis,
+    settings: Settings,
+    payload: InteractionCreate,
+    *,
+    occurred_at: datetime | None = None,
+) -> bool:
     try:
         redis.lpush(_recent_action_key(payload.user_id), f"{payload.action.value}:{payload.movie_id}")
         redis.ltrim(_recent_action_key(payload.user_id), 0, settings.REDIS_RECENT_ACTION_LIMIT - 1)
@@ -34,7 +50,16 @@ def record_interaction_cache(redis: Redis, settings: Settings, payload: Interact
             key = _blacklist_key(payload.user_id)
             redis.sadd(key, payload.movie_id)
             redis.expire(key, settings.REDIS_BLACKLIST_TTL_SECONDS)
-        return True
+        positive_weight = SHORT_TERM_POSITIVE_ACTION_WEIGHTS.get(payload.action)
+        if positive_weight is not None:
+            return record_short_term_positive_change(
+                redis,
+                user_id=payload.user_id,
+                movie_id=payload.movie_id,
+                weight=positive_weight,
+                occurred_at=occurred_at,
+            )
+        return mark_recommendation_profile_changed(redis, payload.user_id)
     except RedisError:
         logger.warning(
             "redis interaction cache unavailable user_id=%s movie_id=%s action=%s",
