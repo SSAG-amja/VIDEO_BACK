@@ -30,6 +30,13 @@ from app.models.ontology import OntologyBuild
 from app.models.playlist import Playlist
 from app.models.user import User
 from app.services.recsys.v3.config import (
+    PREFERENCE_SHIFT_DISTANCE_NOISE_FLOOR,
+    PREFERENCE_SHIFT_DRIFT_DISTANCE_THRESHOLD,
+    PREFERENCE_SHIFT_MIN_HISTORICAL_MOVIES,
+    PREFERENCE_SHIFT_PRIMARY_FAMILY_WEIGHTS,
+    PREFERENCE_SHIFT_PRIMARY_GROUP_WEIGHT,
+    PREFERENCE_SHIFT_SECONDARY_FAMILY_WEIGHTS,
+    PREFERENCE_SHIFT_SECONDARY_ONLY_CAP,
     PROFILE_ACTION_STRENGTHS,
     PROFILE_EVIDENCE_PER_FEATURE,
     PROFILE_FEATURE_SCORE_CAPS,
@@ -37,6 +44,9 @@ from app.services.recsys.v3.config import (
     SHORT_TERM_FEATURE_TOP_K,
     SHORT_TERM_HALF_LIFE_DAYS,
     SHORT_TERM_MAX_ACTIONS,
+    SHORT_TERM_MIN_DISTINCT_POSITIVE_MOVIES,
+    SHORT_TERM_STRONG_MIN_DISTINCT_MOVIES,
+    SHORT_TERM_STRONG_MIN_WEIGHT,
     SHORT_TERM_WINDOW_DAYS,
 )
 from app.services.recsys.v3.domain.catalog import eligible_catalog_movie_clause
@@ -58,6 +68,7 @@ from app.services.recsys.v3.domain.schemas import (
     RuntimeProfileDiagnostics,
     ServingContext,
     ShortTermProfile,
+    ShortTermPreferenceState,
     UserProfileBundle,
 )
 
@@ -120,6 +131,15 @@ class GraphProfileEdge:
             raise ValueError("graph profile edge strength must be between 0 and 1")
         if self.family_size <= 0:
             raise ValueError("graph profile edge family size must be positive")
+
+
+@dataclass(frozen=True, slots=True)
+class PreferenceShiftAssessment:
+    state: ShortTermPreferenceState
+    recent_evidence_confidence: float
+    semantic_distance: float
+    drift_confidence: float
+    components: dict[str, float]
 
 
 @dataclass(slots=True)
@@ -267,10 +287,15 @@ def assemble_user_runtime_profile(
         decay=long_term_decay,
         top_k=PROFILE_FEATURE_TOP_K,
     )
-    drift_confidence, drift_components = calculate_drift_confidence(
+    recent_positive_movie_weights = positive_movie_weights(short_positive_signals)
+    shift_assessment = assess_preference_shift(
         recent_positive=short_positive,
         historical_positive=historical_positive,
-        recent_positive_action_count=len(short_positive_signals),
+        recent_positive_movie_count=len(recent_positive_movie_weights),
+        recent_positive_weight_sum=sum(recent_positive_movie_weights.values()),
+        historical_positive_movie_count=len(
+            {signal.movie_id for signal in historical_positive_signals}
+        ),
         recent_negative_action_count=len(short_negative_signals),
     )
 
@@ -322,7 +347,10 @@ def assemble_user_runtime_profile(
         user_id=user_id,
         as_of=cutoff_at,
         window_action_count=len(short_positive_signals) + len(short_negative_signals),
-        drift_confidence=drift_confidence,
+        drift_confidence=shift_assessment.drift_confidence,
+        preference_state=shift_assessment.state,
+        recent_evidence_confidence=shift_assessment.recent_evidence_confidence,
+        semantic_distance=shift_assessment.semantic_distance,
         recent_positive_movie_ids=frozenset(
             signal.movie_id for signal in short_positive_signals
         ),
@@ -358,7 +386,7 @@ def assemble_user_runtime_profile(
         feature_uncovered_movie_ids=feature_uncovered_movie_ids,
         long_term_families=long_positive_diagnostics + long_negative_diagnostics,
         short_term_families=short_positive_diagnostics + short_negative_diagnostics,
-        drift_components=drift_components,
+        drift_components=shift_assessment.components,
     )
     return RuntimeProfileBuildResult(bundle=bundle, diagnostics=diagnostics)
 
@@ -401,7 +429,7 @@ def aggregate_profile_features(
     ontology_build_id: int,
     direction: FeatureDirection,
     as_of: datetime,
-    decay: Callable[[datetime | None, datetime], float],
+    decay: Callable[[SnapshotSignal, datetime], float],
     top_k: dict[str, int],
 ) -> tuple[tuple[ProfileFeatureSignal, ...], tuple[ProfileFamilyDiagnostics, ...]]:
     accumulators: dict[tuple[FeatureName, str], _FeatureAccumulator] = defaultdict(
@@ -413,7 +441,7 @@ def aggregate_profile_features(
         if direction == FeatureDirection.NEGATIVE and signal.action != SnapshotAction.PASSED:
             raise ValueError("negative profile aggregation requires passed actions")
         action_strength = PROFILE_ACTION_STRENGTHS[signal.action.value]
-        recency = decay(signal.occurred_at, as_of)
+        recency = decay(signal, as_of)
         for edge in edges_by_movie.get(signal.movie_id, ()):
             if edge.ontology_build_id != ontology_build_id:
                 raise ValueError("profile edge belongs to a different ontology build")
@@ -542,6 +570,118 @@ def select_short_term_signals(
     return tuple(eligible[:SHORT_TERM_MAX_ACTIONS])
 
 
+def assess_preference_shift(
+    *,
+    recent_positive: tuple[ProfileFeatureSignal, ...],
+    historical_positive: tuple[ProfileFeatureSignal, ...],
+    recent_positive_movie_count: int,
+    recent_positive_weight_sum: float,
+    historical_positive_movie_count: int,
+    recent_negative_action_count: int,
+) -> PreferenceShiftAssessment:
+    if recent_positive_movie_count < 0 or historical_positive_movie_count < 0:
+        raise ValueError("preference-shift movie counts cannot be negative")
+    if not math.isfinite(recent_positive_weight_sum) or recent_positive_weight_sum < 0:
+        raise ValueError("recent positive weight must be finite and non-negative")
+    if recent_negative_action_count < 0:
+        raise ValueError("recent negative action count cannot be negative")
+
+    count_support = min(
+        1.0,
+        recent_positive_movie_count / SHORT_TERM_MIN_DISTINCT_POSITIVE_MOVIES,
+    )
+    strong_support = (
+        min(1.0, recent_positive_weight_sum / SHORT_TERM_STRONG_MIN_WEIGHT)
+        if recent_positive_movie_count >= SHORT_TERM_STRONG_MIN_DISTINCT_MOVIES
+        else 0.0
+    )
+    evidence_confidence = max(count_support, strong_support)
+    evidence_ready = (
+        recent_positive_movie_count >= SHORT_TERM_MIN_DISTINCT_POSITIVE_MOVIES
+        or (
+            recent_positive_movie_count >= SHORT_TERM_STRONG_MIN_DISTINCT_MOVIES
+            and recent_positive_weight_sum >= SHORT_TERM_STRONG_MIN_WEIGHT
+        )
+    )
+
+    family_distances = {
+        feature: feature_distribution_distance(
+            recent_positive,
+            historical_positive,
+            feature=feature,
+        )
+        for feature in PROFILE_FEATURE_ORDER
+    }
+    primary_distance, primary_count = weighted_group_distance(
+        family_distances,
+        PREFERENCE_SHIFT_PRIMARY_FAMILY_WEIGHTS,
+    )
+    secondary_distance, secondary_count = weighted_group_distance(
+        family_distances,
+        PREFERENCE_SHIFT_SECONDARY_FAMILY_WEIGHTS,
+    )
+    if primary_count:
+        if secondary_count:
+            semantic_distance = (
+                PREFERENCE_SHIFT_PRIMARY_GROUP_WEIGHT * primary_distance
+                + (1.0 - PREFERENCE_SHIFT_PRIMARY_GROUP_WEIGHT) * secondary_distance
+            )
+        else:
+            semantic_distance = primary_distance
+    elif secondary_count:
+        semantic_distance = min(
+            PREFERENCE_SHIFT_SECONDARY_ONLY_CAP,
+            secondary_distance * PREFERENCE_SHIFT_SECONDARY_ONLY_CAP,
+        )
+    else:
+        semantic_distance = 0.0
+
+    history_ready = historical_positive_movie_count >= PREFERENCE_SHIFT_MIN_HISTORICAL_MOVIES
+    if not evidence_ready:
+        state = ShortTermPreferenceState.INACTIVE
+        drift_confidence = 0.0
+    elif not history_ready or not primary_count:
+        state = ShortTermPreferenceState.RECENT_INTEREST
+        drift_confidence = 0.0
+    else:
+        calibrated_distance = max(
+            0.0,
+            (semantic_distance - PREFERENCE_SHIFT_DISTANCE_NOISE_FLOOR)
+            / (1.0 - PREFERENCE_SHIFT_DISTANCE_NOISE_FLOOR),
+        )
+        drift_confidence = min(1.0, evidence_confidence * calibrated_distance)
+        state = (
+            ShortTermPreferenceState.DRIFT
+            if semantic_distance >= PREFERENCE_SHIFT_DRIFT_DISTANCE_THRESHOLD
+            else ShortTermPreferenceState.STABLE
+        )
+
+    components = {
+        "recent_evidence_confidence": round(evidence_confidence, 8),
+        "recent_positive_movie_count": float(recent_positive_movie_count),
+        "recent_positive_weight_sum": round(recent_positive_weight_sum, 8),
+        "recent_negative_action_count": float(recent_negative_action_count),
+        "historical_positive_movie_count": float(historical_positive_movie_count),
+        "primary_semantic_distance": round(primary_distance, 8),
+        "secondary_semantic_distance": round(secondary_distance, 8),
+        "semantic_distance": round(semantic_distance, 8),
+        "distance_noise_floor": PREFERENCE_SHIFT_DISTANCE_NOISE_FLOOR,
+        "comparable_primary_family_count": float(primary_count),
+        "comparable_secondary_family_count": float(secondary_count),
+        "drift_distance_threshold": PREFERENCE_SHIFT_DRIFT_DISTANCE_THRESHOLD,
+    }
+    for feature, distance in family_distances.items():
+        if distance is not None:
+            components[f"{feature.value}_distance"] = round(distance, 8)
+    return PreferenceShiftAssessment(
+        state=state,
+        recent_evidence_confidence=round(evidence_confidence, 8),
+        semantic_distance=round(semantic_distance, 8),
+        drift_confidence=round(drift_confidence, 8),
+        components=components,
+    )
+
+
 def calculate_drift_confidence(
     *,
     recent_positive: tuple[ProfileFeatureSignal, ...],
@@ -549,37 +689,75 @@ def calculate_drift_confidence(
     recent_positive_action_count: int,
     recent_negative_action_count: int,
 ) -> tuple[float, dict[str, float]]:
-    recent_by_family: dict[FeatureName, set[str]] = defaultdict(set)
-    historical_by_family: dict[FeatureName, set[str]] = defaultdict(set)
-    for item in recent_positive:
-        recent_by_family[item.feature].add(item.ref_id)
-    for item in historical_positive:
-        historical_by_family[item.feature].add(item.ref_id)
-    comparable_families = [
-        feature
-        for feature in PROFILE_FEATURE_ORDER
-        if recent_by_family[feature] and historical_by_family[feature]
-    ]
-    novelty = (
-        sum(
-            len(recent_by_family[feature] - historical_by_family[feature])
-            / len(recent_by_family[feature])
-            for feature in comparable_families
-        )
-        / len(comparable_families)
-        if comparable_families
-        else 0.0
+    """Backward-compatible wrapper for callers that only have action counts."""
+    assessment = assess_preference_shift(
+        recent_positive=recent_positive,
+        historical_positive=historical_positive,
+        recent_positive_movie_count=recent_positive_action_count,
+        recent_positive_weight_sum=float(recent_positive_action_count),
+        historical_positive_movie_count=PREFERENCE_SHIFT_MIN_HISTORICAL_MOVIES,
+        recent_negative_action_count=recent_negative_action_count,
     )
-    activity = min(1.0, recent_positive_action_count / 5.0)
-    action_count = recent_positive_action_count + recent_negative_action_count
-    consistency = recent_positive_action_count / action_count if action_count else 0.0
-    confidence = min(1.0, activity * (0.5 + 0.5 * novelty) * consistency)
-    components = {
-        "activity": round(activity, 8),
-        "novelty": round(novelty, 8),
-        "positive_consistency": round(consistency, 8),
+    return assessment.drift_confidence, assessment.components
+
+
+def positive_movie_weights(signals: Iterable[SnapshotSignal]) -> dict[int, float]:
+    weights: dict[int, float] = {}
+    for signal in signals:
+        if signal.action not in POSITIVE_PROFILE_ACTIONS:
+            continue
+        weights[signal.movie_id] = max(
+            weights.get(signal.movie_id, 0.0),
+            PROFILE_ACTION_STRENGTHS[signal.action.value],
+        )
+    return weights
+
+
+def feature_distribution_distance(
+    recent: tuple[ProfileFeatureSignal, ...],
+    historical: tuple[ProfileFeatureSignal, ...],
+    *,
+    feature: FeatureName,
+) -> float | None:
+    recent_scores = {
+        item.ref_id: item.score for item in recent if item.feature == feature and item.score > 0
     }
-    return round(confidence, 8), components
+    historical_scores = {
+        item.ref_id: item.score
+        for item in historical
+        if item.feature == feature and item.score > 0
+    }
+    if not recent_scores or not historical_scores:
+        return None
+    recent_total = sum(recent_scores.values())
+    historical_total = sum(historical_scores.values())
+    refs = set(recent_scores) | set(historical_scores)
+    overlap = sum(
+        min(
+            recent_scores.get(ref_id, 0.0) / recent_total,
+            historical_scores.get(ref_id, 0.0) / historical_total,
+        )
+        for ref_id in refs
+    )
+    return max(0.0, min(1.0, 1.0 - overlap))
+
+
+def weighted_group_distance(
+    family_distances: dict[FeatureName, float | None],
+    weights: dict[str, float],
+) -> tuple[float, int]:
+    comparable = [
+        (feature, distance)
+        for feature, distance in family_distances.items()
+        if distance is not None and feature.value in weights
+    ]
+    if not comparable:
+        return 0.0, 0
+    total_weight = sum(weights[feature.value] for feature, _distance in comparable)
+    distance = sum(
+        weights[feature.value] * float(value) for feature, value in comparable
+    ) / total_weight
+    return distance, len(comparable)
 
 
 def profile_maturity(*, positive_pair_count: int, has_onboarding: bool) -> ProfileMaturity:
@@ -592,14 +770,24 @@ def profile_maturity(*, positive_pair_count: int, has_onboarding: bool) -> Profi
     return ProfileMaturity.ESTABLISHED
 
 
-def long_term_decay(occurred_at: datetime | None, as_of: datetime) -> float:
-    return recency_multiplier(occurred_at, data_cutoff_at=as_of)
+def long_term_decay(signal: SnapshotSignal, as_of: datetime) -> float:
+    return recency_multiplier(
+        signal.occurred_at,
+        data_cutoff_at=as_of,
+        action=signal.action,
+    )
 
 
-def short_term_decay(occurred_at: datetime | None, as_of: datetime) -> float:
-    if occurred_at is None:
+def short_term_decay(signal: SnapshotSignal, as_of: datetime) -> float:
+    if signal.occurred_at is None:
         return 0.0
-    age_seconds = max((normalize_datetime(as_of) - normalize_datetime(occurred_at)).total_seconds(), 0.0)
+    age_seconds = max(
+        (
+            normalize_datetime(as_of)
+            - normalize_datetime(signal.occurred_at)
+        ).total_seconds(),
+        0.0,
+    )
     age_days = age_seconds / 86400.0
     return 0.5 ** (age_days / SHORT_TERM_HALF_LIFE_DAYS)
 

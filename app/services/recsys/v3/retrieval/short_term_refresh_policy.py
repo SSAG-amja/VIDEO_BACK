@@ -3,14 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.services.recsys.profile_change import PendingShortTermRefresh
-
-
-SHORT_TERM_COLLECTION_WINDOW_SECONDS = 60 * 60 * 24
-SHORT_TERM_DEBOUNCE_SECONDS = 30.0
-SHORT_TERM_MAX_WAIT_SECONDS = 120.0
-SHORT_TERM_MIN_DISTINCT_POSITIVE_MOVIES = 3
-SHORT_TERM_STRONG_MIN_DISTINCT_MOVIES = 2
-SHORT_TERM_STRONG_MIN_WEIGHT = 2.0
+from app.services.recsys.v3.config import (
+    SHORT_TERM_DEBOUNCE_SECONDS,
+    SHORT_TERM_MAX_WAIT_SECONDS,
+    SHORT_TERM_MIN_DISTINCT_POSITIVE_MOVIES,
+    SHORT_TERM_STRONG_MIN_DISTINCT_MOVIES,
+    SHORT_TERM_STRONG_MIN_WEIGHT,
+)
 
 
 @dataclass(frozen=True, slots=True)

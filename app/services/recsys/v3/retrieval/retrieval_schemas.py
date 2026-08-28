@@ -14,6 +14,7 @@ from app.services.recsys.v3.domain.feature_registry import FeatureName
 class CandidateSource(StrEnum):
     MODEL = "model"
     FEATURE_ONLY_MODEL = "feature_only_model"
+    LONG_TERM_ONTOLOGY = "long_term_ontology"
     SHORT_TERM_CONTEXT = "short_term_context"
     COLD_START = "cold_start"
     ONTOLOGY_COLD_ITEM = "ontology_cold_item"
@@ -37,6 +38,18 @@ class LongTermCandidate:
 
     def __post_init__(self) -> None:
         _validate_candidate(self.movie_id, self.model_raw_score, self.source_rank)
+
+
+@dataclass(frozen=True, slots=True)
+class LongTermOntologyCandidate:
+    movie_id: int
+    ontology_raw_score: float
+    source_rank: int
+
+    def __post_init__(self) -> None:
+        _validate_candidate(self.movie_id, self.ontology_raw_score, self.source_rank)
+        if self.ontology_raw_score < 0:
+            raise ValueError("long-term ontology candidate score cannot be negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +106,9 @@ class MergedCandidate:
     model_raw_score: float | None = None
     normalized_long_term_score: float = 0.0
     model_source_rank: int | None = None
+    long_term_ontology_raw_score: float | None = None
+    normalized_long_term_ontology_score: float = 0.0
+    long_term_ontology_source_rank: int | None = None
     short_term_raw_score: float | None = None
     normalized_short_term_score: float = 0.0
     short_term_source_rank: int | None = None
@@ -113,6 +129,10 @@ class MergedCandidate:
         for name, value in (
             ("candidate_selection_score", self.candidate_selection_score),
             ("normalized_long_term_score", self.normalized_long_term_score),
+            (
+                "normalized_long_term_ontology_score",
+                self.normalized_long_term_ontology_score,
+            ),
             ("normalized_short_term_score", self.normalized_short_term_score),
             ("normalized_cold_start_score", self.normalized_cold_start_score),
             ("cold_start_overview_support_score", self.cold_start_overview_support_score),
@@ -133,6 +153,11 @@ class MergedCandidate:
             raise ValueError("short-term source and raw score must agree")
         if has_model_source != (self.model_source_rank is not None):
             raise ValueError("model source and rank must agree")
+        has_long_term_ontology = CandidateSource.LONG_TERM_ONTOLOGY in self.sources
+        if has_long_term_ontology != (self.long_term_ontology_raw_score is not None):
+            raise ValueError("long-term ontology source and raw score must agree")
+        if has_long_term_ontology != (self.long_term_ontology_source_rank is not None):
+            raise ValueError("long-term ontology source and rank must agree")
         if (self.short_term_source_rank is None) != (
             CandidateSource.SHORT_TERM_CONTEXT not in self.sources
         ):
@@ -173,6 +198,30 @@ class CandidateMergeDiagnostics:
     selected_model_only_count: int = 0
     selected_short_only_count: int = 0
     selected_overlap_count: int = 0
+    long_term_ontology_source_count: int = 0
+    long_term_ontology_floor_count: int = 0
+    selected_long_term_ontology_count: int = 0
+    selected_long_term_ontology_only_count: int = 0
+    model_ontology_overlap_count: int = 0
+    effective_model_weight: float = 1.0
+    effective_long_term_ontology_weight: float = 0.0
+    model_ontology_agreement: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class LongTermOntologyRetrievalDiagnostics:
+    ontology_build_id: int
+    profile_feature_count: int
+    excluded_movie_count: int
+    candidate_count: int
+    elapsed_seconds: float
+    query_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class LongTermOntologyRetrievalResult:
+    candidates: tuple[LongTermOntologyCandidate, ...]
+    diagnostics: LongTermOntologyRetrievalDiagnostics
 
 
 @dataclass(frozen=True, slots=True)
@@ -359,6 +408,7 @@ class RetrievalPipelineResult:
     merged: CandidateMergeResult
     ontology: OntologyAnalysisResult
     elapsed_seconds: float
+    long_term_ontology: LongTermOntologyRetrievalResult | None = None
     eligibility: CandidateEligibilityDiagnostics = field(
         default_factory=CandidateEligibilityDiagnostics
     )

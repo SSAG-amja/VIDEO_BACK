@@ -15,6 +15,7 @@ from app.services.recsys.v3.retrieval.eligibility_schemas import CandidateEligib
 from app.services.recsys.v3.cold_start.cold_start_retriever import retrieve_cold_start_candidates
 from app.services.recsys.v3.domain.feature_registry import FeatureName
 from app.services.recsys.v3.policy.policy_engine import (
+    _catalog_trust_penalty,
     _negative_penalty,
     _quality_adjustment,
     evaluate_policy_candidates,
@@ -22,6 +23,8 @@ from app.services.recsys.v3.policy.policy_engine import (
 from app.services.recsys.v3.policy.policy_schemas import (
     HardFilterReason,
     MoviePolicyMetadata,
+    PolicyAdjustmentSettings,
+    PolicyComponentWeights,
     PolicyRequestContext,
 )
 from app.services.recsys.v3.retrieval.retrieval_schemas import (
@@ -47,6 +50,7 @@ from app.services.recsys.v3.retrieval.retrieval_schemas import (
     ShortTermRetrievalResult,
 )
 from app.services.recsys.v3.domain.schemas import OttFilterMode
+from app.services.recsys.v3.domain.schemas import ShortTermPreferenceState
 from tests.test_v3_profile_builder import AS_OF
 from tests.test_v3_retrieval import retrieval_profile
 
@@ -60,6 +64,33 @@ def merged(movie_id: int, rank: int, score: float = 0.8) -> MergedCandidate:
         model_raw_score=score,
         normalized_long_term_score=score,
         model_source_rank=rank,
+    )
+
+
+def short_merged(movie_id: int, rank: int, score: float = 0.1) -> MergedCandidate:
+    return MergedCandidate(
+        movie_id=movie_id,
+        sources=(CandidateSource.SHORT_TERM_CONTEXT,),
+        selection_rank=rank,
+        candidate_selection_score=score,
+        normalized_short_term_score=score,
+        short_term_raw_score=score,
+        short_term_source_rank=rank,
+    )
+
+
+def overlap_merged(movie_id: int, rank: int, score: float = 0.9) -> MergedCandidate:
+    return MergedCandidate(
+        movie_id=movie_id,
+        sources=(CandidateSource.MODEL, CandidateSource.SHORT_TERM_CONTEXT),
+        selection_rank=rank,
+        candidate_selection_score=score,
+        model_raw_score=score,
+        normalized_long_term_score=score,
+        model_source_rank=rank,
+        normalized_short_term_score=score,
+        short_term_raw_score=score,
+        short_term_source_rank=rank,
     )
 
 
@@ -113,8 +144,14 @@ def movie(movie_id: int, *, status: str = "개봉") -> Movie:
     )
 
 
-def retrieval(movie_ids: tuple[int, ...], analyses: tuple[CandidateOntologyAnalysis, ...]) -> RetrievalPipelineResult:
-    candidates = tuple(merged(movie_id, rank) for rank, movie_id in enumerate(movie_ids, 1))
+def retrieval(
+    movie_ids: tuple[int, ...],
+    analyses: tuple[CandidateOntologyAnalysis, ...],
+    candidates: tuple[MergedCandidate, ...] | None = None,
+) -> RetrievalPipelineResult:
+    candidate_values = candidates or tuple(
+        merged(movie_id, rank) for rank, movie_id in enumerate(movie_ids, 1)
+    )
     return RetrievalPipelineResult(
         short_term=ShortTermRetrievalResult(
             candidates=(),
@@ -128,12 +165,12 @@ def retrieval(movie_ids: tuple[int, ...], analyses: tuple[CandidateOntologyAnaly
             ),
         ),
         merged=CandidateMergeResult(
-            candidates=candidates,
+            candidates=candidate_values,
             diagnostics=CandidateMergeDiagnostics(
-                long_term_source_count=len(candidates),
+                long_term_source_count=len(candidate_values),
                 short_term_source_count=0,
-                raw_union_count=len(candidates),
-                selected_count=len(candidates),
+                raw_union_count=len(candidate_values),
+                selected_count=len(candidate_values),
                 drift_confidence=0.0,
                 drift_weight=0.0,
                 contextual_floor_count=0,
@@ -468,6 +505,40 @@ class ColdStartTest(unittest.TestCase):
 
 
 class PolicyScoreTest(unittest.TestCase):
+    def test_component_ablation_can_disable_ontology_without_changing_candidates(self) -> None:
+        profile = retrieval_profile()
+        ontology = replace(analysis(1), long_positive_total=2.0)
+        result_input = retrieval((1,), (ontology,))
+        with patch(
+            "app.services.recsys.v3.policy.policy_engine.load_movies_by_ids",
+            return_value=[movie(1)],
+        ):
+            current = evaluate_policy_candidates(
+                object(),
+                retrieval=result_input,
+                profile=profile,
+                context=PolicyRequestContext(as_of=AS_OF, limit=1),
+            )
+            disabled = evaluate_policy_candidates(
+                object(),
+                retrieval=result_input,
+                profile=profile,
+                context=PolicyRequestContext(as_of=AS_OF, limit=1),
+                component_weights=PolicyComponentWeights(personal=1.0, ontology=0.0),
+            )
+
+        self.assertEqual(current.candidates[0].movie_id, disabled.candidates[0].movie_id)
+        self.assertGreater(current.candidates[0].score.ontology_component, 0.0)
+        self.assertEqual(disabled.candidates[0].score.ontology_component, 0.0)
+        self.assertGreater(
+            disabled.candidates[0].score.personal_component,
+            current.candidates[0].score.personal_component,
+        )
+
+    def test_component_weights_must_sum_to_one(self) -> None:
+        with self.assertRaisesRegex(ValueError, "sum to one"):
+            PolicyComponentWeights(personal=0.75, ontology=0.0)
+
     def test_popularity_with_one_vote_cannot_dominate_reliable_quality(self) -> None:
         weak = MoviePolicyMetadata(
             movie_id=1,
@@ -490,11 +561,80 @@ class PolicyScoreTest(unittest.TestCase):
         )
         self.assertLess(_quality_adjustment(weak), _quality_adjustment(reliable))
 
+    def test_catalog_trust_penalty_is_soft_and_proportional(self) -> None:
+        settings = PolicyAdjustmentSettings(
+            catalog_trust_penalty_max=0.05,
+            catalog_trust_vote_threshold=20,
+        )
+        metadata = MoviePolicyMetadata(
+            movie_id=1,
+            adult=False,
+            title="movie",
+            title_ko=None,
+            status="개봉",
+            popularity=10.0,
+            vote_average=7.0,
+            vote_count=0,
+            release_date=None,
+        )
+
+        self.assertEqual(
+            _catalog_trust_penalty(
+                metadata,
+                settings=PolicyAdjustmentSettings(catalog_trust_penalty_max=0.0),
+            ),
+            0.0,
+        )
+        self.assertEqual(_catalog_trust_penalty(metadata), 0.05)
+        self.assertEqual(_catalog_trust_penalty(metadata, settings=settings), 0.05)
+        self.assertEqual(
+            _catalog_trust_penalty(replace(metadata, vote_count=10), settings=settings),
+            0.025,
+        )
+        self.assertEqual(
+            _catalog_trust_penalty(replace(metadata, vote_count=20), settings=settings),
+            0.0,
+        )
+
+    def test_catalog_trust_penalty_does_not_hard_filter_regular_candidates(self) -> None:
+        profile = retrieval_profile()
+        result_input = retrieval((40,), (analysis(40),))
+        zero_vote = movie(40)
+        zero_vote.vote_count = 0
+        settings = PolicyAdjustmentSettings(catalog_trust_penalty_max=0.05)
+        with patch(
+            "app.services.recsys.v3.policy.policy_engine.load_movies_by_ids",
+            return_value=[zero_vote],
+        ):
+            result = evaluate_policy_candidates(
+                object(),
+                retrieval=result_input,
+                profile=profile,
+                context=PolicyRequestContext(as_of=AS_OF, limit=10),
+                adjustment_settings=settings,
+            )
+
+        self.assertEqual([item.movie_id for item in result.candidates], [40])
+        self.assertEqual(result.candidates[0].score.catalog_trust_penalty, 0.05)
+
     def test_semantic_negative_penalty_is_bounded(self) -> None:
         profile = retrieval_profile()
         penalty = _negative_penalty(analysis(1, negative_score=100.0), profile=profile, base_score=1.0)
         self.assertLessEqual(penalty, 0.2)
         self.assertGreater(penalty, 0.0)
+
+    def test_semantic_negative_penalty_can_be_disabled_for_ablation(self) -> None:
+        profile = retrieval_profile()
+        penalty = _negative_penalty(
+            analysis(1, negative_score=100.0),
+            profile=profile,
+            base_score=1.0,
+            settings=PolicyAdjustmentSettings(
+                negative_max_base_ratio=0.0,
+                negative_max_absolute=0.0,
+            ),
+        )
+        self.assertEqual(penalty, 0.0)
 
     def test_repeated_feature_is_deterministically_reranked(self) -> None:
         profile = retrieval_profile()
@@ -524,6 +664,192 @@ class PolicyScoreTest(unittest.TestCase):
         )
         self.assertGreater(first.candidates[2].score.repetition_penalty, 0.0)
         self.assertGreater(first.candidates[2].score.mmr_similarity_penalty, 0.0)
+
+    def test_drift_preserves_short_term_lane_in_final_results(self) -> None:
+        profile = replace(
+            retrieval_profile(),
+            short_term=replace(
+                retrieval_profile().short_term,
+                preference_state=ShortTermPreferenceState.DRIFT,
+                drift_confidence=0.8,
+            ),
+        )
+        movie_ids = (1, 2, 3, 4, 5, 6, 101, 102)
+        candidates = tuple(
+            merged(movie_id, rank, score=0.9)
+            for rank, movie_id in enumerate(movie_ids[:6], 1)
+        ) + tuple(
+            short_merged(movie_id, rank, score=0.1)
+            for rank, movie_id in enumerate(movie_ids[6:], 7)
+        )
+        result_input = retrieval(
+            movie_ids,
+            tuple(analysis(movie_id) for movie_id in movie_ids),
+            candidates=candidates,
+        )
+        rows = [movie(movie_id) for movie_id in movie_ids]
+        with patch("app.services.recsys.v3.policy.policy_engine.load_movies_by_ids", return_value=rows):
+            result = evaluate_policy_candidates(
+                object(),
+                retrieval=result_input,
+                profile=profile,
+                context=PolicyRequestContext(as_of=AS_OF, limit=5),
+            )
+
+        short_count = sum(
+            item.candidate.sources == (CandidateSource.SHORT_TERM_CONTEXT,)
+            for item in result.candidates
+        )
+        self.assertGreaterEqual(short_count, 2)
+        self.assertEqual(result.diagnostics.short_term_lane_target, 2)
+        self.assertEqual(result.diagnostics.selected_short_term_only_count, 2)
+        self.assertGreaterEqual(result.diagnostics.forced_short_term_only_count, 1)
+
+    def test_stable_profile_does_not_force_short_term_lane(self) -> None:
+        profile = replace(
+            retrieval_profile(),
+            short_term=replace(
+                retrieval_profile().short_term,
+                preference_state=ShortTermPreferenceState.STABLE,
+                drift_confidence=0.8,
+            ),
+        )
+        movie_ids = (1, 2, 3, 4, 5, 6, 101, 102)
+        candidates = tuple(
+            merged(movie_id, rank, score=0.9)
+            for rank, movie_id in enumerate(movie_ids[:6], 1)
+        ) + tuple(
+            short_merged(movie_id, rank, score=0.1)
+            for rank, movie_id in enumerate(movie_ids[6:], 7)
+        )
+        result_input = retrieval(
+            movie_ids,
+            tuple(analysis(movie_id) for movie_id in movie_ids),
+            candidates=candidates,
+        )
+        rows = [movie(movie_id) for movie_id in movie_ids]
+        with patch("app.services.recsys.v3.policy.policy_engine.load_movies_by_ids", return_value=rows):
+            result = evaluate_policy_candidates(
+                object(),
+                retrieval=result_input,
+                profile=profile,
+                context=PolicyRequestContext(as_of=AS_OF, limit=5),
+            )
+
+        short_count = sum(
+            CandidateSource.SHORT_TERM_CONTEXT in item.candidate.sources
+            for item in result.candidates
+        )
+        self.assertEqual(short_count, 0)
+
+    def test_drift_uses_available_short_term_candidates_only(self) -> None:
+        profile = replace(
+            retrieval_profile(),
+            short_term=replace(
+                retrieval_profile().short_term,
+                preference_state=ShortTermPreferenceState.DRIFT,
+                drift_confidence=1.0,
+            ),
+        )
+        movie_ids = (1, 2, 3, 4, 5, 6, 101)
+        candidates = tuple(
+            merged(movie_id, rank, score=0.9)
+            for rank, movie_id in enumerate(movie_ids[:6], 1)
+        ) + (short_merged(101, 7, score=0.1),)
+        result_input = retrieval(
+            movie_ids,
+            tuple(analysis(movie_id) for movie_id in movie_ids),
+            candidates=candidates,
+        )
+        rows = [movie(movie_id) for movie_id in movie_ids]
+        with patch("app.services.recsys.v3.policy.policy_engine.load_movies_by_ids", return_value=rows):
+            result = evaluate_policy_candidates(
+                object(),
+                retrieval=result_input,
+                profile=profile,
+                context=PolicyRequestContext(as_of=AS_OF, limit=5),
+            )
+
+        short_count = sum(
+            CandidateSource.SHORT_TERM_CONTEXT in item.candidate.sources
+            for item in result.candidates
+        )
+        self.assertEqual(short_count, 1)
+
+    def test_drift_does_not_bypass_hard_filter_for_short_term_lane(self) -> None:
+        profile = replace(
+            retrieval_profile(),
+            short_term=replace(
+                retrieval_profile().short_term,
+                preference_state=ShortTermPreferenceState.DRIFT,
+                drift_confidence=1.0,
+            ),
+        )
+        movie_ids = (1, 2, 3, 4, 5, 6, 101, 102)
+        candidates = tuple(
+            merged(movie_id, rank, score=0.9)
+            for rank, movie_id in enumerate(movie_ids[:6], 1)
+        ) + tuple(
+            short_merged(movie_id, rank, score=0.1)
+            for rank, movie_id in enumerate(movie_ids[6:], 7)
+        )
+        result_input = retrieval(
+            movie_ids,
+            tuple(analysis(movie_id) for movie_id in movie_ids),
+            candidates=candidates,
+        )
+        rows = [movie(movie_id) for movie_id in movie_ids]
+        rows[-1].adult = True
+        with patch("app.services.recsys.v3.policy.policy_engine.load_movies_by_ids", return_value=rows):
+            result = evaluate_policy_candidates(
+                object(),
+                retrieval=result_input,
+                profile=profile,
+                context=PolicyRequestContext(as_of=AS_OF, limit=5),
+            )
+
+        short_count = sum(
+            CandidateSource.SHORT_TERM_CONTEXT in item.candidate.sources
+            for item in result.candidates
+        )
+        self.assertEqual(short_count, 1)
+        self.assertEqual(result.rejections[0].movie_id, 102)
+        self.assertEqual(result.rejections[0].reasons, (HardFilterReason.ADULT,))
+
+    def test_model_overlap_does_not_satisfy_short_term_only_lane(self) -> None:
+        profile = replace(
+            retrieval_profile(),
+            short_term=replace(
+                retrieval_profile().short_term,
+                preference_state=ShortTermPreferenceState.DRIFT,
+                drift_confidence=1.0,
+            ),
+        )
+        movie_ids = (1, 2, 3, 4, 5, 101, 102)
+        candidates = tuple(
+            merged(movie_id, rank, score=0.9)
+            for rank, movie_id in enumerate(movie_ids[:5], 1)
+        ) + (
+            overlap_merged(101, 6, score=0.9),
+            short_merged(102, 7, score=0.1),
+        )
+        result_input = retrieval(
+            movie_ids,
+            tuple(analysis(movie_id) for movie_id in movie_ids),
+            candidates=candidates,
+        )
+        rows = [movie(movie_id) for movie_id in movie_ids]
+        with patch("app.services.recsys.v3.policy.policy_engine.load_movies_by_ids", return_value=rows):
+            result = evaluate_policy_candidates(
+                object(),
+                retrieval=result_input,
+                profile=profile,
+                context=PolicyRequestContext(as_of=AS_OF, limit=5),
+            )
+
+        self.assertIn(102, {item.movie_id for item in result.candidates})
+        self.assertEqual(result.diagnostics.short_term_lane_target, 1)
+        self.assertEqual(result.diagnostics.selected_short_term_only_count, 1)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 
 이 문서는 V3를 어떤 패키지와 데이터 흐름으로 구현하는지 정의한다.
 
-- 구현 순서: [01 설계 및 구현 순서](01_design_sequence.md)
+- 전체 구조와 파이프라인: [01 아키텍처와 파이프라인](01_architecture_and_pipeline.md)
 - 서비스 정책: [03 추천 정책](03_recommendation_policy.md)
 - 조정값: [04 LightFM 조정 지점](04_lightfm_tuning.md)
 - 그래프 schema: [05 온톨로지 구조](05_ontology_structure.md)
@@ -484,7 +484,7 @@ python -m app.jobs.recsys.v3.serving.serving_bundle_publisher \
   assets/ml_models/v3/candidate_snapshots/{candidate_snapshot_id}
 ```
 
-이 명령 전에 candidate snapshot을 `--publish`로 DB에 게시해야 한다. 실제 model artifact가 없는 현재 DB에서는 활성 pointer를 만들지 않는다.
+이 명령 전에 candidate snapshot을 `--publish`로 DB에 게시해야 한다. 현재 검증된 활성 pointer와 artifact ID는 [README](README.md)에 기록하며, 새 조합은 전체 호환성 검증을 통과한 경우에만 교체한다.
 
 ## 10. 후보 materialization
 

@@ -6,6 +6,15 @@ from datetime import date, datetime
 from enum import StrEnum
 
 from app.services.recsys.v3.config import CANDIDATE_POOL_SIZE, POLICY_BLOCKED_MOVIE_STATUSES
+from app.services.recsys.v3.config import (
+    POLICY_CATALOG_TRUST_PENALTY_MAX,
+    POLICY_CATALOG_TRUST_VOTE_THRESHOLD,
+    POLICY_NEGATIVE_MAX_ABSOLUTE,
+    POLICY_NEGATIVE_MAX_BASE_RATIO,
+    POLICY_ONTOLOGY_COMPONENT_WEIGHT,
+    POLICY_ONTOLOGY_SHORT_TERM_MULTIPLIER,
+    POLICY_PERSONAL_COMPONENT_WEIGHT,
+)
 from app.services.recsys.v3.retrieval.eligibility_schemas import HardFilterReason, HardFilterRejection
 from app.services.recsys.v3.domain.feature_registry import FeatureName
 from app.services.recsys.v3.retrieval.retrieval_schemas import CandidateOntologyAnalysis, MergedCandidate
@@ -16,6 +25,43 @@ class RecommendationReasonType(StrEnum):
     SUBSCRIBED_OTT = "subscribed_ott"
     QUALITY = "quality"
     RECENT_RELEASE = "recent_release"
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyComponentWeights:
+    personal: float = POLICY_PERSONAL_COMPONENT_WEIGHT
+    ontology: float = POLICY_ONTOLOGY_COMPONENT_WEIGHT
+    ontology_short_term_multiplier: float = POLICY_ONTOLOGY_SHORT_TERM_MULTIPLIER
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("personal", self.personal),
+            ("ontology", self.ontology),
+            ("ontology_short_term_multiplier", self.ontology_short_term_multiplier),
+        ):
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+                raise ValueError(f"policy component {name} must be between zero and one")
+        if not math.isclose(self.personal + self.ontology, 1.0, abs_tol=1e-9):
+            raise ValueError("policy personal and ontology weights must sum to one")
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyAdjustmentSettings:
+    catalog_trust_penalty_max: float = POLICY_CATALOG_TRUST_PENALTY_MAX
+    catalog_trust_vote_threshold: int = POLICY_CATALOG_TRUST_VOTE_THRESHOLD
+    negative_max_base_ratio: float = POLICY_NEGATIVE_MAX_BASE_RATIO
+    negative_max_absolute: float = POLICY_NEGATIVE_MAX_ABSOLUTE
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("catalog_trust_penalty_max", self.catalog_trust_penalty_max),
+            ("negative_max_base_ratio", self.negative_max_base_ratio),
+            ("negative_max_absolute", self.negative_max_absolute),
+        ):
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+                raise ValueError(f"policy adjustment {name} must be between zero and one")
+        if self.catalog_trust_vote_threshold <= 0:
+            raise ValueError("catalog trust vote threshold must be positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +131,8 @@ class RecommendationReason:
 class PolicyScoreTrace:
     model_raw_score: float | None
     normalized_long_term_score: float
+    long_term_ontology_raw_score: float | None
+    normalized_long_term_ontology_score: float
     normalized_short_term_score: float
     cold_start_raw_score: float | None
     normalized_cold_start_score: float
@@ -102,11 +150,13 @@ class PolicyScoreTrace:
     recency_adjustment: float
     ott_adjustment: float
     quality_adjustment: float
+    catalog_trust_penalty: float
     negative_preference_penalty: float
     pre_rerank_score: float
     max_selected_similarity: float = 0.0
     repetition_penalty: float = 0.0
     mmr_similarity_penalty: float = 0.0
+    short_term_lane_forced: bool = False
     final_score: float = 0.0
 
     def __post_init__(self) -> None:
@@ -114,6 +164,7 @@ class PolicyScoreTrace:
             value
             for value in (
                 self.normalized_long_term_score,
+                self.normalized_long_term_ontology_score,
                 self.normalized_short_term_score,
                 self.normalized_cold_start_score,
                 self.cold_start_overview_support_score,
@@ -128,6 +179,7 @@ class PolicyScoreTrace:
                 self.recency_adjustment,
                 self.ott_adjustment,
                 self.quality_adjustment,
+                self.catalog_trust_penalty,
                 self.negative_preference_penalty,
                 self.pre_rerank_score,
                 self.max_selected_similarity,
@@ -138,6 +190,11 @@ class PolicyScoreTrace:
         )
         if self.model_raw_score is not None and not math.isfinite(self.model_raw_score):
             raise ValueError("policy model raw score must be finite")
+        if (
+            self.long_term_ontology_raw_score is not None
+            and not math.isfinite(self.long_term_ontology_raw_score)
+        ):
+            raise ValueError("policy long-term ontology raw score must be finite")
         if self.cold_start_raw_score is not None and not math.isfinite(self.cold_start_raw_score):
             raise ValueError("policy cold-start raw score must be finite")
         if self.cold_start_rule_selection_score is not None and (
@@ -170,6 +227,13 @@ class PolicyDiagnostics:
     returned_candidate_count: int
     metadata_query_count: int
     elapsed_seconds: float
+    short_term_lane_ratio: float = 0.0
+    short_term_lane_target: int = 0
+    input_short_term_only_count: int = 0
+    eligible_short_term_only_count: int = 0
+    selected_short_term_only_count: int = 0
+    forced_short_term_only_count: int = 0
+    unselected_short_term_only_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)

@@ -95,14 +95,20 @@ POLICY_REGISTRY = (
     ),
     PolicyDecision(
         policy_id="training_recency_decay",
-        selected_source=PolicySource.V1,
+        selected_source=PolicySource.V3_NEW,
         status=DecisionStatus.PROVISIONAL,
-        selection_reason="Reuse V1's interpretable 30/90/180-day buckets as the initial sample-weight decay.",
-        references=("app/jobs/recsys/v1/worker.py",),
+        selection_reason=(
+            "Use action-specific continuous half-lives so saved/pinned intent fades faster than "
+            "watched history and old positives do not retain a permanent 40 percent floor."
+        ),
+        references=(
+            "app/jobs/recsys/v1/worker.py",
+            "z_v3_docs/10_quality_improvement_record.md",
+        ),
         config_keys=(
-            "TRAINING_RECENCY_BUCKETS",
-            "TRAINING_OLDER_RECENCY_MULTIPLIER",
-            "TRAINING_MISSING_TIMESTAMP_MULTIPLIER",
+            "TRAINING_RECENCY_HALF_LIFE_DAYS",
+            "TRAINING_RECENCY_MIN_MULTIPLIER",
+            "TRAINING_MISSING_TIMESTAMP_MULTIPLIERS",
         ),
         comparison_required=True,
     ),
@@ -144,6 +150,27 @@ POLICY_REGISTRY = (
         status=DecisionStatus.ADOPTED,
         selection_reason="V2 provides the set-based, bounded graph-query pattern absent from V1.",
         references=("app/services/recsys/v2/candidate_generator.py",),
+    ),
+    PolicyDecision(
+        policy_id="long_term_ontology_candidate_retrieval",
+        selected_source=PolicySource.V3_NEW,
+        status=DecisionStatus.PROVISIONAL,
+        selection_reason=(
+            "Retrieve bounded semantic candidates independently from the LightFM pool, then limit "
+            "the model share by top-candidate semantic agreement while keeping both score traces."
+        ),
+        references=(
+            "z_v3_docs/10_quality_improvement_record.md",
+            "app/services/recsys/v3/retrieval/long_term_ontology_retriever.py",
+        ),
+        config_keys=(
+            "LONG_TERM_MODEL_SELECTION_WEIGHT",
+            "LONG_TERM_MODEL_MIN_SELECTION_WEIGHT",
+            "LONG_TERM_ONTOLOGY_SELECTION_WEIGHT",
+            "LONG_TERM_ONTOLOGY_MIN_RATIO",
+            "LONG_TERM_SEMANTIC_AGREEMENT_TOP_K",
+        ),
+        comparison_required=True,
     ),
     PolicyDecision(
         policy_id="ontology_semantic_negative",

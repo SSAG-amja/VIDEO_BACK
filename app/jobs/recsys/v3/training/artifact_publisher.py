@@ -22,7 +22,11 @@ from app.jobs.recsys.v3.training.model_schemas import (
     LoadedIdentityArtifact,
     LoadedHybridArtifact,
 )
-from app.jobs.recsys.v3.training.trainer import hash_json_payload, hash_prediction_scores
+from app.jobs.recsys.v3.training.trainer import (
+    assert_training_result_health,
+    hash_json_payload,
+    hash_prediction_scores,
+)
 from app.jobs.recsys.v3.features.user_feature_builder import (
     hash_ordered_values,
     hash_user_feature_export,
@@ -58,6 +62,7 @@ def publish_identity_artifact(
     result: IdentityTrainingResult,
     output_root: str | Path = "assets/ml_models/v3",
 ) -> Path:
+    assert_training_result_health(result.diagnostics)
     root = Path(output_root)
     root.mkdir(parents=True, exist_ok=True)
     target = root / result.model_build_id
@@ -185,6 +190,7 @@ def publish_hybrid_artifact(
     result: HybridTrainingResult,
     output_root: str | Path = "assets/ml_models/v3",
 ) -> Path:
+    assert_training_result_health(result.diagnostics)
     root = Path(output_root)
     root.mkdir(parents=True, exist_ok=True)
     target = root / result.model_build_id
@@ -285,6 +291,12 @@ def build_hybrid_manifest(
             "user_mapping_hash": user_manifest.user_mapping_hash,
             "user_feature_mapping_hash": user_manifest.feature_mapping_hash,
             "user_parent_item_export_hash": user_manifest.item_feature_export_hash,
+            "item_representation_policy": item_manifest.representation_policy,
+            "user_representation_policy": user_manifest.representation_policy,
+            "item_identity_block_weight": item_manifest.identity_block_weight,
+            "item_semantic_block_weight": item_manifest.semantic_block_weight,
+            "user_identity_block_weight": user_manifest.identity_block_weight,
+            "user_semantic_block_weight": user_manifest.semantic_block_weight,
         },
         "dimensions": {
             "users": len(result.user_ids),

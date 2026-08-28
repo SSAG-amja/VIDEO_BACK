@@ -9,19 +9,26 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.jobs.recsys.v3.training.artifact_publisher import publish_hybrid_artifact
+from app.jobs.recsys.v3.features.feature_representation import (
+    transform_item_feature_export,
+    transform_user_feature_export,
+)
 from app.jobs.recsys.v3.candidates.candidate_schemas import CandidateMaterializationConfig
 from app.jobs.recsys.v3.candidates.candidate_snapshot import materialize_candidate_snapshot
 from app.jobs.recsys.v3.training.model_schemas import LightFMTrainingConfig
 from app.jobs.recsys.v3.serving.serving_bundle_publisher import activate_serving_bundle
 from app.jobs.recsys.v3.training.trainer import train_hybrid_model
+from app.jobs.recsys.v3.diagnostics.online_baseline import validate_response
 from app.schemas.recsys import RecommendationMode
 from app.services.recsys.v3.errors import V3NotReadyError
 from app.services.recsys.v3.retrieval.eligibility_schemas import CandidateEligibilityDiagnostics
 from app.services.recsys.v3.retrieval.lightfm_retriever import (
+    build_feature_only_user_row,
     onboarding_features_changed,
     retrieve_lightfm_candidates,
 )
-from app.services.recsys.v3.recommender import get_recommendations
+from app.services.recsys.v3.serving.model_store import load_runtime_hybrid_artifact
+from app.services.recsys.v3.recommender import _policy_context, get_recommendations
 from app.services.recsys.v3.retrieval.retrieval_schemas import CandidateSource, LongTermCandidate
 from app.services.recsys.v3.serving.serving_bundle import ServingBundleCache
 from tests.test_v3_hybrid_trainer import synthetic_item_export, synthetic_user_export
@@ -189,6 +196,50 @@ class ServingBundleTest(unittest.TestCase):
         self.assertFalse(onboarding_features_changed(bundle.model, matching))
         self.assertTrue(onboarding_features_changed(bundle.model, changed))
 
+    def test_feature_only_row_uses_artifact_semantic_normalization(self) -> None:
+        item_export = transform_item_feature_export(
+            synthetic_item_export(),
+            policy="supported_identity_normalized",
+            supported_movie_ids=frozenset({10, 20, 30, 40}),
+        )
+        user_export = synthetic_user_export(item_export)
+        user_export = transform_user_feature_export(
+            user_export,
+            policy="supported_identity_normalized",
+            identity_weight=4.0,
+            semantic_weight=0.25,
+        )
+        result = train_hybrid_model(
+            synthetic_dataset(),
+            item_export=item_export,
+            user_export=user_export,
+            config=LightFMTrainingConfig(
+                stage="hybrid_ontology",
+                no_components=4,
+                epochs=2,
+                known_user_score_centering_weight=0.9,
+            ),
+        )
+        with tempfile.TemporaryDirectory(prefix="v3-serving-normalized-") as temporary:
+            path = publish_hybrid_artifact(result, temporary)
+            runtime = load_runtime_hybrid_artifact(path)
+            self.assertEqual(runtime.known_user_score_centering_weight, 0.9)
+            self.assertEqual(runtime.mean_user_embedding.shape, (4,))
+            profile = _profile_for_user(101)
+            profile = replace(
+                profile,
+                onboarding=replace(
+                    profile.onboarding,
+                    favorite_movie_ids=frozenset({10}),
+                    genre_ids=frozenset({1}),
+                ),
+            )
+            feature_only = build_feature_only_user_row(runtime, profile)
+            shared = slice(len(runtime.user_ids), runtime.user_features.shape[1])
+            difference = runtime.user_features[0, shared] - feature_only[:, shared]
+            self.assertFalse(difference.nnz)
+            self.assertAlmostEqual(float(feature_only.sum()), 0.25, places=6)
+
     def test_recommender_preserves_response_pagination_contract(self) -> None:
         bundle = ServingBundleCache(self.root).get()
         profile = _profile_for_user(101)
@@ -249,6 +300,16 @@ class ServingBundleTest(unittest.TestCase):
         self.assertEqual(response.count, 2)
         self.assertTrue(response.has_more)
         self.assertEqual(response.source, "v3_model")
+
+    def test_policy_context_ranks_full_pool_before_slicing_pages(self) -> None:
+        profile = _profile_for_user(101)
+        with patch(
+            "app.services.recsys.v3.recommender.get_blacklisted_movie_ids",
+            return_value=set(),
+        ):
+            context = _policy_context(object(), 101, profile)
+
+        self.assertEqual(context.limit, 100)
 
     def test_onboarding_change_persists_feature_only_candidates_on_next_request(self) -> None:
         bundle = ServingBundleCache(self.root).get()
@@ -311,6 +372,45 @@ class ServingBundleTest(unittest.TestCase):
             candidates=feature_only,
             suppress_errors=True,
         )
+
+
+class OnlineBaselineValidationTest(unittest.TestCase):
+    def test_subscribed_only_allows_a_traced_empty_result(self) -> None:
+        violations = validate_response(
+            [],
+            response_count=0,
+            limit=20,
+            excluded=frozenset(),
+            subscribed_ids=set(),
+            diagnostics={
+                "candidate_count": 0,
+                "final_count": 0,
+                "candidate_path": "known_user_hybrid",
+                "score_trace_complete": True,
+                "attribution_valid": True,
+            },
+            allow_empty_candidates=True,
+        )
+
+        self.assertEqual(violations, [])
+
+    def test_all_mode_still_rejects_an_empty_candidate_pool(self) -> None:
+        violations = validate_response(
+            [],
+            response_count=0,
+            limit=20,
+            excluded=frozenset(),
+            subscribed_ids=set(),
+            diagnostics={
+                "candidate_count": 0,
+                "final_count": 0,
+                "candidate_path": "known_user_hybrid",
+                "score_trace_complete": True,
+                "attribution_valid": True,
+            },
+        )
+
+        self.assertEqual(violations, ["candidate_pool_empty"])
 
 
 def _hash_file(path: Path) -> str:

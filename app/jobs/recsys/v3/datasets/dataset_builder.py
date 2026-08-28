@@ -338,7 +338,11 @@ def build_positive_interaction(
         (
             signal,
             TRAINING_ACTION_WEIGHTS[signal.action.value]
-            * recency_multiplier(signal.occurred_at, data_cutoff_at=data_cutoff_at),
+            * recency_multiplier(
+                signal.occurred_at,
+                data_cutoff_at=data_cutoff_at,
+                action=signal.action,
+            ),
         )
         for signal in signals
     ]
@@ -351,7 +355,11 @@ def build_positive_interaction(
     )
     overlap_bonus = sum(
         TRAINING_OVERLAP_CONFIDENCE_BONUS
-        * recency_multiplier(signal.occurred_at, data_cutoff_at=data_cutoff_at)
+        * recency_multiplier(
+            signal.occurred_at,
+            data_cutoff_at=data_cutoff_at,
+            action=signal.action,
+        )
         for signal, _weight in weighted_signals
         if signal.action != representative.action
     )

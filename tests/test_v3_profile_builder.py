@@ -9,8 +9,8 @@ from app.services.recsys.v3.domain.feature_registry import FeatureName
 from app.services.recsys.v3.profiles.profile_builder import (
     GraphProfileEdge,
     aggregate_profile_features,
+    assess_preference_shift,
     assemble_user_runtime_profile,
-    calculate_drift_confidence,
     long_term_decay,
     validate_profile_build,
 )
@@ -18,6 +18,7 @@ from app.services.recsys.v3.domain.schemas import (
     FeatureDirection,
     OttFilterMode,
     ProfileFeatureSignal,
+    ShortTermPreferenceState,
 )
 
 
@@ -67,7 +68,44 @@ def edge(
     )
 
 
+def profile_feature(feature: FeatureName, ref_id: str, score: float = 1.0) -> ProfileFeatureSignal:
+    return ProfileFeatureSignal(
+        feature=feature,
+        ref_id=ref_id,
+        direction=FeatureDirection.POSITIVE,
+        score=score,
+    )
+
+
 class RuntimeProfileBuilderTest(unittest.TestCase):
+    def test_long_term_decay_is_action_specific_and_continuous(self) -> None:
+        recent_saved = long_term_decay(signal(10, SnapshotAction.SAVED), AS_OF)
+        old_saved = long_term_decay(
+            signal(10, SnapshotAction.SAVED, days_ago=60),
+            AS_OF,
+        )
+        old_watched = long_term_decay(
+            signal(10, SnapshotAction.WATCHED, days_ago=60),
+            AS_OF,
+        )
+        very_old_saved = long_term_decay(
+            signal(10, SnapshotAction.SAVED, days_ago=1_000),
+            AS_OF,
+        )
+
+        self.assertEqual(recent_saved, 1.0)
+        self.assertAlmostEqual(old_saved, 0.5, places=7)
+        self.assertGreater(old_watched, old_saved)
+        self.assertEqual(very_old_saved, 0.05)
+        self.assertEqual(
+            long_term_decay(signal(10, SnapshotAction.FAVORITE, days_ago=None), AS_OF),
+            1.0,
+        )
+        self.assertEqual(
+            long_term_decay(signal(10, SnapshotAction.SAVED, days_ago=None), AS_OF),
+            0.25,
+        )
+
     def test_profile_separates_positive_negative_and_exclusions(self) -> None:
         signals = (
             signal(10, SnapshotAction.SAVED),
@@ -99,7 +137,11 @@ class RuntimeProfileBuilderTest(unittest.TestCase):
         self.assertEqual(long_term.excluded_movie_ids, frozenset({20, 30}))
         self.assertEqual(result.bundle.short_term.recent_positive_movie_ids, frozenset({10, 20}))
         self.assertEqual(result.bundle.short_term.recent_negative_movie_ids, frozenset({30}))
-        self.assertGreater(result.bundle.short_term.drift_confidence, 0.0)
+        self.assertEqual(
+            result.bundle.short_term.preference_state,
+            ShortTermPreferenceState.INACTIVE,
+        )
+        self.assertEqual(result.bundle.short_term.drift_confidence, 0.0)
         negative = long_term.negative_features[0]
         self.assertEqual(negative.direction, FeatureDirection.NEGATIVE)
         self.assertEqual(negative.evidence[0].action, "passed")
@@ -188,33 +230,75 @@ class RuntimeProfileBuilderTest(unittest.TestCase):
         self.assertTrue(all(len(item.evidence) == 8 for item in genres))
         self.assertTrue(all(item.contribution_count == 12 for item in genres))
 
-    def test_drift_increases_when_recent_features_differ_from_history(self) -> None:
+    def test_preference_shift_ignores_secondary_novelty_when_genre_is_stable(self) -> None:
         recent = (
-            ProfileFeatureSignal(
-                feature=FeatureName.GENRE,
-                ref_id="10749",
-                direction=FeatureDirection.POSITIVE,
-                score=1.0,
-            ),
+            profile_feature(FeatureName.GENRE, "28"),
+            profile_feature(FeatureName.ACTOR, "new-actor"),
         )
         historical = (
-            ProfileFeatureSignal(
-                feature=FeatureName.GENRE,
-                ref_id="80",
-                direction=FeatureDirection.POSITIVE,
-                score=1.0,
-            ),
+            profile_feature(FeatureName.GENRE, "28"),
+            profile_feature(FeatureName.ACTOR, "old-actor"),
         )
 
-        confidence, components = calculate_drift_confidence(
+        assessment = assess_preference_shift(
             recent_positive=recent,
             historical_positive=historical,
-            recent_positive_action_count=1,
+            recent_positive_movie_count=3,
+            recent_positive_weight_sum=2.25,
+            historical_positive_movie_count=8,
             recent_negative_action_count=0,
         )
 
-        self.assertEqual(confidence, 0.2)
-        self.assertEqual(components["novelty"], 1.0)
+        self.assertEqual(assessment.state, ShortTermPreferenceState.STABLE)
+        self.assertAlmostEqual(assessment.semantic_distance, 0.15)
+        self.assertEqual(assessment.drift_confidence, 0.0)
+        self.assertEqual(assessment.components["genre_distance"], 0.0)
+        self.assertEqual(assessment.components["actor_distance"], 1.0)
+
+    def test_preference_shift_detects_primary_semantic_change(self) -> None:
+        assessment = assess_preference_shift(
+            recent_positive=(
+                profile_feature(FeatureName.GENRE, "10749"),
+                profile_feature(FeatureName.ACTOR, "shared-actor"),
+            ),
+            historical_positive=(
+                profile_feature(FeatureName.GENRE, "80"),
+                profile_feature(FeatureName.ACTOR, "shared-actor"),
+            ),
+            recent_positive_movie_count=3,
+            recent_positive_weight_sum=2.25,
+            historical_positive_movie_count=8,
+            recent_negative_action_count=0,
+        )
+
+        self.assertEqual(assessment.state, ShortTermPreferenceState.DRIFT)
+        self.assertAlmostEqual(assessment.drift_confidence, 0.76923077)
+
+    def test_preference_shift_requires_accumulated_recent_evidence(self) -> None:
+        assessment = assess_preference_shift(
+            recent_positive=(profile_feature(FeatureName.GENRE, "10749"),),
+            historical_positive=(profile_feature(FeatureName.GENRE, "80"),),
+            recent_positive_movie_count=1,
+            recent_positive_weight_sum=1.0,
+            historical_positive_movie_count=8,
+            recent_negative_action_count=0,
+        )
+
+        self.assertEqual(assessment.state, ShortTermPreferenceState.INACTIVE)
+        self.assertEqual(assessment.drift_confidence, 0.0)
+
+    def test_preference_shift_marks_recent_interest_when_history_is_sparse(self) -> None:
+        assessment = assess_preference_shift(
+            recent_positive=(profile_feature(FeatureName.GENRE, "10749"),),
+            historical_positive=(profile_feature(FeatureName.GENRE, "80"),),
+            recent_positive_movie_count=2,
+            recent_positive_weight_sum=2.0,
+            historical_positive_movie_count=2,
+            recent_negative_action_count=0,
+        )
+
+        self.assertEqual(assessment.state, ShortTermPreferenceState.RECENT_INTEREST)
+        self.assertEqual(assessment.drift_confidence, 0.0)
 
     def test_profile_build_requires_successful_v3_graph(self) -> None:
         class FakeSession:

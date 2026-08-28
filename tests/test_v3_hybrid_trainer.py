@@ -11,9 +11,19 @@ from app.jobs.recsys.v3.training.artifact_publisher import (
     load_hybrid_artifact,
     publish_hybrid_artifact,
 )
+from app.jobs.recsys.v3.features.feature_representation import (
+    transform_item_feature_export,
+    transform_user_feature_export,
+)
 from app.jobs.recsys.v3.features.feature_schemas import ItemFeatureExport, ItemFeatureManifest
 from app.jobs.recsys.v3.training.model_schemas import LightFMTrainingConfig
-from app.jobs.recsys.v3.training.trainer import train_hybrid_model
+from app.jobs.recsys.v3.training.trainer import (
+    ModelHealthError,
+    apply_item_frequency_weighting,
+    assert_model_health,
+    evaluate_model_health,
+    train_hybrid_model,
+)
 from app.jobs.recsys.v3.features.user_feature_builder import (
     build_user_feature_export,
     hash_ordered_values,
@@ -96,6 +106,44 @@ class UserFeatureBuilderTest(unittest.TestCase):
         self.assertEqual(export.manifest.item_feature_export_hash, "e" * 64)
         self.assertEqual(export.user_features.shape[0], 3)
         self.assertTrue(np.all(export.user_features.data > 0))
+
+    def test_feature_representation_normalizes_semantics_and_limits_item_identity(self) -> None:
+        original = synthetic_item_export()
+        transformed = transform_item_feature_export(
+            original,
+            policy="supported_identity_normalized",
+            supported_movie_ids=frozenset({10, 40}),
+        )
+
+        movie_count = len(original.movie_ids)
+        identities = transformed.item_features[:, :movie_count]
+        semantics = transformed.item_features[:, movie_count:]
+        self.assertEqual(identities.nnz, 2)
+        self.assertEqual(float(identities[0, 0]), 1.0)
+        self.assertEqual(float(identities[3, 3]), 1.0)
+        semantic_sums = np.asarray(semantics.sum(axis=1)).reshape(-1)
+        np.testing.assert_allclose(semantic_sums, np.ones(5), atol=1e-6)
+        self.assertEqual(
+            transformed.manifest.representation_policy,
+            "supported_identity_normalized",
+        )
+        self.assertNotEqual(transformed.manifest.export_hash, original.manifest.export_hash)
+
+        user_export = synthetic_user_export(transformed)
+        normalized_users = transform_user_feature_export(
+            user_export,
+            policy="supported_identity_normalized",
+        )
+        row_sums = np.asarray(normalized_users.user_features.sum(axis=1)).reshape(-1)
+        np.testing.assert_allclose(row_sums, np.full(3, 2.0), atol=1e-6)
+
+    def test_metadata_only_representation_removes_all_item_identity_values(self) -> None:
+        transformed = transform_item_feature_export(
+            synthetic_item_export(),
+            policy="metadata_only_normalized",
+        )
+        movie_count = len(transformed.movie_ids)
+        self.assertEqual(transformed.item_features[:, :movie_count].nnz, 0)
 
 
 class HybridTrainerTest(unittest.TestCase):
@@ -198,6 +246,58 @@ class HybridTrainerTest(unittest.TestCase):
                 user_export=user_export,
                 config=LightFMTrainingConfig(stage="hybrid_ontology", epochs=1),
             )
+
+    def test_model_health_rejects_finite_but_exploded_parameters(self) -> None:
+        class ExplodedModel:
+            user_embeddings = np.full((3, 4), 1_000_000.0, dtype=np.float32)
+            item_embeddings = np.full((5, 4), 1.0, dtype=np.float32)
+            user_biases = np.zeros(3, dtype=np.float32)
+            item_biases = np.zeros(5, dtype=np.float32)
+
+            @staticmethod
+            def predict(user_ids, item_ids, **_kwargs):
+                return np.full(np.asarray(item_ids).shape, 4_000_000.0, dtype=np.float32)
+
+            @classmethod
+            def get_user_representations(cls, _features=None):
+                return cls.user_biases, cls.user_embeddings
+
+            @classmethod
+            def get_item_representations(cls, _features=None):
+                return cls.item_biases, cls.item_embeddings
+
+        report = evaluate_model_health(
+            ExplodedModel(),
+            user_count=3,
+            movie_count=5,
+            num_threads=1,
+        )
+
+        self.assertEqual(report["status"], "fail")
+        self.assertIn("user_embeddings.max_abs", report["violations"])
+        self.assertIn("prediction.max_abs", report["violations"])
+        with self.assertRaises(ModelHealthError):
+            assert_model_health(report)
+
+    def test_inverse_sqrt_frequency_weighting_reduces_common_item_weight(self) -> None:
+        dataset = synthetic_dataset()
+        interactions, weights = (
+            dataset.interactions.tocoo(),
+            dataset.sample_weights.tocoo(),
+        )
+        adjusted, diagnostics = apply_item_frequency_weighting(
+            interactions,
+            weights,
+            mode="inverse_sqrt",
+        )
+        by_coordinate = {
+            (int(row), int(column)): float(value)
+            for row, column, value in zip(
+                adjusted.row, adjusted.col, adjusted.data, strict=True
+            )
+        }
+        self.assertEqual(diagnostics["mode"], "inverse_sqrt")
+        self.assertLess(by_coordinate[(0, 1)] / 2.0, by_coordinate[(0, 0)] / 1.0)
 
 
 if __name__ == "__main__":

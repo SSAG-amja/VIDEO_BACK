@@ -126,16 +126,16 @@ sample_weight = min(sample_weight, global_max_sample_weight)
 
 ## 4. 최근성 multiplier
 
-현재 값은 V1의 해석 가능한 bucket을 초기값으로 사용한다.
+현재 값은 행동별 연속 half-life를 사용한다.
 
-| 행동 나이 | multiplier |
-| --- | ---: |
-| 0~30일 | `1.0` |
-| 31~90일 | `0.8` |
-| 91~180일 | `0.6` |
-| 181일 이상 | `0.4` |
-| timestamp 없는 onboarding favorite | `1.0` |
-| timestamp 없는 social signal | 현재 시점 build만 목표값 `0.5` |
+| 행동 | half-life | timestamp 없음 |
+| --- | ---: | ---: |
+| saved/pinned | 60일 | `0.25` |
+| watched | 180일 | `0.25` |
+| passed | 90일 | `0.25` |
+| onboarding favorite | 감쇠 없음 | `1.0` |
+
+계산식은 `max(0.05, 0.5 ** (age_days / half_life_days))`다. 과거 행동이 영구 40%로 남던 bucket 방식은 Phase H에서 제거했다.
 
 timestamp가 없는 favorite를 오래된 행동으로 임의 감점하지 않는다.
 
@@ -178,19 +178,19 @@ timestamp가 없는 favorite를 오래된 행동으로 임의 감점하지 않�
 
 ## 6. LightFM 모델 hyperparameter
 
-identity-only trainer에는 아래 시작값이 구현되어 있다. 실제 행동 데이터 기준선 비교 전까지 확정값으로 간주하지 않는다.
+identity-only trainer의 기존 시작값과 현재 활성 Phase B hybrid 채택값은 다르다.
 
-| parameter | 첫 기준 후보 | 조정 방향 |
-| --- | --- | --- |
-| `loss` | `warp` | top-K implicit ranking 기준 |
-| `no_components` | `64` | `32 / 64 / 128` 비교 |
-| `epochs` | `40` | underfit이면 증가, 과적합·시간 증가 시 감소 |
-| `learning_rate` | `0.05` | 불안정하면 `0.02~0.03`, 느리면 신중히 증가 |
-| `user_alpha` | `1e-6` | user embedding 과적합 시 증가 |
-| `item_alpha` | `1e-6` | item/feature embedding 과적합 시 증가 |
-| `max_sampled` | `10` | WARP negative sampling 강도와 시간 조정 |
-| `random_state` | `42` | build 비교 시 고정 |
-| `num_threads` | 실행 환경 기준 | 결과 재현성과 처리시간을 함께 기록 |
+| parameter | 기존 기본값 | Phase B hybrid | 조정 방향 |
+| --- | ---: | ---: | --- |
+| `loss` | `warp` | `warp` | top-K implicit ranking 기준 |
+| `no_components` | `64` | `32` | 데이터가 충분해질 때 재비교 |
+| `epochs` | `40` | `20` | 80 epoch가 집중도를 개선하지 못함 |
+| `learning_rate` | `0.05` | `0.01` | 기존 값에서 수치 발산 발생 |
+| `user_alpha` | `1e-6` | `1e-5` | user embedding 과적합 시 증가 |
+| `item_alpha` | `1e-6` | `1e-5` | item/feature embedding 과적합 시 증가 |
+| `max_sampled` | `10` | `10` | WARP negative sampling 강도와 시간 조정 |
+| `random_state` | `42` | `42` | build 비교 시 고정 |
+| `num_threads` | 실행 환경 기준 | `1` | 결과 재현성과 처리시간을 함께 기록 |
 
 기본값은 `config.py`에 정의하고 실행별 `LightFMTrainingConfig`와 artifact manifest에 실제 사용값을 저장한다.
 
@@ -214,6 +214,23 @@ identity-only trainer에는 아래 시작값이 구현되어 있다. 실제 행�
 `max_sampled`:
 
 - 큰 값은 WARP가 어려운 negative를 더 찾게 하지만 학습 시간이 증가한다.
+
+### Phase B feature와 score calibration
+
+현재 활성 hybrid 표현은 다음과 같다.
+
+| 항목 | 값 | 의미 |
+| --- | ---: | --- |
+| item identity 범위 | positive 근거 영화만 | 나머지는 ontology feature-only 표현 |
+| user identity block | `4.0` | known-user 협업 차이 우선 |
+| user semantic block | `0.25` | 공통 semantic 인기 방향 상한 |
+| item identity block | `1.0` | 영화별 협업 표현 |
+| item semantic block | `1.0` | feature-only item 추론 유지 |
+| known-user mean centering | `0.9` | 전체 사용자 공통 점수의 90% 제거 |
+
+semantic block은 행별 L1 정규화 후 지정한 총량을 곱한다. feature-only serving row도 artifact manifest의 같은 정규화와 weight를 사용한다. known-user centering은 학습 사용자의 평균 LightFM 점수를 영화별로 제거하며 feature-only 콜드 사용자에게는 적용하지 않는다.
+
+item-frequency 역제곱근 sample 보정과 item bias 제거는 집중도를 개선하지 못해 사용하지 않는다. 자세한 수치와 제한은 `10_quality_improvement_record.md`의 Phase B 결과를 따른다.
 
 ## 7. Loss 선택
 
@@ -300,9 +317,13 @@ OTT                               제외
 
 ```text
 candidate_selection_score
-  = (1 - drift_weight) * normalized_long_term_score
+  = (1 - drift_weight)
+    * (model_weight * normalized_long_term_score
+       + ontology_weight * normalized_long_term_ontology_score)
   + drift_weight * normalized_short_term_score
 ```
+
+현재 model weight는 model/장기 ontology 상위 50개 일치율에 따라 `0.45~0.65`, ontology weight는 `0.55~0.35`다. 장기 ontology 후보는 상세 분석 전 100개에 최소 20%를 보장한다. Phase H에서 최종 고유 영화와 장르 방향은 개선됐지만 저투표 ontology/short 후보가 증가했으므로 다음 조정은 `08`의 source별 catalog trust를 먼저 따른다.
 
 초기 drift 범위:
 
@@ -313,7 +334,9 @@ candidate_selection_score
 | 다른 영화에서 같은 concept 반복 | `0.35~0.45` |
 | 최대값 | `0.45` |
 
-현재 S7 구현은 `drift_weight = drift_confidence * 0.45`를 사용한다. `drift_confidence >= 0.60`이면 contextual source floor를 활성화하며 최대 보장량은 최종 후보의 25%다. 이 값은 `app/services/recsys/v3/config.py`에 있고 실제 사용자 분포 평가 전 provisional이다.
+현재 S7 구현은 `drift_weight = drift_confidence * 0.45`를 사용한다. Phase C에서 최근 근거량과 의미 거리를 분리했고, `drift_confidence >= 0.60`인 `drift` 상태에서만 병합 100개의 short-only floor를 최대 25%까지 활성화한다. Phase D 최종 정책은 `15% + 25% * drift_confidence` 비율로 short-only lane을 순위 전반에 배치한다. post-model 검증 결과와 정확한 판정 기준은 `10_quality_improvement_record.md`의 Phase C/D 결과를 따른다.
+
+Phase E 고정 후보 ablation에서는 ontology `0% -> 25%`가 stable 장기 장르 일치를 `0.302 -> 0.409`, drift 단기 장르 일치를 `0.372 -> 0.398`로 높였다. short-only 비율은 두 설정 모두 34.2%였으므로 현재 `0.75/0.25`와 short-term ontology multiplier `0.5`를 유지한다. 이는 이후 reranker의 확정 가중치가 아니라 현재 baseline 결정이다.
 
 개인 점수·온톨로지:
 
@@ -346,6 +369,7 @@ all-mode subscribed OTT bonus   최대 0.04
 recent release bonus            최대 0.03, 365일 선형 감쇠
 quality bonus                   최대 0.08
 vote confidence prior           100
+catalog trust penalty           vote 20 미만, 최대 0.05 선형 감점
 negative penalty                base의 30%, 절대 0.20 중 작은 값
 negative confidence saturation  passed 3건
 MMR similarity penalty          최대 0.08
@@ -353,9 +377,11 @@ repetition penalty              최대 0.06
 cold-start feature-only 비중    0.65
 ```
 
-품질 원점수는 `vote_count / (vote_count + 100)` 신뢰도를 rating과 bounded popularity 결합값에 먼저 곱한다. 따라서 popularity가 높아도 vote count가 1이면 품질 bonus는 작다. 최소 vote count hard filter는 사용하지 않는다.
+품질 원점수는 `vote_count / (vote_count + 100)` 신뢰도를 rating과 bounded popularity 결합값에 먼저 곱한다. 따라서 popularity가 높아도 vote count가 1이면 품질 bonus는 작다. Phase F부터 일반 후보에는 vote 20 미만일 때 `0.05 * (20 - vote_count) / 20`의 soft 감점을 적용한다. 최소 vote count hard filter는 사용하지 않으며, 장르만 있는 cold-start의 기존 최소 1표 필터는 별도 규칙으로 유지한다.
 
 negative feature 초기 상대값은 genre `0.15`, actor `0.30`, keyword `0.35`, mood `0.35`, director/theme `0.45`다. 최근 negative ontology score에는 `1.25` multiplier를 사용한다. 이는 V2 절대값 계승이 아니라 비교를 위한 초기값이다.
+
+Phase F 고정 후보 비교에서 현재 semantic negative 감점은 비활성화 대비 선택 결과의 weighted negative evidence를 stable `0.660 -> 0.519`, drift `1.323 -> 1.069`, negative-heavy `2.199 -> 1.662`로 낮췄다. 정확히 passed한 영화의 hard exclusion 위반은 모든 변형에서 0건이었다. 따라서 현재 negative 상한은 유지한다.
 
 ## 12. 조정 단위와 기록
 

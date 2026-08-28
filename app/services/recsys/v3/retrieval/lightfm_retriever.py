@@ -16,6 +16,9 @@ from app.services.recsys.v3.config import (
 from app.services.recsys.v3.domain.feature_registry import FeatureName, get_feature_definition
 from app.services.recsys.v3.serving.model_store import RuntimeHybridArtifact
 from app.services.recsys.v3.retrieval.retrieval_schemas import LongTermCandidate
+from app.services.recsys.v3.retrieval.score_calibration import (
+    center_known_user_representations,
+)
 from app.services.recsys.v3.domain.schemas import UserProfileBundle
 
 
@@ -30,7 +33,8 @@ def retrieve_lightfm_candidates(
     if limit <= 0 or limit > CANDIDATE_STORAGE_SIZE:
         raise ValueError(f"LightFM retrieval limit must be between 1 and {CANDIDATE_STORAGE_SIZE}")
     user_index = artifact.user_index(profile.user_id)
-    if user_index is not None and not force_feature_only:
+    known_user_path = user_index is not None and not force_feature_only
+    if known_user_path:
         user_features = artifact.user_features[user_index]
     else:
         user_features = build_feature_only_user_row(artifact, profile)
@@ -40,6 +44,19 @@ def retrieve_lightfm_candidates(
     user_biases, user_embeddings = artifact.model.get_user_representations(user_features)
     user_bias = float(np.asarray(user_biases).reshape(-1)[0])
     user_embedding = np.asarray(user_embeddings, dtype=np.float32).reshape(1, -1)
+    centering_weight = (
+        artifact.known_user_score_centering_weight if known_user_path else 0.0
+    )
+    if centering_weight > 0:
+        centered_biases, centered_embeddings = center_known_user_representations(
+            np.asarray([user_bias], dtype=np.float32),
+            user_embedding,
+            mean_user_bias=artifact.mean_user_bias,
+            mean_user_embedding=artifact.mean_user_embedding,
+            weight=centering_weight,
+        )
+        user_bias = float(centered_biases[0])
+        user_embedding = centered_embeddings
     top_movie_ids = np.empty(0, dtype=np.int64)
     top_scores = np.empty(0, dtype=np.float32)
     excluded = set(int(value) for value in excluded_movie_ids)
@@ -48,7 +65,7 @@ def retrieve_lightfm_candidates(
         item_features = artifact.item_features[start:end]
         item_biases, item_embeddings = artifact.model.get_item_representations(item_features)
         scores = np.asarray(item_embeddings, dtype=np.float32) @ user_embedding[0]
-        scores += np.asarray(item_biases, dtype=np.float32)
+        scores += (1.0 - centering_weight) * np.asarray(item_biases, dtype=np.float32)
         scores += user_bias
         movie_ids = np.asarray(artifact.movie_ids[start:end], dtype=np.int64)
         if excluded:
@@ -107,6 +124,22 @@ def build_feature_only_user_row(
             values[user_index] = max(values.get(user_index, 0.0), value)
     if not values:
         return csr_matrix((1, len(artifact.user_feature_tokens)), dtype=np.float32)
+    feature_exports = artifact.manifest.get("feature_exports", {})
+    representation_policy = feature_exports.get(
+        "user_representation_policy",
+        "full_identity_raw",
+    )
+    if representation_policy != "full_identity_raw":
+        total = float(sum(values.values()))
+        if total <= 0 or not np.isfinite(total):
+            return csr_matrix((1, len(artifact.user_feature_tokens)), dtype=np.float32)
+        semantic_weight = float(feature_exports.get("user_semantic_block_weight", 1.0))
+        if semantic_weight <= 0 or not np.isfinite(semantic_weight):
+            raise ValueError("serving artifact has an invalid user semantic block weight")
+        values = {
+            index: (value / total) * semantic_weight
+            for index, value in values.items()
+        }
     ordered = sorted(values.items())
     return csr_matrix(
         (

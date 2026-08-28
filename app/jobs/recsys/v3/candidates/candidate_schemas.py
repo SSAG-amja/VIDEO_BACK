@@ -11,6 +11,7 @@ import numpy as np
 from app.services.recsys.v3.config import (
     CANDIDATE_CHECKPOINT_USER_COUNT,
     CANDIDATE_ITEM_BLOCK_SIZE,
+    CANDIDATE_MATERIALIZATION_WORKER_COUNT,
     CANDIDATE_STORAGE_SIZE,
     CANDIDATE_USER_BLOCK_SIZE,
 )
@@ -22,6 +23,7 @@ class CandidateMaterializationConfig:
     user_block_size: int = CANDIDATE_USER_BLOCK_SIZE
     item_block_size: int = CANDIDATE_ITEM_BLOCK_SIZE
     checkpoint_user_count: int = CANDIDATE_CHECKPOINT_USER_COUNT
+    worker_count: int = CANDIDATE_MATERIALIZATION_WORKER_COUNT
 
     def __post_init__(self) -> None:
         for name, value in asdict(self).items():
@@ -33,8 +35,18 @@ class CandidateMaterializationConfig:
             raise ValueError("checkpoint_user_count cannot be smaller than user_block_size")
 
     @property
+    def result_config(self) -> dict[str, int]:
+        payload = asdict(self)
+        payload.pop("worker_count")
+        return payload
+
+    @property
+    def execution_config(self) -> dict[str, int]:
+        return {"worker_count": self.worker_count}
+
+    @property
     def config_hash(self) -> str:
-        payload = json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
+        payload = json.dumps(self.result_config, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(payload.encode()).hexdigest()
 
 

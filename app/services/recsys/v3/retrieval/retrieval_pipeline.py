@@ -10,6 +10,9 @@ from app.services.recsys.v3.retrieval.candidate_eligibility import select_eligib
 from app.services.recsys.v3.retrieval.candidate_merger import merge_candidates
 from app.services.recsys.v3.config import CANDIDATE_POOL_SIZE, CANDIDATE_STORAGE_SIZE
 from app.services.recsys.v3.retrieval.ontology_analyzer import analyze_candidates
+from app.services.recsys.v3.retrieval.long_term_ontology_retriever import (
+    retrieve_long_term_ontology_candidates,
+)
 from app.services.recsys.v3.policy.policy_schemas import PolicyRequestContext
 from app.services.recsys.v3.retrieval.retrieval_schemas import (
     CandidateMergeResult,
@@ -40,9 +43,16 @@ def build_retrieval_candidates(
         profile=profile,
         limit=limit,
     )
+    long_term_ontology = retrieve_long_term_ontology_candidates(
+        db,
+        ontology_build_id=ontology_build_id,
+        profile=profile,
+        limit=limit,
+    )
     merged = merge_candidates(
         long_term_candidates,
         short_term.candidates,
+        long_term_ontology.candidates,
         drift_confidence=profile.short_term.drift_confidence,
         limit=CANDIDATE_STORAGE_SIZE,
     )
@@ -68,6 +78,7 @@ def build_retrieval_candidates(
         merged=selected_merged,
         ontology=ontology,
         elapsed_seconds=round(time.monotonic() - started, 6),
+        long_term_ontology=long_term_ontology,
         eligibility=eligibility.diagnostics,
         prefilter_rejections=eligibility.rejections,
     )

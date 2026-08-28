@@ -21,6 +21,13 @@ class ProfileMaturity(StrEnum):
     ESTABLISHED = "established"
 
 
+class ShortTermPreferenceState(StrEnum):
+    INACTIVE = "inactive"
+    RECENT_INTEREST = "recent_interest"
+    STABLE = "stable"
+    DRIFT = "drift"
+
+
 class FeatureDirection(StrEnum):
     POSITIVE = "positive"
     NEGATIVE = "negative"
@@ -222,6 +229,9 @@ class ShortTermProfile:
     as_of: datetime
     window_action_count: int
     drift_confidence: float = 0.0
+    preference_state: ShortTermPreferenceState = ShortTermPreferenceState.INACTIVE
+    recent_evidence_confidence: float = 0.0
+    semantic_distance: float = 0.0
     recent_positive_movie_ids: frozenset[int] = field(default_factory=frozenset)
     recent_negative_movie_ids: frozenset[int] = field(default_factory=frozenset)
     positive_features: tuple[ProfileFeatureSignal, ...] = ()
@@ -233,6 +243,13 @@ class ShortTermProfile:
             raise ValueError("short-term window action count cannot be negative")
         if not math.isfinite(self.drift_confidence) or not 0.0 <= self.drift_confidence <= 1.0:
             raise ValueError("drift confidence must be between 0 and 1")
+        if (
+            not math.isfinite(self.recent_evidence_confidence)
+            or not 0.0 <= self.recent_evidence_confidence <= 1.0
+        ):
+            raise ValueError("recent evidence confidence must be between 0 and 1")
+        if not math.isfinite(self.semantic_distance) or not 0.0 <= self.semantic_distance <= 1.0:
+            raise ValueError("semantic distance must be between 0 and 1")
         validate_positive_ids(self.recent_positive_movie_ids, "recent positive movie")
         validate_positive_ids(self.recent_negative_movie_ids, "recent negative movie")
         if self.recent_positive_movie_ids & self.recent_negative_movie_ids:

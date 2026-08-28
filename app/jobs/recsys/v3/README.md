@@ -33,6 +33,11 @@ This package owns work that runs outside an API request: graph builds, dataset a
 - `short_term_refresh_policy_check.py`: Redis-backed threshold, debounce, removal, and queue-state diagnostic
 - `item_feature_export_diagnostics.py`: full item CSR time, memory, and coverage report
 - `quality_snapshot.py`: seeded known-user long-term, short-term, and final recommendation quality snapshot
+- `ontology_component_ablation.py`: fixed-candidate policy comparison for personal/ontology `1.00/0.00` versus `0.75/0.25`
+- `catalog_negative_ablation.py`: fixed-candidate comparison for low-vote catalog trust and semantic-negative policy effects
+- `ontology_outlier_audit.py`: quality-snapshot outlier extraction with exact graph feature matches for diagnosis
+- `candidate_parallel_benchmark.py`: 1/2/4-worker candidate materialization throughput, memory, and result-invariant comparison
+- `request_parallel_benchmark.py`: 1/2/4-worker warm serving throughput, latency, memory, and result-invariant comparison
 
 ## Boundaries
 

@@ -29,6 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--user-block-size", type=int, default=None)
     parser.add_argument("--item-block-size", type=int, default=None)
     parser.add_argument("--checkpoint-user-count", type=int, default=None)
+    parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("--publish", action="store_true")
     return parser.parse_args()
 
@@ -42,6 +43,7 @@ def main() -> None:
             "user_block_size": args.user_block_size,
             "item_block_size": args.item_block_size,
             "checkpoint_user_count": args.checkpoint_user_count,
+            "worker_count": args.workers,
         }.items()
         if value is not None
     }

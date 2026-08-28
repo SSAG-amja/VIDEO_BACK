@@ -12,6 +12,7 @@ from scipy.sparse import csr_matrix, load_npz
 
 from app.services.recsys.v3.config import ENGINE_NAME
 from app.services.recsys.v3.domain.feature_registry import FEATURE_REGISTRY_VERSION
+from app.services.recsys.v3.retrieval.score_calibration import mean_known_user_representation
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +27,9 @@ class RuntimeHybridArtifact:
     item_feature_tokens: tuple[str, ...]
     manifest: dict
     num_threads: int
+    known_user_score_centering_weight: float
+    mean_user_bias: float
+    mean_user_embedding: np.ndarray
 
     @property
     def model_build_id(self) -> str:
@@ -68,6 +72,9 @@ def load_runtime_hybrid_artifact(path: str | Path) -> RuntimeHybridArtifact:
     num_threads = int(config.get("num_threads", 1))
     if num_threads <= 0:
         raise ValueError("serving artifact num_threads must be positive")
+    centering_weight = float(config.get("known_user_score_centering_weight", 0.0))
+    if not np.isfinite(centering_weight) or not 0.0 <= centering_weight <= 1.0:
+        raise ValueError("serving artifact score centering weight is invalid")
 
     user_ids = np.load(artifact_dir / "user_ids.npy", allow_pickle=False)
     movie_ids = np.load(artifact_dir / "movie_ids.npy", allow_pickle=False)
@@ -94,6 +101,14 @@ def load_runtime_hybrid_artifact(path: str | Path) -> RuntimeHybridArtifact:
         raise ValueError("serving model user embedding dimension mismatch")
     if model.item_embeddings.shape[0] != item_features.shape[1]:
         raise ValueError("serving model item embedding dimension mismatch")
+    if centering_weight > 0:
+        mean_user_bias, mean_user_embedding = mean_known_user_representation(
+            model,
+            user_features,
+        )
+    else:
+        mean_user_bias = 0.0
+        mean_user_embedding = np.zeros(model.user_embeddings.shape[1], dtype=np.float32)
     return RuntimeHybridArtifact(
         path=artifact_dir,
         model=model,
@@ -105,6 +120,9 @@ def load_runtime_hybrid_artifact(path: str | Path) -> RuntimeHybridArtifact:
         item_feature_tokens=item_tokens,
         manifest=manifest,
         num_threads=num_threads,
+        known_user_score_centering_weight=centering_weight,
+        mean_user_bias=mean_user_bias,
+        mean_user_embedding=mean_user_embedding,
     )
 
 

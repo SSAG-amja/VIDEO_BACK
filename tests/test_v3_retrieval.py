@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import unittest
 from dataclasses import replace
+from unittest.mock import patch
 
 from app.services.recsys.v3.domain.behavior import SnapshotAction
 from app.services.recsys.v3.retrieval.candidate_merger import merge_candidates
@@ -16,7 +17,11 @@ from app.services.recsys.v3.profiles.profile_builder import build_onboarding_fea
 from app.services.recsys.v3.retrieval.retrieval_schemas import (
     CandidateSource,
     LongTermCandidate,
+    LongTermOntologyCandidate,
     ShortTermCandidate,
+)
+from app.services.recsys.v3.retrieval.long_term_ontology_retriever import (
+    retrieve_long_term_ontology_candidates,
 )
 from app.services.recsys.v3.retrieval.score_normalizer import percentile_normalize
 from app.services.recsys.v3.retrieval.short_term_retriever import build_short_term_feature_rows
@@ -124,6 +129,89 @@ class CandidateMergerTest(unittest.TestCase):
         self.assertEqual(shared.short_term_raw_score, 1.0)
         self.assertEqual(result.diagnostics.selected_overlap_count, 1)
 
+    def test_overlap_does_not_consume_short_term_only_floor(self) -> None:
+        long_term = tuple(
+            LongTermCandidate(movie_id=index, model_raw_score=float(101 - index), source_rank=index)
+            for index in range(1, 101)
+        )
+        short_term = tuple(
+            ShortTermCandidate(movie_id=index, short_term_raw_score=100.0, source_rank=index)
+            for index in range(1, 26)
+        ) + tuple(
+            ShortTermCandidate(
+                movie_id=1000 + index,
+                short_term_raw_score=0.01,
+                source_rank=25 + index,
+            )
+            for index in range(1, 11)
+        )
+
+        result = merge_candidates(long_term, short_term, drift_confidence=1.0)
+
+        self.assertEqual(result.diagnostics.contextual_floor_count, 10)
+        self.assertEqual(result.diagnostics.selected_short_only_count, 10)
+        self.assertEqual(result.diagnostics.selected_overlap_count, 25)
+
+    def test_long_term_ontology_lane_survives_into_first_100(self) -> None:
+        long_term = tuple(
+            LongTermCandidate(
+                movie_id=index,
+                model_raw_score=float(151 - index),
+                source_rank=index,
+            )
+            for index in range(1, 151)
+        )
+        ontology = tuple(
+            LongTermOntologyCandidate(
+                movie_id=1000 + index,
+                ontology_raw_score=float(101 - index),
+                source_rank=index,
+            )
+            for index in range(1, 101)
+        )
+
+        result = merge_candidates(
+            long_term,
+            (),
+            ontology,
+            drift_confidence=0.0,
+            limit=150,
+        )
+
+        first_100 = result.candidates[:100]
+        ontology_count = sum(
+            CandidateSource.LONG_TERM_ONTOLOGY in item.sources
+            for item in first_100
+        )
+        self.assertGreaterEqual(ontology_count, 20)
+        self.assertEqual(result.diagnostics.long_term_ontology_floor_count, 20)
+        self.assertEqual(result.diagnostics.effective_model_weight, 0.45)
+        self.assertEqual(
+            result.diagnostics.effective_long_term_ontology_weight,
+            0.55,
+        )
+
+    def test_model_and_long_term_ontology_scores_remain_separate(self) -> None:
+        result = merge_candidates(
+            (LongTermCandidate(10, 2.0, 1),),
+            (),
+            (LongTermOntologyCandidate(10, 3.0, 1),),
+            drift_confidence=0.0,
+            limit=1,
+        )
+
+        candidate = result.candidates[0]
+        self.assertEqual(
+            candidate.sources,
+            (CandidateSource.MODEL, CandidateSource.LONG_TERM_ONTOLOGY),
+        )
+        self.assertEqual(candidate.model_raw_score, 2.0)
+        self.assertEqual(candidate.long_term_ontology_raw_score, 3.0)
+        self.assertEqual(candidate.normalized_long_term_score, 0.5)
+        self.assertEqual(candidate.normalized_long_term_ontology_score, 0.5)
+        self.assertEqual(result.diagnostics.model_ontology_agreement, 1.0)
+        self.assertEqual(result.diagnostics.effective_model_weight, 0.65)
+
 
 class OntologyAnalyzerTest(unittest.TestCase):
     def test_profile_rows_keep_scope_direction_and_actor_relation(self) -> None:
@@ -203,6 +291,37 @@ class ShortTermRetrieverTest(unittest.TestCase):
         self.assertIn("has_actor", relations)
         self.assertNotIn("has_mood", relations)
         self.assertNotIn("tense", refs)
+
+
+class LongTermOntologyRetrieverTest(unittest.TestCase):
+    @patch(
+        "app.services.recsys.v3.retrieval.long_term_ontology_retriever."
+        "load_short_term_candidate_rows",
+        return_value=[(700, 2.5), (800, 1.5)],
+    )
+    @patch(
+        "app.services.recsys.v3.retrieval.long_term_ontology_retriever."
+        "validate_profile_build"
+    )
+    def test_uses_long_term_profile_and_keeps_source_score(
+        self,
+        validate_build,
+        load_rows,
+    ) -> None:
+        profile = retrieval_profile()
+
+        result = retrieve_long_term_ontology_candidates(
+            object(),
+            ontology_build_id=22,
+            profile=profile,
+        )
+
+        validate_build.assert_called_once_with(unittest.mock.ANY, 22)
+        feature_rows = load_rows.call_args.kwargs["feature_rows"]
+        self.assertTrue(feature_rows)
+        self.assertEqual([item.movie_id for item in result.candidates], [700, 800])
+        self.assertEqual(result.candidates[0].ontology_raw_score, 2.5)
+        self.assertEqual(result.diagnostics.profile_feature_count, len(feature_rows))
 
 
 if __name__ == "__main__":

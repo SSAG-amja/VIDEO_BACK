@@ -8,8 +8,10 @@ from app.api import deps
 from app.core.config import settings
 from app.crud import movie as movie_crud
 from app.crud import movie_detail as movie_detail_crud
+from app.db.session import SessionLocal
 from app.schemas.recsys import RecommendationMode
 from app.services.recsys.contracts import RecommendationQuery
+from app.services.recsys.executor import recommendation_executor
 from app.services.recsys.registry import get_recommendation_adapter
 
 router = APIRouter()
@@ -92,34 +94,51 @@ async def _fetch_popular_fallback(page: int) -> list[dict]:
         return await _fetch_shorts_cards([movie["id"] for movie in movies])
 
 
-# 2026.06.04 김호영
-# VIDEO_RECSYS HTTP 호출 대신 BACK 내부 추천 service를 사용해 홈 숏츠 후보를 조회한다.
-# 2026.05.23 김호영
-# VIDEO_RECSYS 추천 후보를 홈 숏츠 카드 형태로 반환한다.
-@router.get("/shorts")
-async def get_shorts_movies(
-    db: Session = Depends(deps.get_db),
-    current_user=Depends(deps.get_current_user),
-    page: int = Query(1, ge=1, description="Page number"),
-    shuffle_seed: str | None = Query(None, description="Stable shuffle seed for a refresh session"),
-):
+def _load_shorts_tmdb_ids(
+    *,
+    user_id: int,
+    page: int,
+    shuffle_seed: str | None,
+) -> list[int]:
     offset = (page - 1) * SHORTS_PAGE_SIZE
-    try:
+    with SessionLocal() as db:
         recommendation = get_recommendation_adapter().get_recommendations(
             db,
             RecommendationQuery(
-                user_id=current_user.id,
+                user_id=user_id,
                 mode=RecommendationMode.ALL,
                 limit=SHORTS_PAGE_SIZE,
                 offset=offset,
                 shuffle_seed=shuffle_seed,
             ),
         )
+        recommended_movies = movie_crud.get_movies_by_internal_ids_preserve_order(
+            db,
+            recommendation.movie_ids,
+        )
+        return [int(movie["tmdb_id"]) for movie in recommended_movies]
+
+
+# 2026.06.04 김호영
+# VIDEO_RECSYS HTTP 호출 대신 BACK 내부 추천 service를 사용해 홈 숏츠 후보를 조회한다.
+# 2026.05.23 김호영
+# VIDEO_RECSYS 추천 후보를 홈 숏츠 카드 형태로 반환한다.
+@router.get("/shorts")
+async def get_shorts_movies(
+    current_user=Depends(deps.get_current_user),
+    page: int = Query(1, ge=1, description="Page number"),
+    shuffle_seed: str | None = Query(None, description="Stable shuffle seed for a refresh session"),
+):
+    try:
+        tmdb_movie_ids = await recommendation_executor.run(
+            _load_shorts_tmdb_ids,
+            user_id=int(current_user.id),
+            page=page,
+            shuffle_seed=shuffle_seed,
+        )
     except Exception:
         return {"movies": await _fetch_popular_fallback(page), "source": "fallback"}
 
-    recommended_movies = movie_crud.get_movies_by_internal_ids_preserve_order(db, recommendation.movie_ids)
-    tmdb_movie_ids = [movie["tmdb_id"] for movie in recommended_movies]
     return {"movies": await _fetch_shorts_cards(tmdb_movie_ids), "source": "recsys"}
 
 

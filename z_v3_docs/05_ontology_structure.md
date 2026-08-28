@@ -2,7 +2,7 @@
 
 이 문서는 V3 그래프의 node, relation, evidence, build version 및 LightFM feature export 경계를 정의한다.
 
-구현 순서는 [01 설계 및 구현 순서](01_design_sequence.md), 파이프라인 경계는 [02 구현 방식](02_implementation_guide.md), 온톨로지 점수의 서비스 적용은 [03 추천 정책](03_recommendation_policy.md)을 따른다.
+전체 구조는 [01 아키텍처와 파이프라인](01_architecture_and_pipeline.md), 구현 경계는 [02 구현 방식](02_implementation_guide.md), 온톨로지 점수의 서비스 적용은 [03 추천 정책](03_recommendation_policy.md)을 따른다.
 
 ## 빠른 구조
 
@@ -1060,7 +1060,7 @@ V3 asset에서:
 
 ## 12. 구현 연결 지점
 
-실제 작업 순서와 완료 상태는 [01 설계 및 구현 순서](01_design_sequence.md)에서만 관리한다. 이 문서는 온톨로지 설계 요소가 연결될 구현 영역만 정의한다.
+전체 구현 결과는 [01 아키텍처와 파이프라인](01_architecture_and_pipeline.md)에서 관리한다. 이 문서는 온톨로지 설계 요소가 연결될 구현 영역만 정의한다.
 
 | 설계 요소 | 구현 영역 | 핵심 산출물 |
 | --- | --- | --- |

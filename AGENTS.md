@@ -2,7 +2,7 @@
 
 ## Current Objective
 
-Implement recommendation V3 as a new engine without removing V1 or V2.
+Maintain and improve recommendation V3 as an independent engine without removing V1 or V2. The S0-S9 baseline and quality Phases A-F are complete; select new work from `z_v3_docs/08_additional_work_backlog.md`.
 
 - LightFM: learned long-term candidate retrieval and collaborative signal
 - Ontology: LightFM features, semantic evidence, short-term/cold-item retrieval
@@ -15,21 +15,22 @@ Implement recommendation V3 as a new engine without removing V1 or V2.
 Read these documents before implementation:
 
 1. `z_v3_docs/README.md`
-2. `z_v3_docs/01_design_sequence.md`
+2. `z_v3_docs/01_architecture_and_pipeline.md`
 3. `z_v3_docs/07_end_to_end_flow_review.md` before changing recommendation flow or policy
 4. `z_v3_docs/08_additional_work_backlog.md` for post-baseline priorities and pending work
 5. `z_v3_docs/09_design_decision_journal.md` before revisiting an existing architectural decision
-6. `z_v3_docs/10_v1_v2_skeleton_audit.md` before any new recommendation implementation
-7. `z_v3_docs/11_recommendation_quality_baseline.md` and `12_recommendation_quality_improvement_plan.md` before quality tuning
-8. Select the task-specific source of truth from `02_implementation_guide.md`, `03_recommendation_policy.md`, `04_lightfm_tuning.md`, `05_ontology_structure.md`, and `06_test_plan.md`.
+6. `z_v3_docs/10_quality_improvement_record.md` before quality tuning
+7. Select the task-specific source of truth from `02_implementation_guide.md`, `03_recommendation_policy.md`, `04_lightfm_tuning.md`, `05_ontology_structure.md`, and `06_validation_record.md`.
 
-Current correction: candidate materialization stores top-150 per user as 100 active plus 50 ordered reserves, while detailed ontology analysis and policy reranking remain capped at 100. Feed-session continuity remains deferred and documented; the user accepted the current service baseline and reopened implementation specifically for recommendation quality. Follow documents 11 and 12 instead of reopening service/operation policy. The latest verified V3 unit count is 93, snapshot is `cand-950d86d7f1f978f316f2b773`, and bundle is `bundle-77128ec4c5c9b5404efc3b4b`.
+Current correction: candidate materialization stores top-150 per user as 100 active plus 50 ordered reserves, while detailed ontology analysis and policy reranking remain capped at 100. Feed-session continuity remains deferred in document 08. Phase H added action-specific continuous decay, independent long-term ontology candidates, and model/ontology agreement limiting. The active model is `hybrid-02e666e23f10-d8dd44e869db-e2a5a2a2e0ca-45932f2c79ee-9e3651b419af-7b869d3b`, candidate snapshot is `cand-dd6dd505d38733bfb53d2aa8`, and bundle is `bundle-ff3d35e49ba03cc72adc9eed`.
+
+Parallel processing and dynamic scheduling (`z_v3_docs/08_additional_work_backlog.md` P3-00) are complete. API recommendation calls use a shared 2-thread bounded executor and a fresh SQLAlchemy session per task; `/shorts` no longer runs V3 synchronously on the event loop. Candidate materialization supports a shared dynamic user-block queue but keeps 1 worker as the default because 2/4 workers did not improve the vectorized batch. The 1/2/4-worker result hashes were identical; retain `RECOMMENDATION_EXECUTOR_WORKERS=2` and candidate worker 1 unless a new workload benchmark supports changing them.
 
 The user reopened implementation for package organization. V3 services and jobs are now grouped by responsibility; preserve the package tree documented in `app/services/recsys/v3/README.md`, `app/jobs/recsys/v3/README.md`, and `z_v3_docs/02_implementation_guide.md` instead of adding new root-level modules.
 
 The V3 S0-S9 components exist: engine boundary, dataset/feature/graph contracts, hybrid LightFM, top-150 candidate storage, runtime profile, independent short-term retrieval, policy/cold-start, and serving bundle orchestration. Short-term candidates use the documented 24-hour accumulator, threshold, debounce, lease, and cache-format-3 behavior. Full graph build `22` and the full item export remain the validated ontology baseline. Component and single-request tests pass, but feed-session continuity and production orchestration are open skeleton work. Keep the fixture and active artifacts until this validation iteration ends; NDCG and Recall remain outside the current validation scope.
 
-Quality Phase A is complete. The post-model scenario keeps the LightFM model and long-term candidates fixed, then adds same-cohort actions to six stable controls and opposite-cohort actions to six drift users. The result is `z_v3_docs/diagnostics/v3_quality_snapshot_20260827T142248Z.*`. Stable/drift confidence is `0.701/0.737`; drift users retain about 14 short-source candidates at eligibility 100 but zero in the final 20. Next work is Phase B LightFM numerical health gates and inactive ablation artifacts. Do not tune final policy weights before stabilizing the model and drift signal.
+Quality Phases A-G and the integrated online validation are complete. Phase H removed the permanent old-action 40% floor, retrieved long-term ontology candidates independently, and constrained model weight to 45-65% using top-50 semantic agreement. Final unique movies improved from 108 to 160 and drift top-5 current-genre matches from 16/30 to 22/30; LightFM top-20 still contains only 45 unique movies and low-vote top-10 outliers rose from 1 to 8. Reports are `z_v3_docs/diagnostics/v3_quality_snapshot_20260828T050041Z.*` and `v3_ontology_outlier_audit_20260828T110011Z.*`. Operations, traffic optimization, and auxiliary policy work are deferred while recommendation quality is the user priority. The latest counts are 122 V3 unit tests and 2 shared recommendation-executor tests.
 
 ## Reference Rules
 
@@ -57,7 +58,7 @@ Primary V2 ontology references:
 - `app/models/ontology.py`
 - `assets/ontology/`
 
-## Planned Locations
+## Locations
 
 - Existing HTTP API routes and schemas: `app/api/v1/` (preserve paths and response contracts)
 - Recommendation engine contracts, registry, and adapters: `app/services/recsys/`

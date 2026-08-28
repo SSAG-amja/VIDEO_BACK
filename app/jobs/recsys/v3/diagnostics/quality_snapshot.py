@@ -29,6 +29,9 @@ from app.services.recsys.v3.recommender import get_recommendations
 from app.services.recsys.v3.retrieval.short_term_candidate_cache import (
     retrieve_cached_short_term_candidates,
 )
+from app.services.recsys.v3.retrieval.long_term_ontology_retriever import (
+    retrieve_long_term_ontology_candidates,
+)
 from app.services.recsys.v3.serving.serving_bundle import get_active_serving_bundle
 
 
@@ -278,6 +281,12 @@ def analyze_user(
         profile=profile,
         limit=limit,
     )
+    long_ontology_result = retrieve_long_term_ontology_candidates(
+        db,
+        ontology_build_id=bundle.ontology_build_id,
+        profile=profile,
+        limit=limit,
+    )
     response = get_recommendations(
         db,
         user_id=user["user_id"],
@@ -290,6 +299,7 @@ def analyze_user(
     candidate_slice_rows = request_rows["candidate_slice"]
     final_rows = request_rows["final_response"]
     request_path = request_rows["request_path"]
+    policy_diagnostics = request_rows["policy_diagnostics"]
 
     long_candidates = [
         {
@@ -308,6 +318,15 @@ def analyze_user(
             "source": "short_term_context",
         }
         for item in short_result.candidates[:limit]
+    ]
+    long_ontology_candidates = [
+        {
+            "movie_id": item.movie_id,
+            "rank": item.source_rank,
+            "score": item.ontology_raw_score,
+            "source": "long_term_ontology",
+        }
+        for item in long_ontology_result.candidates[:limit]
     ]
     final_candidates = [
         {
@@ -328,11 +347,20 @@ def analyze_user(
 
     all_movie_ids = {
         item["movie_id"]
-        for candidates in (long_candidates, short_candidates, final_candidates)
+        for candidates in (
+            long_candidates,
+            long_ontology_candidates,
+            short_candidates,
+            final_candidates,
+        )
         for item in candidates
     }
     metadata = load_movie_metadata(db, all_movie_ids)
     long_candidates = attach_metadata(long_candidates, metadata)
+    long_ontology_candidates = attach_metadata(
+        long_ontology_candidates,
+        metadata,
+    )
     short_candidates = attach_metadata(short_candidates, metadata)
     final_candidates = attach_metadata(final_candidates, metadata)
 
@@ -376,6 +404,12 @@ def analyze_user(
             "passed_pair_count": profile.long_term.passed_pair_count,
             "watched_pair_count": profile.long_term.watched_pair_count,
             "short_window_action_count": profile.short_term.window_action_count,
+            "preference_state": profile.short_term.preference_state.value,
+            "recent_evidence_confidence": round(
+                profile.short_term.recent_evidence_confidence,
+                6,
+            ),
+            "semantic_distance": round(profile.short_term.semantic_distance, 6),
             "drift_confidence": round(profile.short_term.drift_confidence, 6),
             "drift_components": profile_result.diagnostics.drift_components,
             "long_positive": long_profile,
@@ -385,6 +419,10 @@ def analyze_user(
         },
         "quality": {
             "long_candidates_vs_long_genres": genre_alignment(long_candidates, long_genre_ids),
+            "long_ontology_candidates_vs_long_genres": genre_alignment(
+                long_ontology_candidates,
+                long_genre_ids,
+            ),
             "short_candidates_vs_short_genres": genre_alignment(short_candidates, short_genre_ids),
             "final_vs_long_genres": genre_alignment(final_candidates, long_genre_ids),
             "final_vs_short_genres": genre_alignment(final_candidates, short_genre_ids),
@@ -414,6 +452,33 @@ def analyze_user(
                 "raw_short_term_count": int(
                     request_path.get("short_term_candidate_count") or 0
                 ),
+                "raw_long_term_ontology_count": int(
+                    request_path.get("long_term_ontology_candidate_count") or 0
+                ),
+                "merged_long_term_ontology_count": int(
+                    merge_diagnostics.get(
+                        "selected_long_term_ontology_count",
+                        0,
+                    )
+                ),
+                "merged_long_term_ontology_only_count": int(
+                    merge_diagnostics.get(
+                        "selected_long_term_ontology_only_count",
+                        0,
+                    )
+                ),
+                "model_ontology_agreement": float(
+                    merge_diagnostics.get("model_ontology_agreement", 0.0)
+                ),
+                "effective_model_weight": float(
+                    merge_diagnostics.get("effective_model_weight", 0.0)
+                ),
+                "effective_long_term_ontology_weight": float(
+                    merge_diagnostics.get(
+                        "effective_long_term_ontology_weight",
+                        0.0,
+                    )
+                ),
                 "merged_short_source_count": int(
                     merge_diagnostics.get("selected_short_only_count", 0)
                     + merge_diagnostics.get("selected_overlap_count", 0)
@@ -433,6 +498,32 @@ def analyze_user(
                     "short_term_context" in item["source"]
                     for item in final_candidates
                 ),
+                "final_short_only_source_count": sum(
+                    item["source"] == "short_term_context"
+                    for item in final_candidates
+                ),
+                "final_long_term_ontology_source_count": sum(
+                    "long_term_ontology" in item["source"]
+                    for item in final_candidates
+                ),
+                "policy_short_only_input_count": int(
+                    policy_diagnostics.get("input_short_term_only_count", 0)
+                ),
+                "policy_short_only_eligible_count": int(
+                    policy_diagnostics.get("eligible_short_term_only_count", 0)
+                ),
+                "policy_short_only_lane_target": int(
+                    policy_diagnostics.get("short_term_lane_target", 0)
+                ),
+                "policy_short_only_selected_count": int(
+                    policy_diagnostics.get("selected_short_term_only_count", 0)
+                ),
+                "policy_short_only_forced_count": int(
+                    policy_diagnostics.get("forced_short_term_only_count", 0)
+                ),
+                "policy_short_only_unselected_count": int(
+                    policy_diagnostics.get("unselected_short_term_only_count", 0)
+                ),
             },
             "max_abs_long_candidate_score": round(
                 max((abs(item["score"]) for item in long_candidates), default=0.0),
@@ -440,6 +531,7 @@ def analyze_user(
             ),
         },
         "long_candidates": long_candidates,
+        "long_ontology_candidates": long_ontology_candidates,
         "short_candidates": short_candidates,
         "final_recommendations": final_candidates,
     }
@@ -459,6 +551,7 @@ def load_latest_request_rows(db: Session, user_id: int) -> dict:
         return {
             "request_id": None,
             "request_path": {},
+            "policy_diagnostics": {},
             "candidate_slice": [],
             "final_response": [],
         }
@@ -477,9 +570,11 @@ def load_latest_request_rows(db: Session, user_id: int) -> dict:
     run = db.get(RecommendationRun, request_id)
     config_snapshot = run.config_snapshot if run is not None else {}
     request_path = (config_snapshot or {}).get("request_path", {})
+    policy_diagnostics = (config_snapshot or {}).get("policy_diagnostics", {})
     return {
         "request_id": request_id,
         "request_path": request_path,
+        "policy_diagnostics": policy_diagnostics,
         "candidate_slice": [
             row for row in rows if row.candidate_stage == "candidate_slice"
         ],
@@ -689,11 +784,26 @@ def summarize(rows: list[dict], *, profile_types: tuple[str, ...]) -> dict:
         items = grouped[profile_type]
         by_profile[profile_type] = {
             "user_count": len(items),
+            "preference_state_counts": dict(
+                Counter(item["profile"]["preference_state"] for item in items)
+            ),
+            "average_recent_evidence_confidence": rounded_mean(
+                item["profile"]["recent_evidence_confidence"] for item in items
+            ),
+            "average_semantic_distance": rounded_mean(
+                item["profile"]["semantic_distance"] for item in items
+            ),
             "average_drift_confidence": rounded_mean(
                 item["profile"]["drift_confidence"] for item in items
             ),
             "long_candidates_long_genre_share": rounded_mean(
                 item["quality"]["long_candidates_vs_long_genres"]["mean_genre_share"]
+                for item in items
+            ),
+            "long_ontology_candidates_long_genre_share": rounded_mean(
+                item["quality"]["long_ontology_candidates_vs_long_genres"][
+                    "mean_genre_share"
+                ]
                 for item in items
             ),
             "short_candidates_short_genre_share": rounded_mean(
@@ -722,12 +832,26 @@ def summarize(rows: list[dict], *, profile_types: tuple[str, ...]) -> dict:
                     item["quality"]["source_survival"][key] for item in items
                 )
                 for key in (
+                    "raw_long_term_ontology_count",
+                    "merged_long_term_ontology_count",
+                    "merged_long_term_ontology_only_count",
+                    "model_ontology_agreement",
+                    "effective_model_weight",
+                    "effective_long_term_ontology_weight",
                     "raw_short_term_count",
                     "merged_short_source_count",
                     "merged_short_only_count",
                     "merged_overlap_count",
                     "eligible_short_source_count",
                     "final_short_source_count",
+                    "final_short_only_source_count",
+                    "final_long_term_ontology_source_count",
+                    "policy_short_only_input_count",
+                    "policy_short_only_eligible_count",
+                    "policy_short_only_lane_target",
+                    "policy_short_only_selected_count",
+                    "policy_short_only_forced_count",
+                    "policy_short_only_unselected_count",
                 )
             },
             "average_final_count": rounded_mean(len(item["final_recommendations"]) for item in items),
@@ -837,14 +961,18 @@ def render_markdown(report: dict) -> str:
         "",
         "## 유형별 요약",
         "",
-        "| 유형 | drift | 장기 후보→장기 | 단기 후보→단기 | 최종→장기 | 최종→단기 | 최종 단기 source | 결과 수 |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| 유형 | 상태 분포 | 최근 근거 | 의미 거리 | drift | model→장기 | 장기 ontology→장기 | 단기→단기 | 최종→장기 | 최종→단기 | 최종 단기 source | 결과 수 |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for profile_type in profile_types:
         item = report["summary"]["by_profile_type"][profile_type]
         lines.append(
-            f"| {profile_type} | {item['average_drift_confidence']:.3f} | "
+            f"| {profile_type} | {item['preference_state_counts']} | "
+            f"{item['average_recent_evidence_confidence']:.3f} | "
+            f"{item['average_semantic_distance']:.3f} | "
+            f"{item['average_drift_confidence']:.3f} | "
             f"{item['long_candidates_long_genre_share']:.3f} | "
+            f"{item['long_ontology_candidates_long_genre_share']:.3f} | "
             f"{item['short_candidates_short_genre_share']:.3f} | "
             f"{item['final_long_genre_share']:.3f} | "
             f"{item['final_short_genre_share']:.3f} | "
@@ -886,19 +1014,20 @@ def render_markdown(report: dict) -> str:
             "",
             "## 단기 후보 단계별 생존",
             "",
-            "| 유형 | 원본 단기 | 병합 150 단기 | 병합 단기 전용 | 병합 중복 | eligibility 100 | 최종 20 |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| 유형 | 원본 단기 | 병합 단기 전용 | 정책 통과 단기 전용 | lane 목표 | 정책 선택 단기 전용 | 강제 선택 | 최종 20 단기 전용 |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for profile_type in profile_types:
         survival = report["summary"]["by_profile_type"][profile_type]["source_survival"]
         lines.append(
             f"| {profile_type} | {survival['raw_short_term_count']:.1f} | "
-            f"{survival['merged_short_source_count']:.1f} | "
             f"{survival['merged_short_only_count']:.1f} | "
-            f"{survival['merged_overlap_count']:.1f} | "
-            f"{survival['eligible_short_source_count']:.1f} | "
-            f"{survival['final_short_source_count']:.1f} |"
+            f"{survival['policy_short_only_eligible_count']:.1f} | "
+            f"{survival['policy_short_only_lane_target']:.1f} | "
+            f"{survival['policy_short_only_selected_count']:.1f} | "
+            f"{survival['policy_short_only_forced_count']:.1f} | "
+            f"{survival['final_short_only_source_count']:.1f} |"
         )
     concentration = report["summary"]["candidate_concentration"]
     score_stats = report["summary"]["long_raw_score_distribution"]
@@ -919,8 +1048,8 @@ def render_markdown(report: dict) -> str:
             "",
             "## 사용자별 요약",
             "",
-            "| 사용자 | 유형 | 취향군 | 장기 장르 | 단기 장르 | drift | 최종→장기 | 최종→단기 | 단기 source |",
-            "| --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |",
+            "| 사용자 | 유형 | 취향군 | 장기 장르 | 단기 장르 | 상태 | 근거 | 의미 거리 | drift | 최종→장기 | 최종→단기 | 단기 source |",
+            "| --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for user in report["users"]:
@@ -932,7 +1061,10 @@ def render_markdown(report: dict) -> str:
             cohort = f"{cohort} → {user['recent_cohort_name']}"
         lines.append(
             f"| {user['email']} | {user['profile_type']} | {cohort} | "
-            f"{long_genres} | {short_genres} | {user['profile']['drift_confidence']:.3f} | "
+            f"{long_genres} | {short_genres} | {user['profile']['preference_state']} | "
+            f"{user['profile']['recent_evidence_confidence']:.3f} | "
+            f"{user['profile']['semantic_distance']:.3f} | "
+            f"{user['profile']['drift_confidence']:.3f} | "
             f"{quality['final_vs_long_genres']['mean_genre_share']:.3f} | "
             f"{quality['final_vs_short_genres']['mean_genre_share']:.3f} | "
             f"{quality['final_short_source_ratio']:.3f} |"

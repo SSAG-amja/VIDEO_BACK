@@ -1,916 +1,238 @@
-# 07. V3 전체 추천 흐름 점검
+# 07. V3 전체 추천 흐름
 
-## 1. 문서 목적
+## 목적
 
-이 문서는 V3 추천이 실제 코드에서 어떻게 움직이는지 한 흐름으로 검토하기 위한 문서다.
+사용자 행동이 어디에 저장되고 장기·단기 후보와 최종 추천에 언제 반영되는지 설명한다. 시스템 구조와 후속 작업은 각각 [01 아키텍처와 파이프라인](01_architecture_and_pipeline.md), [08 후속 작업](08_additional_work_backlog.md)을 따른다.
 
-- 시스템 구성 요소와 책임을 먼저 설명한다.
-- 사용자 요청 전에 미리 준비하는 작업과 추천 요청 순간 실행하는 작업을 구분한다.
-- 회원가입, 온보딩, pin, pass, 시청, 플레이리스트, 커뮤니티 활동 등 사용자 행동별 흐름을 단계별로 추적한다.
-- 구현된 정책과 아직 적용되지 않은 정책을 분리한다.
-- 흐름상 또는 정책상 결정을 다시 확인해야 하는 지점을 마지막에 모은다.
+## 용어
 
-이 문서는 새로운 정책의 최종 결정문이 아니다. 검토 결과 확정된 변경은 각각 `01_design_sequence.md`, `03_recommendation_policy.md`, `04_lightfm_tuning.md`에 반영해야 한다.
-
-상태 표시는 다음 의미다.
-
-| 상태 | 의미 |
+| 용어 | 의미 |
 | --- | --- |
-| 구현 | 현재 코드와 실제 검증에서 동작함 |
-| 부분 구현 | 일부 경로만 연결됐거나 입력이 비어 있음 |
-| 미구현 | 설계 또는 자료 구조만 있고 실제 추천에는 적용되지 않음 |
-| 검토 필요 | 동작은 하지만 서비스 정책으로 적절한지 결정이 필요함 |
+| 학습·사전 계산 | 사용자 요청 전에 dataset, model, 장기 후보를 만드는 작업 |
+| 요청 시 계산 | 사용자가 추천을 요청한 순간 profile, 후보 병합, filter와 순위를 계산하는 작업 |
+| LightFM 장기 후보 | 현재 활성 LightFM model로 사용자별 미리 저장한 top-150 |
+| 장기 ontology 후보 | 요청 시 장기 profile의 의미 feature로 독립 조회한 최대 100개 |
+| 단기 후보 | 최근 positive 행동에서 ontology 관계로 독립 생성한 후보 |
+| 활성 후보 | top-150의 앞 100개 |
+| 예비 후보 | hard filter 탈락분만 보충하는 뒤 50개 |
+| 상세 분석 대상 | hard filter를 통과해 ontology/policy가 처리하는 최대 100개 |
+| 단기 worker | 최근 행동을 모아 단기 ontology 후보를 갱신하는 작업. LightFM은 학습하지 않음 |
+| 장기 재학습 | 새 행동을 dataset에 포함해 LightFM model, 장기 후보와 bundle을 다시 만드는 작업 |
+| drift | 최근 positive의 의미 방향이 비교 가능한 장기 취향과 충분히 멀어진 상태 |
+| cold-start | 활성 model에 user identity가 없거나 장기 행동이 부족한 상태 |
 
-## 2. 용어 정리
+`offline`, `online`이라는 표현만으로 구분하지 않고 문서에서는 `학습·사전 계산`과 `요청 시 계산`을 사용한다.
 
-이 문서에서는 영어 용어를 단독으로 사용하지 않고 아래 한국어 의미를 우선 사용한다.
-
-| 용어 | 이 문서에서의 의미 |
-| --- | --- |
-| 사전 준비 작업 (`offline`) | 사용자의 추천 요청과 무관하게 모델, 그래프, 사용자별 기본 후보를 미리 만드는 작업 |
-| 실시간 요청 처리 (`online`) | 사용자가 추천 화면을 요청한 순간 최신 상태를 읽고 결과를 반환하는 처리 |
-| API | 앱 화면이 서버에 추천·행동 저장 등을 요청하는 기존 HTTP 주소와 입출력 계약 |
-| 엔진 연결기 (`adapter`) | 공통 API 입력을 선택된 V1/V2/V3 추천 엔진 호출로 바꾸는 얇은 연결 계층 |
-| 긍정 신호 (`positive`) | 사용자가 해당 영화나 의미 특성을 선호한다고 해석하는 행동 |
-| 부정 신호 (`negative`) | 사용자가 해당 영화나 의미 특성을 원하지 않는다고 해석하는 행동 |
-| 행동 원천 데이터 | DB에 저장된 pin, pass, watched, playlist 저장 등 현재 사용자 상태 |
-| 사용자-영화 학습표 (`interaction matrix`) | 어떤 사용자가 어떤 영화에 positive 행동을 했는지 나타내는 희소 행렬 |
-| 협업 신호 | 여러 사용자가 여러 영화에 보인 공통 행동 패턴에서 학습한 관계 |
-| 특성 (`feature`) | 장르, 키워드, 배우, 감독, 테마, 분위기처럼 영화나 사용자를 표현하는 값 |
-| 혼합 모델 (`hybrid LightFM`) | 협업 신호와 영화·사용자 특성을 함께 학습한 LightFM 모델 |
-| 온톨로지 그래프 | 영화와 장르·키워드·배우·감독·테마·분위기의 의미 관계를 저장한 그래프 |
-| 장기 후보 | LightFM이 장기 행동과 협업 패턴을 바탕으로 고른 영화 |
-| 단기 후보 | 최근 positive 행동의 의미 관계를 온톨로지에서 역으로 찾아 고른 영화 |
-| 저장 후보 (`top-150`) | 장기·단기·cold 순위에서 저장하거나 병합하는 150개. 앞 100개와 hard filter 보충용 예비 50개로 구성 |
-| 상세 처리 후보 (`top-100`) | top-150에 저비용 hard filter를 적용한 뒤 상세 의미 분석과 최종 정책에 전달하는 최대 100개 |
-| 후보 조회 (`retrieval`) | 모델 또는 그래프에서 후보 영화를 찾는 과정 |
-| 점수 정규화 | 출처마다 범위가 다른 점수를 0~1 사이의 비교 가능한 순위 값으로 바꾸는 과정 |
-| 후보 병합 | 장기 후보와 단기 후보 또는 신규 사용자 후보를 한 목록으로 합치는 과정 |
-| 상세 의미 분석 | 최대 100개 후보와 사용자 취향의 장르·배우·테마 등의 일치 정도를 계산하는 과정 |
-| 반드시 제외 (`hard filter`) | 점수와 관계없이 추천에서 제거하는 조건 |
-| 최종 순위 조정 (`reranking`) | 개인화, 의미 일치, 품질, OTT, 부정 취향, 반복 정도를 반영해 순서를 다시 정하는 과정 |
-| 신규 사용자 처리 (`cold-start`) | 학습된 사용자 ID가 없거나 행동이 부족한 사용자에게 초기 추천을 만드는 처리 |
-| 특성만 이용한 LightFM (`feature-only`) | 사용자 ID 학습값 없이 선호 장르와 선호 영화에서 만든 특성만으로 LightFM 점수를 계산하는 방식 |
-| 단기 취향 변화도 (`drift confidence`) | 최근 취향이 과거 취향과 얼마나 달라졌고 일관적인지를 0~1로 표현한 값 |
-| 반복 감점 | 이미 선택된 영화와 같은 장르·배우·감독·테마·분위기가 반복될수록 주는 제한된 감점 |
-| 유사성 감점 (`MMR`) | 앞에서 선택된 영화들과 지나치게 비슷한 후보를 조금 뒤로 보내는 결정적 순위 조정 |
-| 미리 저장 (`materialization`) | 계산 결과를 요청 전에 DB나 Redis에 저장하는 것 |
-| 모델 묶음 (`serving bundle`) | 함께 사용해야 하는 LightFM 모델, 온톨로지 build, 기본 후보 snapshot, 정책 버전을 묶은 단위 |
-| 생성 버전 (`build`) | 같은 원천 데이터와 설정으로 만든 그래프 또는 모델의 변경 불가능한 한 버전 |
-| 상태 스냅샷 (`snapshot`) | 특정 시점의 DB 현재 상태를 고정해 만든 학습 또는 후보 결과 |
-| 임시 저장소 (`cache`) | 반복 계산을 줄이기 위해 Redis 등에 결과를 잠시 저장하는 것 |
-| 작업 처리기 (`worker`) | 요청과 분리되어 예약된 계산을 가져가 실행하는 프로세스 |
-| 대체 경로 (`fallback`) | 주 경로를 사용할 수 없을 때 기능을 유지하기 위해 사용하는 다음 처리 방식 |
-| 제외 목록 (`blacklist`) | watched/passed 영화를 빠르게 제거하기 위해 Redis에 둔 사용자별 영화 집합 |
-| 백분위 순위 (`percentile`) | 후보 집합 안에서 해당 점수가 어느 순위 위치인지 0~1로 바꾼 값 |
-| 페이지 시작·개수 (`offset/limit`) | 전체 순위에서 어디부터 몇 개를 반환할지 지정하는 값 |
-| 발생 시각 (`timestamp`) | 행동이 실제로 저장된 시각. 최근성 계산과 과거 시점 데이터 차단에 사용 |
-| WARP | 관측된 positive 영화가 관측되지 않은 영화보다 위에 오도록 학습하는 LightFM 순위 손실 함수 |
-| 행동 묶음 대기 (`debounce`) | 짧은 시간에 연속된 행동을 한 번에 처리하기 위해 마지막 행동 뒤 잠시 기다리는 것 |
-| 작업 임대 (`processing lease`) | worker가 가져간 작업이 중복 처리되지 않게 표시하고, 죽으면 일정 시간 후 다시 처리 가능하게 하는 장치 |
-| 추천 근거 | 온톨로지와 정책에서 확인된 의미 일치·OTT·품질·신작 정보. LightFM 점수의 인과 설명은 아님 |
-
-## 3. 전체 구조
+## 전체 구조
 
 ```text
-[공통 HTTP API]
-  기존 API 주소와 응답 형식을 유지
-        |
-        v
-[추천 엔진 선택기]
-  RECOMMENDATION_ENGINE=v1|v2|v3
-        |
-        v
-[V3 추천 조정 서비스]
-  1. 활성 모델 묶음 확인
-  2. 최신 사용자 프로필 생성
-  3. 사용자 상태에 맞는 후보 경로 선택
-  4. 순위 후보를 최대 150개로 병합
-  5. 저비용 hard filter 후 최대 100개 확정
-  6. 확정 후보의 온톨로지 상세 의미 분석
-  7. 점수 정책·순위·근거 저장 후 응답
-        |
-        +--------------------+---------------------+
-        |                    |                     |
-        v                    v                     v
-  [PostgreSQL]          [Redis]              [모델 파일]
-  행동·영화·그래프      blacklist             LightFM
-  기본 후보·진단        행동 누적·작업 큐      후보 snapshot
-                        단기 후보 cache        활성 bundle
+[학습·사전 계산]
+DB 행동 snapshot
+  -> ontology item/user feature
+  -> hybrid LightFM 학습
+  -> 사용자별 장기 top-150
+  -> model + graph + candidate + policy bundle 활성화
+
+[최근 행동 갱신]
+DB positive 행동
+  -> Redis 누적·예약
+  -> 단기 worker
+  -> 단기 ontology 후보 cache
+
+[추천 요청]
+DB 최신 profile·제외·OTT
+  + 장기 top-150 또는 cold 후보
+  + 단기 ontology 후보
+  -> source 정규화·병합
+  -> hard filter와 예비 보충
+  -> 최대 100개 ontology 상세 분석
+  -> policy, drift lane, 반복 감점, MMR
+  -> offset/limit 응답
 ```
 
-### 3.1 구성 요소별 책임
+## 학습·사전 계산
 
-| 구성 요소 | 책임 | 하지 않는 일 |
-| --- | --- | --- |
-| 공통 API | 인증, 입력, 기존 응답 형식 유지 | V3 전용 분기나 점수 계산 |
-| 추천 엔진 선택기 | 환경 설정에 맞는 V1/V2/V3 adapter 선택 | V3 실패를 엔진 내부에서 V1로 위장 |
-| LightFM | 장기 후보와 협업 패턴 학습 | OTT 필터, 추천 문구, passed 음수 학습 |
-| 온톨로지 | 영화 의미 특성, 단기 후보, 의미 일치 근거 | LightFM이 왜 점수를 냈는지 인과적으로 설명 |
-| 정책 엔진 | 제외, OTT, 품질, 부정 취향, 반복, 최종 순위 | 전체 영화를 새로 탐색 |
-| PostgreSQL | 사용자 행동과 영화·그래프의 기준 데이터 | 짧은 시간의 작업 큐 처리 |
-| Redis | 즉시 blacklist, 단기 행동 누적, 작업 예약, 단기 후보 임시 저장 | 영구 행동 이력의 기준 데이터 |
-| 사전 준비 job | 그래프·모델·장기 후보·bundle 생성 | HTTP 요청 처리 |
-| 단기 후보 worker | 기준을 충족한 사용자의 단기 후보를 요청 전에 계산 | LightFM 재학습 |
+### Ontology graph
 
-## 4. 추천 요청 전에 미리 준비하는 흐름
+영화의 장르, keyword, 배우, 감독, overview 기반 theme/mood와 evidence를 immutable build로 생성한다. 현재 기준은 build `22`다.
 
-### 4.1 영화 온톨로지 그래프 생성
+Graph는 다음 용도로 쓰인다.
 
-상태: 구현
+- LightFM item/user feature
+- 장기·단기 runtime profile
+- 단기와 cold-start 후보 생성
+- 후보의 semantic score와 근거
+- negative 취향과 반복 유사도
+
+영화 metadata가 바뀌어도 현재 graph가 자동 갱신되지는 않는다. 자동 반영은 `08` P0-05다.
+
+### LightFM 학습
+
+현재 직접 positive 신호는 saved, pinned, watched, favorite이며 passed는 positive로 학습하지 않는다. 같은 user/movie의 신호는 한 행으로 합치고 passed 충돌 시 passed가 이긴다.
+
+Ontology feature는 모델 입력이지만, 추천 근거가 LightFM 점수의 인과 설명은 아니다. 모델 점수, ontology 점수와 정책 효과를 분리 기록한다.
+
+게시글·좋아요·댓글은 projector와 진단만 있으며 현재 LightFM 학습에는 들어가지 않는다.
+
+### 장기 후보
+
+전체 user-by-movie dense matrix를 만들지 않고 blockwise exact top-K를 계산한다. 사용자별 150개를 저장하며 앞 100개는 활성, 뒤 50개는 hard filter 예비 후보다.
+
+장기 후보는 model artifact가 바뀌지 않는 한 단기 worker를 반복 실행해도 달라지지 않는다.
+
+장기 ontology 후보는 현재 DB 행동으로 만든 장기 profile을 사용하므로 새 행동이 다음 요청부터 반영된다. 이 점수는 LightFM 점수와 별도 source로 기록하며 LightFM의 인과 설명으로 사용하지 않는다.
+
+## 사용자 profile
+
+요청 시 DB 현재 상태로 positive와 negative 행동을 다시 읽는다.
+
+### 장기 ontology profile
+
+현재 positive 행동 전체를 장기 감쇠 규칙으로 집계한다. 새 행동은 다음 요청부터 이 profile에 포함된다. 따라서 단기 행동이 잠깐 사용된 뒤 버려지는 구조가 아니다.
+
+다만 LightFM 장기 후보는 별개다. 새 행동이 다음 dataset snapshot, 재학습과 candidate 재생성에 포함돼야 model 기반 장기 후보가 바뀐다.
+
+### 단기 profile
+
+최근 30일의 최대 50개 행동을 더 강한 시간 감쇠로 집계한다. 단기 profile은 최근 방향을 추가 강조하고 독립 후보를 만드는 경로다.
+
+상태 판정:
+
+- `inactive`: 최근 근거 부족
+- `recent_interest`: 최근 근거는 충분하지만 장기 비교 근거 부족
+- `stable`: 장기와 최근 의미 방향이 가까움
+- `drift`: 장기와 최근 의미 거리가 0.70 이상
+
+### Negative profile
+
+passed와 최근 negative는 exact movie exclusion과 semantic negative 감점으로 나눠 적용한다. exact passed/watched는 항상 hard filter가 우선한다.
+
+## 단기 후보 갱신
+
+Positive 행동을 하나 할 때마다 무조건 후보를 다시 계산하지 않는다.
+
+현재 갱신 기준:
+
+- 최근 24시간 서로 다른 positive 영화 3편
+- 또는 서로 다른 영화 2편이면서 행동 weight 합 2.0 이상
+- threshold 도달 후 30초 debounce
+- 최초 예약 후 최대 2분 안에는 실행
+- scheduled 작업 lease 15분
+
+Passed와 OTT 변경은 단기 후보를 다시 만들지 않는다. 최신 exclusion과 OTT policy가 다음 요청에서 즉시 적용되기 때문이다.
+
+Cache는 build/user/format signature를 포함한 format 3이며 저장 후 6시간과 사용자별 최대 30분 jitter를 사용한다. cache miss에서는 DB fallback이 유지된다.
+
+## 알려진 사용자 요청
 
 ```text
-영화·장르·키워드·배우·감독·OTT·overview 의미 신호
-  -> 원천 데이터 fingerprint 계산
-  -> 영화/장르/키워드/person/theme/mood/OTT node 생성
-  -> 사실 관계 edge 생성
-  -> theme/mood 의미 evidence 생성
-  -> 의미 edge 강도 집계
-  -> 전체 검증
-  -> 성공한 새 build를 비활성 상태로 보관
+1. 활성 bundle 확인과 model memory cache 조회
+2. DB에서 현재 행동·온보딩·OTT·제외 정보 조회
+3. 장기·단기 runtime profile 생성
+4. 저장된 LightFM top-150 조회
+5. 장기 profile 기반 ontology 후보 최대 100개 조회
+6. 단기 candidate cache 조회, 필요 시 bounded DB fallback
+7. source별 percentile 정규화와 후보 병합
+8. hard filter 적용, 탈락 수만큼 예비 50개 검사
+9. 최대 100개 ontology 상세 분석
+10. personal/ontology 점수와 정책 효과 계산
+11. drift인 경우 short-only lane 적용
+12. 반복 감점과 결정적 MMR
+13. 전체 순서에서 offset/limit slice 반환
 ```
 
-주요 관계:
+Personal/ontology 기본 비율은 `0.75/0.25`다. Quality, negative, OTT와 반복 정책은 bounded adjustment로 적용하며 상세 숫자는 [04 LightFM 조정 지점](04_lightfm_tuning.md)에 있다.
 
-```text
-영화 -> 장르
-영화 -> 키워드
-영화 -> 배우 person
-영화 -> 감독 person
-영화 -> 테마
-영화 -> 분위기
-영화 -> streaming/rent/buy OTT
-```
+## Cold-start 요청
 
-현재 graph build는 기존 활성 graph를 제자리 수정하지 않는다. 영화 의미 원천이 바뀌면 새 전체 build를 만들고 모델·후보·정책과 호환성을 확인한 뒤 모델 묶음 단위로 전환한다.
+Model identity가 없는 사용자는 온보딩 장르와 선호 영화로 feature-only LightFM 점수를 계산하고 ontology 규칙 후보와 결합한다.
 
-### 4.2 LightFM 학습 데이터 생성
+- 정상 온보딩: ontology 70%, feature-only model 30%
+- 장르만 남은 방어 경로: ontology 85%, model 15%
+- overview evidence가 있는 경우에만 장르에서 theme/mood로 확장
+- model mapping에 없는 graph 영화는 `ontology_cold_item` source로 구분
+- 의미 후보가 없을 때만 품질 fallback
+- OTT는 후보 feature가 아니라 최종 filter/context
 
-상태: 직접 행동 구현, 소셜 행동은 진단만 구현
+온보딩 변경 known user는 다음 요청에서 변경을 감지해 feature-only top-150을 계산·저장한다. 정기 장기 재학습 전까지 identity model 자체가 바뀌는 것은 아니다.
 
-현재 직접 행동 가중치:
+## 최종 정책 순서
 
-| 행동 | LightFM 학습 가중치 | 비고 |
-| --- | ---: | --- |
-| favorite | 1.0 | timestamp 없는 온보딩 선호 |
-| watched | 1.5 | positive 학습 후 같은 영화는 추천에서 제외 |
-| saved | 2.0 | 현재 플레이리스트에 존재하는 user-movie 관계 |
-| pinned | 2.0 | 현재 pin 상태 |
-| passed | positive 아님 | 학습표에서 제외하고 추천 제외·부정 취향에 사용 |
+1. DB 존재, 상태, adult/title 조건
+2. watched, passed, blacklist와 요청에 전달된 session exclusion. 현재 session 입력 연결은 미구현이다.
+3. OTT mode filter
+4. personal score와 ontology score 결합
+5. catalog 신뢰도, recency, OTT bonus와 semantic negative
+6. drift short-only lane
+7. genre/actor/director/theme/mood 반복 감점
+8. 결정적 MMR과 최종 tie-break
 
-최근성 배율:
+Vote count 20 미만은 최대 0.05 soft 감점을 받지만 일반 후보의 최소 투표 수 hard filter는 없다. 장르-only cold 방어 경로의 최소 1표 조건은 별도다.
 
-| 행동 나이 | 배율 |
-| --- | ---: |
-| 30일 이하 | 1.0 |
-| 90일 이하 | 0.8 |
-| 180일 이하 | 0.6 |
-| 그보다 오래됨 | 0.4 |
-| timestamp 없음 | 1.0 |
+## 사용자 행동별 반영
 
-같은 사용자-영화에 여러 positive 상태가 있으면 가장 큰 행동 가중치를 대표값으로 사용하고, 다른 행동마다 최근성을 반영한 `0.15` 보너스를 더한다. 최종 학습 가중치는 `2.3`을 넘지 않는다. 같은 영화에 passed가 함께 있으면 passed가 우선하며 해당 영화는 positive 학습에서 빠지고 충돌 건수를 기록한다.
-
-중요한 데이터 한계:
-
-- 현재 DB 상태를 읽는 스냅샷이다.
-- 과거에 pin했다가 해제한 이력은 복원하지 않는다.
-- 과거에 저장했다가 삭제한 이력은 복원하지 않는다.
-- 여러 번 반복한 행동으로 추정하지 않는다.
-
-### 4.3 소셜 행동 수집 상태
-
-상태: 부분 구현
-
-영화 게시글 작성, 플레이리스트 게시글 작성, 영화 게시글 좋아요, 영화·플레이리스트 게시글 댓글을 사용자-영화 형태로 투영하는 코드는 있다. 플레이리스트 행동은 한 번의 행동 총량이 영화 수만큼 커지지 않도록 각 영화에 `1/N`을 배분한다.
-
-하지만 현재 모든 소셜 신호는 `direction_unresolved`, `eligible_for_training=false`다. 즉 다음 정보만 진단에 남고 LightFM 학습표에는 들어가지 않는다.
-
-- 어떤 종류의 소셜 행동이 몇 건인지
-- 어떤 사용자·영화에 연결되는지
-- timestamp가 있는지
-- 플레이리스트 한 행동이 몇 영화에 분배됐는지
-
-특히 플레이리스트 게시글 좋아요는 좋아요 시점과 당시 플레이리스트 구성을 복원할 수 없어 보류 상태다. 현재 코드 기준으로 게시글·좋아요·댓글은 추천 결과를 바꾸지 않는다.
-
-### 4.4 LightFM 영화·사용자 특성 생성
-
-상태: 구현
-
-영화 특성:
-
-- 영화 ID
-- 장르
-- 키워드
-- 배우
-- 감독
-- 테마
-- 분위기
-
-키워드·배우·감독은 최소 5편 이상에 등장한 값을 학습 특성으로 유지한다. 키워드가 전체 catalog의 절반을 넘게 연결되면 너무 일반적인 값으로 보고 제외한다. 이 가지치기는 LightFM 특성에만 적용하고 온톨로지 graph에서 관계를 삭제하지 않는다.
-
-사용자 특성:
-
-- 사용자 ID
-- 온보딩에서 선택한 장르: 1.0
-- 온보딩 선호 영화에서 가져온 장르·키워드·배우·감독·테마·분위기: 0.5
-
-OTT는 LightFM 특성으로 넣지 않는다. OTT는 추천 요청 순간의 필터와 작은 보너스에만 사용한다.
-
-### 4.5 혼합 LightFM 학습
-
-상태: 구현
-
-```text
-사용자-영화 positive 학습표
-+ 사용자 ID/온보딩 특성
-+ 영화 ID/온톨로지 특성
-  -> WARP 학습
-  -> 사용자·영화 협업 관계와 특성 관계를 함께 가진 모델 생성
-```
-
-현재 기본값은 잠정값이다.
-
-```text
-잠재 차원 64
-epoch 40
-learning rate 0.05
-loss WARP
-random seed 42
-학습 thread 1
-```
-
-새 행동이 DB에 들어간다고 LightFM이 즉시 바뀌지는 않는다. 다음 학습 스냅샷과 모델 재생성·후보 게시·모델 묶음 전환을 거쳐야 장기 후보에 반영된다. V3 전용 자동 학습 일정은 아직 없다.
-
-### 4.6 사용자별 장기 후보 150개 미리 저장
-
-상태: 구현
-
-학습된 사용자별로 전체 영화 점수를 한꺼번에 거대한 행렬로 만들지 않고 영화 block 단위로 계산한다. 각 사용자의 watched/passed 영화는 이 단계에서 제외하고 정확한 상위 150개를 저장한다. 앞 100개는 활성 순위, 뒤 50개는 hard filter 보충용 예비 순위다.
-
-```text
-LightFM 모델
-  -> 사용자 block x 영화 block 점수 계산
-  -> block별 상위 후보 유지
-  -> 사용자별 정확한 top-150
-  -> immutable candidate snapshot
-  -> recommendations 테이블 게시
-```
-
-### 4.7 모델 묶음 활성화
-
-상태: 구현
-
-아래 항목이 서로 같은 입력을 사용한 경우에만 하나의 모델 묶음으로 활성화한다.
-
-- LightFM model build
-- ontology build
-- 사용자별 장기 후보 snapshot
-- feature registry version
-- policy config hash
-
-활성 pointer가 손상되면 새 process는 `V3NotReadyError`를 발생시킨다. 이미 정상 bundle을 메모리에 올린 process는 잘못된 새 pointer를 거부하고 직전 정상 bundle을 계속 사용한다.
-
-## 5. 추천 요청 순간 공통 처리
-
-```text
-1. 공통 API가 V3 adapter 호출
-2. 활성 모델 묶음 검증 및 메모리 model 재사용
-3. DB에서 최신 사용자 상태 조회
-4. 장기·단기·온보딩·OTT 프로필 생성
-5. 알려진 사용자 경로 또는 신규/온보딩 변경 경로 선택
-6. 장기·단기·cold 순위 후보 최대 150개 구성
-7. metadata·OTT 등 저비용 hard filter로 통과 순서 최대 100개 확정
-8. 확정된 최대 100개만 온톨로지 상세 의미 분석
-9. 개인화·온톨로지·품질·OTT·부정 취향 점수 계산
-10. 반복 감점과 유사성 감점으로 결정적 순위 조정
-11. offset/limit만큼 잘라 응답
-12. 점수 구성과 추천 근거를 진단 테이블에 저장
-```
-
-요청마다 다시 읽는 최신 상태:
-
-- 현재 favorite/pinned/saved/watched/passed
-- 현재 구독 OTT
-- 현재 영화 streaming 제공 여부
-- 영화 adult/title/status/popularity/vote/release date
-- Redis blacklist
-
-요청마다 다시 계산하지 않는 항목:
-
-- LightFM 모델
-- 알려진 사용자의 기본 장기 후보 top-150
-- 정상 cache가 있는 알려진 사용자의 단기 후보 top-100
-- 활성 온톨로지 graph
-
-### 5.1 V3 실패 시 화면 API의 대체 경로
-
-V3 엔진 안에서는 활성 모델 묶음이 없거나 손상됐을 때 V1로 조용히 전환하지 않고 오류를 발생시킨다. 하지만 기존 화면 API는 서비스 연속성을 위해 그 오류를 잡아 별도 대체 결과를 반환한다.
-
-| 화면 API | V3 실패 시 동작 |
-| --- | --- |
-| 탐색 추천 `/movies/recommended` | 기존 DB 추천 조회로 대체 |
-| 홈 숏츠 `/shorts` | 기존 인기 영화 조회로 대체 |
-
-따라서 사용자는 빈 화면을 피할 수 있지만, 응답만 보고 V3가 성공했는지는 알 수 없다. 서버 log와 추천 실행 진단으로 V3 성공률을 별도 관측해야 한다.
-
-추천 결과 계산은 성공했지만 진단 테이블 저장만 실패한 경우에도 추천 응답은 유지한다. 진단 실패는 warning log로 남는다.
-
-## 6. 사용자 프로필 계산 정책
-
-### 6.1 행동 의미
-
-| 행동 | 장기 취향 | 최근 30일 단기 취향 | 같은 영화 제외 |
+| 행동 | 다음 요청 | 단기 worker 후 | 장기 후보 재생성·LightFM 재학습 후 |
 | --- | --- | --- | --- |
-| favorite | positive 0.5 | 포함하지 않음 | 아니오 |
-| pinned | positive 1.0 | positive 1.0 | 아니오 |
-| saved | positive 1.0 | positive 1.0 | 아니오 |
-| watched | positive 0.75 | positive 0.75 | 예 |
-| passed | negative 1.0 | negative 1.0 | 예 |
-
-같은 영화에 passed와 positive가 동시에 있으면 passed가 우선한다.
-
-### 6.2 장기 취향
-
-장기 취향은 현재 DB에 남아 있는 모든 직접 행동을 사용한다. 행동 최근성은 LightFM 학습과 같은 30/90/180일 구간 배율을 사용한다. favorite는 timestamp가 없으므로 감쇠하지 않는다.
-
-사용자 성숙도:
-
-| positive 영화 수 | 상태 |
-| ---: | --- |
-| 0, 온보딩도 없음 | 프로필 없음 |
-| 0, 온보딩 있음 | 온보딩만 있음 |
-| 1~2 | 매우 적음 |
-| 3~9 | 보통 이하 |
-| 10 이상 | 충분히 쌓임 |
-
-현재 성숙도 값은 진단과 분기에 저장되지만 별도의 점수 가중치 전환에는 직접 사용하지 않는다.
-
-### 6.3 단기 취향
-
-```text
-기간             최근 30일
-최대 행동 수     최신 50개
-시간 감쇠        14일마다 절반
-positive         pinned, saved, watched
-negative         passed
-```
-
-영화 하나에 배우나 키워드가 많다는 이유로 프로필을 독점하지 않도록, 각 의미 관계 기여도에 `1 / sqrt(그 영화의 해당 관계 개수)`를 곱한다.
-
-관계 종류별 유지 개수:
-
-| 종류 | 장기 최대 | 단기 최대 | 점수 상한 |
-| --- | ---: | ---: | ---: |
-| 장르 | 6 | 4 | 4.0 |
-| 키워드 | 30 | 16 | 3.0 |
-| 배우 | 30 | 12 | 2.0 |
-| 감독 | 12 | 8 | 3.0 |
-| 테마 | 12 | 8 | 3.0 |
-| 분위기 | 10 | 8 | 3.0 |
-
-### 6.4 단기 취향 변화도
-
-```text
-활동량 = min(1, 최근 positive 행동 수 / 5)
-새로움 = 최근 의미 특성 중 과거 장기 취향에 없던 값의 관계군별 평균
-positive 일관성 = recent positive / (recent positive + recent passed)
-
-단기 취향 변화도
-  = 활동량 * (0.5 + 0.5 * 새로움) * positive 일관성
-```
-
-과거와 비교 가능한 관계군이 없으면 새로움은 0이다. passed만 있으면 단기 취향 변화도는 0이다.
-
-## 7. 알려진 사용자 추천 경로
-
-알려진 사용자는 현재 LightFM 모델의 사용자 ID가 존재하는 사람이다.
-
-```text
-1. DB에 게시된 LightFM 기본 후보 top-150 조회
-2. 현재 온보딩 특성이 모델 학습 당시와 같은지 비교
-3. 같으면 알려진 사용자 경로 유지
-4. Redis의 단기 후보 cache 조회
-5. cache에서 최신 watched/passed 제거
-6. 장기·단기 점수를 각각 percentile로 정규화
-7. 단기 취향 변화도에 따라 두 후보 목록 병합
-8. 저비용 hard filter 통과 순서로 최대 100개 확정
-9. 후보와 사용자 취향의 의미 일치 분석
-10. 필터·점수·반복 정책 적용
-```
-
-후보 선택 점수:
-
-```text
-단기 비중 = 단기 취향 변화도 * 0.45
-
-후보 선택 점수
-  = (1 - 단기 비중) * 정규화 장기 점수
-  + 단기 비중 * 정규화 단기 점수
-```
-
-단기 취향 변화도가 0.60 이상이면 단기 후보가 전부 밀리지 않도록 최소 포함 장치를 켠다. 최대 보장량은 최종 100개의 25%이며 무작위 후보는 넣지 않는다.
-
-## 8. 신규 사용자·온보딩 변경 사용자 추천 경로
-
-다음 사용자는 이 경로를 사용한다.
-
-- LightFM 모델에 사용자 ID가 없는 신규 사용자
-- 모델 학습 후 선호 장르나 선호 영화가 바뀐 알려진 사용자
-
-```text
-1. 선호 장르와 선호 영화에서 사용자 특성 생성
-2. 사용자 ID 없이 feature-only LightFM 후보 계산
-3. 온보딩 선호 영화 자체는 양쪽 후보에서 제외
-4. 온보딩 장르·선호 영화·최근 positive 의미 관계로 온톨로지 후보 계산
-5. 온톨로지 후보가 없으면 신뢰도 보정 품질 후보 사용
-6. 두 출처 점수를 각각 percentile로 정규화
-7. 최대 150개로 병합하고 저비용 hard filter 통과 순서의 최대 100개에 온톨로지 분석·최종 정책 적용
-```
-
-정상 프론트 온보딩은 OTT·선호 장르·선호 영화를 각각 한 개 이상 요구한다. 신규 사용자 경로는 선호 영화에서 파생된 의미 관계를 주 rule 근거로 사용하고, 명시적 장르는 넓은 취향 방향을 보완한다. 두 출처가 모두 있으면 병합 비중은 다음과 같다.
-
-```text
-선호 영화 있음
-  feature-only LightFM 0.30
-  온톨로지 규칙 후보   0.70
-
-장르-only 복구 경로
-  feature-only LightFM 0.15
-  온톨로지 규칙 후보   0.85
-```
-
-장르-only 경로는 선호 장르 직접 일치를 유지하면서 genre에서 1-hop으로 확장한 theme/mood를 후보의 실제 `overview_signal` evidence로 확인한다. overview가 없으면 직접 장르 일치 후보를 탈락시키지 않는다. `vote_count=0`은 제외하고 20표 이상 신뢰 후보를 먼저 채운 뒤 1~19표 후보를 보충한다. 의미 관련도 0.65와 신뢰 품질 0.35를 후보 선정 전에 반영하며, 장르 포함률 0.70과 영화 내 장르 집중도 0.30으로 다중 장르 부풀림을 보정한다. 후보 생성에 사용한 온보딩 feature는 7단계 상세 분석에도 포함해 ontology score와 추천 근거가 0으로 끊기지 않게 한다.
-
-온톨로지에서 찾았지만 현재 LightFM 영화 목록에 없는 영화는 `ontology_cold_item`으로 출처를 분리 기록한다.
-
-온보딩과 최근 positive 의미 특성도 없으면 품질 기반 후보로 내려간다. 이 경우 사용자 개인 취향 정보가 없는 비정상·복구 초기 추천이다. 비슷한 온보딩 사용자의 행동 후보는 실제 사용자 데이터와 지지 수가 충분해진 뒤 추가한다.
-
-## 9. 후보 상세 분석과 최종 정책
-
-### 9.1 상세 의미 분석
-
-최대 100개 후보만 한 번에 DB로 전달한다. 후보별 쿼리를 반복하지 않고 다음 값을 집계한다.
-
-- 장기 positive 일치
-- 장기 negative 일치
-- 단기 positive 일치
-- 단기 negative 일치
-- 장르·키워드·배우·감독·테마·분위기별 점수
-- 현재 streaming OTT와 사용자 구독 OTT 교집합
-- 반복 감점용 장르·배우·감독·테마·분위기 집합
-
-온톨로지 점수는 의미 관계가 있다는 근거다. LightFM이 해당 배우나 장르 때문에 점수를 냈다는 설명으로 사용하지 않는다.
-
-### 9.2 반드시 제외 조건
-
-다음 영화는 점수와 관계없이 제거한다.
-
-- 영화 DB row 없음
-- adult 영화
-- 표시 가능한 한국어·원어 제목 없음
-- 사용자가 watched한 영화
-- 사용자가 passed한 영화
-- Redis blacklist 영화
-- 요청 컨텍스트에 전달된 세션 노출 영화
-- 요청 컨텍스트에 전달된 개별 차단 영화
-- 상태가 `취소됨` 또는 `Canceled`
-- `subscribed_only` 모드에서 구독 OTT streaming이 아닌 영화
-
-현재 실제 요청에서는 세션 노출 영화와 개별 차단 영화 집합이 비어 있다. 필터 구현은 있지만 입력 연결은 미구현이다.
-
-### 9.3 최종 점수
-
-```text
-개인화 점수 = 후보 선택 점수 * 0.75
-
-온톨로지 원점수
-  = 장기 positive 의미 일치
-  + 단기 positive 의미 일치 * 0.5
-
-온톨로지 점수 = 후보 내 percentile 정규화 * 0.25
-
-기본 점수 = 개인화 점수 + 온톨로지 점수
-
-최종 점수
-  = 기본 점수
-  + 최근 개봉 보너스
-  + 구독 OTT 보너스
-  + 품질 보너스
-  - 부정 취향 감점
-  - 반복 감점
-  - 앞선 추천과의 유사성 감점
-```
-
-### 9.4 정책별 최대 영향
-
-| 정책 | 현재 상한 또는 기준 |
-| --- | --- |
-| 최근 개봉 | 최근 365일 선형 감소, 최대 +0.03 |
-| 구독 OTT | `all` 모드에서 streaming 교집합이 있으면 +0.04 |
-| 품질 | 최대 +0.08 |
-| 부정 취향 | 기본 점수의 30%와 절대 0.20 중 작은 값 |
-| 반복 감점 | 최대 -0.06 |
-| 유사성 감점 | 최대 -0.08 |
-
-품질 점수:
-
-```text
-투표 신뢰도 = vote_count / (vote_count + 100)
-평점 점수 = min(vote_average / 10, 1)
-인기도 점수 = log1p(popularity) / log1p(100), 최대 1
-
-품질 점수
-  = 투표 신뢰도 * (평점 점수 * 0.85 + 인기도 점수 * 0.15)
-```
-
-따라서 vote count가 매우 적으면 popularity나 한 명의 높은 평점만으로 큰 품질 보너스를 받지 못한다.
-
-부정 취향은 passed 영화 수가 3개일 때 신뢰도 1에 도달한다. 장르 0.15, 키워드 0.35, 배우 0.30, 감독 0.45, 테마 0.45, 분위기 0.35 가중치를 사용하고 단기 negative에는 1.25를 곱한다. 최종 감점은 지수 포화와 총량 상한을 적용한다.
-
-### 9.5 반복 감점과 순위 결정
-
-후보를 한 개씩 선택하면서 이미 선택된 영화와의 장르·배우·감독·테마·분위기 중복을 계산한다. 관련성이 높은 순서를 유지하되 반복이 심한 후보를 제한된 범위에서 뒤로 보낸다.
-
-- random 교체 없음
-- 같은 입력과 같은 모델 묶음이면 같은 결과
-- 동점은 기존 후보 순위와 movie ID로 결정
-- 키워드는 의미 점수에는 사용하지만 반복 감점 집합에서는 제외
-
-## 10. 단기 후보 갱신 흐름
-
-### 10.1 행동 수집 기준
-
-최근 24시간 동안 같은 영화에는 가장 큰 positive 가중치 하나만 유지한다.
-
-```text
-pinned  1.0
-saved   1.0
-watched 0.75
-```
-
-다음 중 하나를 만족해야 독립 단기 후보를 다시 찾는다.
-
-```text
-서로 다른 positive 영화 3개 이상
-또는
-서로 다른 positive 영화 2개 이상이고 가중치 합 2.0 이상
-```
-
-### 10.2 계산 시점
-
-```text
-기준 충족
-  -> 마지막 positive 변경 후 30초 대기
-  -> 행동이 계속되면 묶어서 처리
-  -> 최초 기준 충족 후 최대 2분 안에는 실행
-  -> worker가 사용자 작업을 원자적으로 선점
-  -> DB 최신 프로필로 단기 후보 최대 100개 계산
-  -> Redis 저장
-```
-
-worker가 처리 중 죽으면 15분 작업 임대가 끝난 뒤 다시 처리할 수 있다. 계산 중 새 행동이 들어와 revision이 바뀌면 처리 완료로 지우지 않고 다시 예약한다.
-
-positive 삭제는 임계치와 무관하게 30초 뒤 강제 갱신한다. passed와 OTT 변경은 단기 후보 재생성을 예약하지 않는다.
-
-### 10.3 요청에서 반영되는 시점
-
-- 행동 한 건도 다음 요청의 최신 DB 프로필과 최종 점수에는 즉시 반영된다.
-- 임계치 미달이면 비싼 graph 역조회는 하지 않고 기존 단기 후보를 재정렬한다.
-- 임계치를 충족하면 worker가 새 단기 후보를 만들고 그다음 요청부터 사용한다.
-- watched/passed 영화는 cache가 오래됐어도 요청 시 즉시 제거한다.
-
-### 10.4 cache 수명
-
-단기 후보 cache는 ontology build, user ID, cache format으로 검증한다. 저장 후 6시간에 사용자별 0~30분 지연을 더한 시점에 만료한다. 고정된 6시간 시각 경계를 사용하지 않아 여러 사용자가 동시에 만료되는 현상을 줄였다.
-
-Redis 장애, cache 손상, TTL 만료 또는 cache miss에서는 추천 요청이 DB graph 조회로 복구한다. 기능은 유지되지만 그 요청은 느려질 수 있다.
-
-## 11. 사용자 행동별 단계 흐름
-
-### 11.1 회원가입만 하고 온보딩을 하지 않은 사용자
-
-1. 사용자 ID가 DB에 생성된다.
-2. 모델 학습 당시 없던 사용자면 LightFM 사용자 ID 표현은 없다.
-3. 선호 장르와 선호 영화도 없으므로 feature-only LightFM 사용자 행은 비어 있다.
-4. 온톨로지 초기 취향 후보도 만들 수 없다.
-5. adult/title/watched/passed 조건을 지킨 품질 기반 후보를 사용한다.
-6. 현재는 무작위 탐색이나 신작 quota를 섞지 않는다.
-
-검토 포인트: 아무 정보 없는 사용자의 품질 fallback만으로 충분한지 확인이 필요하다.
-
-### 11.2 온보딩에서 OTT만 선택한 사용자
-
-1. `user_otts`에 구독 OTT가 저장된다.
-2. OTT는 LightFM 사용자 취향 특성이 되지 않는다.
-3. `all` 모드에서는 구독 OTT streaming 영화에 최대 0.04 보너스를 준다.
-4. `subscribed_only` 모드에서는 해당 OTT에서 현재 streaming 중인 영화만 남긴다.
-5. 취향 장르·영화가 없으면 후보 생성 자체는 품질 fallback 중심이다.
-
-### 11.3 온보딩에서 선호 장르를 선택하거나 수정한 사용자
-
-1. `user_genres` 현재 상태를 교체한다.
-2. 장르는 LightFM 사용자 특성과 온톨로지 초기 취향에 모두 사용된다.
-3. 현재 장르 수정 endpoint는 후보 선계산 함수를 호출하지 않는다.
-4. 다음 추천 요청에서 학습 당시 사용자 특성과 현재 특성 차이를 감지한다.
-5. 해당 요청에서 feature-only LightFM top-150과 온톨로지 후보를 계산한다.
-6. feature-only 후보를 현재 온보딩 서명과 함께 저장해 다음 요청부터 재사용한다.
-
-### 11.4 온보딩에서 선호 영화를 선택하거나 수정한 사용자
-
-1. `user_favorite_movies` 현재 상태를 교체한다.
-2. favorite 영화의 장르·키워드·배우·감독·테마·분위기를 사용자 초기 특성으로 만든다.
-3. favorite 자체는 장기 positive 0.5이며 단기 취향에는 들어가지 않는다.
-4. V3에서는 수정 API 중에 추천 후보를 계산하지 않는다.
-5. 다음 추천 요청이 변경을 감지해 feature-only LightFM top-150을 계산하고 현재 응답에 사용한다.
-6. 계산한 후보를 현재 온보딩 서명과 함께 저장해 다음 요청부터 재사용한다.
-
-### 11.5 알려진 사용자가 일반 추천 화면을 여는 경우
-
-1. 이미 저장된 LightFM 장기 후보 150개를 읽는다.
-2. 최신 행동으로 장기·단기 프로필을 다시 만든다.
-3. Redis 단기 후보 cache를 읽는다.
-4. 장기·단기 후보를 취향 변화도에 따라 합쳐 최대 150개 순위를 만든다.
-5. 저비용 hard filter 통과 순서의 최대 100개에 의미 분석, 점수, 반복 감점을 적용한다.
-6. 요청한 offset/limit만큼 반환한다.
-7. 전체 후보와 최종 응답의 점수 구성을 진단 테이블에 저장한다.
-
-검증 결과 known 경로 132건이 전부 단기 후보 cache hit였고 평균 3.25초, p95 3.66초였다.
-
-### 11.6 영화를 pin한 경우
-
-1. DB `user_interactions`의 pin 상태와 시각을 저장한다.
-2. Redis 최근 행동에 기록한다.
-3. 단기 positive 누적기에 가중치 1.0으로 기록한다.
-4. 다음 추천 요청의 장기·단기 positive 의미 점수에 즉시 반영한다.
-5. 해당 영화 자체는 watched/passed가 아니라면 다시 추천될 수 있다.
-6. 24시간 누적 기준을 충족하면 30초 뒤 독립 단기 후보를 다시 계산한다.
-7. LightFM 장기 후보에는 다음 모델 재학습 이후 반영된다.
-
-### 11.7 영화를 플레이리스트에 저장한 경우
-
-1. 소유 플레이리스트와 영화 관계를 DB에 저장한다.
-2. 같은 플레이리스트에 이미 있던 영화면 추가 행동을 중복 기록하지 않는다.
-3. Redis에는 saved 가중치 1.0으로 기록한다.
-4. 사용자의 여러 플레이리스트에 같은 영화가 있어도 프로필과 LightFM에서는 하나의 user-movie pair로 합친다.
-5. 다음 요청의 장기·단기 positive 의미 점수에 즉시 반영한다.
-6. 단기 누적 기준을 충족하면 worker 갱신 대상이 된다.
-7. LightFM에는 다음 학습에서 가중치 2.0 positive로 반영된다.
-
-### 11.8 영화를 watched 처리한 경우
-
-1. DB watched 상태와 시각을 저장한다.
-2. Redis blacklist에 즉시 추가한다.
-3. positive 단기 누적에는 0.75로 기록한다.
-4. 다음 요청에서 해당 영화 자체는 반드시 제외한다.
-5. 해당 영화의 장르·배우·테마 등은 positive 취향으로 사용한다.
-6. LightFM 다음 학습에서는 1.5 positive지만 후보 게시 단계에서 같은 영화는 제외한다.
-
-즉, “이 영화 취향은 학습하지만 이미 본 영화는 다시 보여주지 않는다”는 정책이다.
-
-### 11.9 영화를 passed 처리한 경우
-
-1. DB passed 상태와 시각을 저장한다.
-2. 기존 pin이 있으면 pin을 해제한다.
-3. Redis blacklist에 즉시 추가한다.
-4. 같은 영화의 positive와 충돌하면 passed가 우선한다.
-5. 다음 요청에서 해당 영화 자체를 반드시 제외한다.
-6. 장르·키워드·배우·감독·테마·분위기 negative 의미 일치에 제한된 감점을 준다.
-7. passed는 LightFM WARP positive에 넣지 않는다.
-8. passed 한 건만으로 단기 positive 후보를 재생성하지 않는다.
-
-### 11.10 pin, saved, watched를 삭제한 경우
-
-1. DB 현재 positive 상태를 제거한다.
-2. 다음 요청의 최신 프로필에서는 바로 빠진다.
-3. 기존 단기 후보가 삭제된 positive 근거로 만들어졌을 수 있으므로 30초 뒤 강제 갱신한다.
-4. LightFM은 다음 재학습 전까지 과거 모델 상태를 유지한다.
-
-플레이리스트 하나에서 영화를 삭제했지만 다른 플레이리스트에 같은 영화가 남아 있어도 현재는 강제 갱신을 예약한다. 결과 정확성은 유지하지만 불필요한 재계산일 수 있다.
-
-### 11.11 passed를 해제한 경우
-
-1. DB passed 상태를 제거한다.
-2. watched 상태가 아니면 Redis blacklist에서도 제거한다.
-3. 다음 요청의 hard filter와 negative 프로필에서 즉시 빠진다.
-4. 단기 positive 후보 재생성은 예약하지 않는다.
-5. 사전 저장된 LightFM top-150이 과거 passed를 제외하고 만들어졌다면 해당 영화나 그 아래 후보는 다음 장기 후보 재생성 전까지 기본 후보에 복구되지 않을 수 있다.
-
-### 11.12 범죄 취향 사용자가 최근 로맨스 영화를 연속 pin/save한 경우
-
-1. 첫 행동부터 최신 단기 프로필에는 로맨스 의미 특성이 생긴다.
-2. 현 구현에서는 선택된 최대 100개 안에서 로맨스 의미 일치 점수가 다음 요청에 반영된다. 같은 세션의 다음 페이지에 적용할지는 `10` 감사에서 다시 결정한다.
-3. 서로 다른 가중치 1.0 긍정 행동 2개면 단기 후보 갱신 기준을 충족한다.
-4. 마지막 행동 후 30초 동안 추가 행동을 묶는다.
-5. worker가 로맨스 의미 특성에서 새 영화를 역조회해 독립 단기 후보를 만든다.
-6. 다음 요청에서 장기 범죄 후보와 단기 로맨스 후보를 합친다.
-7. 취향 변화도가 커지면 단기 비중이 증가하고 최소 포함 장치가 켜진다.
-8. random 영화가 아니라 최근 로맨스 의미와 연결된 영화가 들어온다.
-
-### 11.13 플레이리스트를 생성·수정·삭제한 경우
-
-- 빈 플레이리스트 생성, 제목 수정, 공개 여부 수정은 추천에 영향이 없다.
-- 영화 추가는 saved 행동이다.
-- 영화 삭제, 플레이리스트 삭제, 전체 삭제는 positive 근거 삭제로 보고 단기 후보 강제 갱신을 예약한다.
-- 삭제된 플레이리스트의 과거 구성 이력은 학습 데이터로 복원하지 않는다.
-
-### 11.14 영화 게시글을 작성한 경우
-
-1. 게시글과 대상 영화는 DB에 저장된다.
-2. 사전 학습 데이터 생성 시 사용자-영화 소셜 원천 신호로 읽는다.
-3. 현재는 영화가 좋아서 쓴 글인지 싫어서 쓴 글인지 판단하지 않는다.
-4. `direction_unresolved`로 진단만 저장한다.
-5. LightFM, 단기 취향, 실시간 정책에는 반영하지 않는다.
-
-### 11.15 게시글에 좋아요 또는 댓글을 남긴 경우
-
-1. 영화 게시글이면 대상 영화까지 연결할 수 있다.
-2. 자기 글 반응은 중복 강화하지 않도록 제외한다.
-3. 플레이리스트 댓글은 댓글 시점 이전에 들어 있던 현재 확인 가능한 영화에 1/N로 투영한다.
-4. 플레이리스트 좋아요는 좋아요 시각이 없어 당시 구성을 복원할 수 없어 보류한다.
-5. 모든 경우 현재는 방향성이 확정되지 않아 실제 추천 점수에는 반영하지 않는다.
-
-### 11.16 다음 페이지를 요청한 경우
-
-1. 같은 최신 상태라면 최대 100개의 전체 순위를 결정적으로 다시 계산한다.
-2. offset과 limit로 필요한 부분을 자른다.
-3. 같은 입력과 같은 bundle이면 페이지 사이 순서는 일관된다.
-4. `shuffle_seed`는 현재 순위를 섞지 않고 진단의 feed session key로만 저장한다.
-5. 이전 페이지 노출 영화 목록을 정책 입력으로 전달하지 않는다.
-
-현재는 결정적 offset pagination으로 중복을 피하지만, 행동이나 데이터가 페이지 요청 사이에 바뀌면 순위가 달라질 수 있다. 세션 단위 고정과 재노출 차단 정책은 실제 연결이 필요하다.
-
-### 11.17 Redis 또는 단기 worker가 실패한 경우
-
-1. 사용자 행동 DB 저장은 Redis 실패 때문에 취소되지 않는다.
-2. 다음 추천 요청은 DB 최신 행동으로 프로필과 watched/passed 제외를 계산한다.
-3. Redis blacklist를 읽지 못해도 DB의 watched/passed 필터는 남는다.
-4. 단기 cache가 없으면 요청 안에서 DB graph 역조회를 실행한다.
-5. 기능은 유지되지만 해당 요청 시간이 길어진다.
-
-### 11.18 영화 metadata가 변경된 경우
-
-변경 종류에 따라 반영 시점이 다르다.
-
-| 변경 | 반영 방식 |
-| --- | --- |
-| popularity, vote, release date, status, title, adult | 추천 요청에서 최신 DB를 읽어 정책에 반영 |
-| streaming OTT 제공 상태 | 추천 요청에서 최신 DB를 읽어 필터·보너스에 반영 |
-| 장르·키워드·배우·감독 | 새 온톨로지 build와 새 LightFM model/bundle 필요 |
-| overview에서 파생된 theme/mood | overview 의미 추출 후 새 graph와 model/bundle 필요 |
-
-현재 source fingerprint와 전체 build 함수는 있지만 영화 updater 완료 후 자동으로 graph/model/bundle 갱신을 실행하는 연결은 아직 없다.
-
-## 12. 정보가 실제 추천에 반영되는 시점
-
-| 정보 | 즉시 다음 요청 | 단기 worker 후 | LightFM 재학습 후 | graph 재생성 후 |
+| pin/save/watch | profile·filter에 즉시 반영 | 단기 후보 확장 | 장기 model 후보 반영 |
+| pin/save/watch 삭제 | profile·filter에 즉시 반영 | cache 갱신 시 제거 | 장기 model 후보 반영 |
+| pass | 즉시 hard exclusion·negative 반영 | 후보 재생성 안 함 | positive 학습에서 제외 |
+| pass 해제 | exclusion 즉시 해제 | 후보 재생성 안 함 | 같은 model의 장기 후보 재생성만으로도 완전 복구 가능 |
+| favorite 변경 | profile·cold feature에 반영 | 해당 없음 | 장기 user feature 반영 |
+| 선호 장르·영화 변경 | feature-only 후보 재계산 | 해당 없음 | 장기 user feature 반영 |
+| OTT 변경 | filter/context 즉시 반영 | 재생성 불필요 | model에는 미사용 |
+| 게시글·좋아요·댓글 | 현재 추천에 미반영 | 미반영 | eligibility 결정 전까지 미반영 |
+
+### 취향 변화 예시
+
+범죄 영화를 보던 사용자가 로맨스 영화를 연속 pin/save하면 다음과 같이 움직인다.
+
+1. DB 행동이 다음 요청의 장기 ontology profile과 단기 profile 모두에 포함된다.
+2. threshold를 넘으면 단기 worker가 로맨스 관련 독립 후보를 만든다.
+3. 의미 거리가 충분하면 `drift`로 판정한다.
+4. 최종 100개에 confidence에 따라 15~40% short-only lane을 적용한다.
+5. 이후 전체 LightFM 재학습에서 새 행동이 장기 model 후보에도 반영된다.
+6. 시간이 지나 단기 강조가 줄어도 행동 자체는 DB와 장기 profile에서 사라지지 않는다.
+
+단기 worker를 여러 번 실행하는 것과 LightFM을 여러 번 재학습하는 것은 다르다. 전자는 단기 후보 갱신이고, 후자만 model 기반 장기 취향을 바꾼다.
+
+## 반영 시점 요약
+
+| 정보 | 즉시 다음 요청 | 단기 worker | LightFM 재학습 | graph 재생성 |
 | --- | ---: | ---: | ---: | ---: |
-| pin/save/watch/pass 현재 상태 | 예 | 단기 후보 확장 | 장기 후보 | 불필요 |
-| pin/save/watch 삭제 | 예 | 단기 후보 정리 | 장기 후보 | 불필요 |
-| favorite 변경 | 예 | 해당 없음 | 장기 모델 특성 | 불필요 |
-| 선호 장르 변경 | 예 | 해당 없음 | 장기 모델 특성 | 불필요 |
-| 구독 OTT 변경 | 예 | 불필요 | 불필요 | 불필요 |
-| 게시글·좋아요·댓글 | 아니오 | 아니오 | 현재도 미반영 | 불필요 |
-| 영화 품질·개봉일·상태 | 예 | 불필요 | 후보 자체에는 다음 모델 | 의미 관계가 아니면 불필요 |
-| 영화 장르·배우·테마 등 | 기존 graph 기준 | 기존 graph 기준 | 새 graph 기반 모델 | 예 |
+| 행동 현재 상태 | 예 | positive면 후보 확장 | 장기 후보 | 불필요 |
+| 행동 삭제·해제 | 예 | cache 갱신 | 장기 후보 | 불필요 |
+| 온보딩 장르·영화 | 예 | 불필요 | 장기 feature | 불필요 |
+| 구독 OTT | 예 | 불필요 | 불필요 | 불필요 |
+| 소셜 행동 | 현재 아니오 | 아니오 | 현재 아니오 | 불필요 |
+| 영화 품질·개봉일·상태 | 예 | 불필요 | 후보 필요 시 | 의미 관계가 아니면 불필요 |
+| 장르·배우·keyword·overview | 기존 graph 기준 | 기존 graph 기준 | 새 graph 기반 model | 예 |
 
-## 13. 점검에서 확인된 검토 필요 사항
+## 현재 미완료 경계
 
-### 13.1 성능 최적화보다 먼저 결정할 사항
+다음은 흐름 설명에 필요한 사실만 적고 세부 계획은 [08 후속 작업](08_additional_work_backlog.md)에 둔다.
 
-#### R1. 필터 탈락 후 후보 보충
+- V3 전체 재학습·candidate·bundle production scheduler 없음
+- DB commit 후 Redis 단기 작업 예약의 durable 전달 없음
+- 같은 feed session의 순서, 노출 기록, `shuffle_seed`, 새로고침 의미 미연결
+- 영화 metadata 변경의 graph/model/bundle 자동 반영 없음
+- 소셜 행동 training eligibility 미연결
+- 상세 evidence path 없음
+- 실제 사용자 규모의 협업 품질 미검증
 
-상태: 기준선 해결
+## 주요 코드
 
-과거에는 장기·단기 후보를 최대 100개로 먼저 확정한 뒤 hard filter를 적용해 탈락한 자리를 채우지 못했다. 현재는 동일한 source 병합 순위에서 150개를 보존하고, 앞 100개에서 hard filter로 탈락한 수만큼 다음 순위 50개를 검사해 최대 100개의 상세 처리 후보를 만든다.
-
-현재 경계:
-
-- DB에 없거나 watched, passed, OTT, 상태 filter를 위반한 영화는 보충하지 않는다.
-- 예비 50개까지 탈락하면 결과 부족을 허용한다.
-- 100개를 모두 소비한 뒤 새 후보를 만드는 동작은 추천 세션·새로고침 계약과 함께 아직 미결정이다.
-- 해결 근거와 artifact는 `08` P0-01을 따른다.
-
-#### R2. 세션 노출 차단 정책이 입력과 연결되지 않음
-
-정책 엔진에는 `session_exposed_movie_ids` 필터가 있지만 실제 V3 요청은 항상 빈 집합을 전달한다. 페이지 offset이 동일 상태에서는 중복을 막지만, 세션 중 상태가 변하거나 refresh 요청이 들어오면 이미 본 영화를 다시 막는 별도 장치가 없다.
-
-결정 질문: Redis 또는 DB feed event를 이용해 세션 단위 노출을 차단할지 결정해야 한다.
-
-#### R3. `shuffle_seed`의 API 의미와 V3 동작이 다름
-
-API는 안정적인 refresh session seed로 받지만 V3는 순위를 섞지 않는다. 현재는 진단 식별자에만 저장한다.
-
-결정 질문: V3도 V1처럼 안정적 shuffle을 할지, 정확도 중심의 결정적 순위를 유지하고 API 설명을 바꿀지 결정해야 한다.
-
-#### R4. 개별 차단 영화 필터는 입력이 없음
-
-정책 엔진에는 `blocked_movie_ids`가 있지만 실제 요청에서 항상 빈 집합이다. 현재 실제 차단은 watched, passed, blacklist, adult, title, 취소 상태뿐이다.
-
-결정 질문: 별도 서비스 차단 목록이 필요한지, 필요 없다면 미사용 계약을 제거할지 결정해야 한다.
-
-#### R5. 소셜 정책 문서와 실제 학습 상태를 혼동하기 쉬움
-
-정책 registry에는 소셜 행동이 provisional 학습 정책으로 적혀 있지만 trainer manifest는 `diagnostic_only`이고 모든 소셜 신호는 학습 부적격이다.
-
-결정 질문: 게시글·좋아요·댓글의 방향을 판정할 근거가 생기기 전까지 완전 미사용을 유지할지, 중립 engagement로 제한해 사용할지 결정해야 한다.
-
-#### R6. 온보딩 장르와 선호 영화의 갱신 방식이 다름
-
-해결됨. V3의 선호 장르와 선호 영화 수정은 모두 DB 상태만 변경하고, 다음 추천 요청에서 변경을 감지해 feature-only top-150을 한 번 계산·저장한다. 저장 실패는 현재 추천 응답을 막지 않으며 다음 요청에서 재시도한다.
-
-#### R7. passed/watched 해제 후 장기 후보 복구가 늦을 수 있음
-
-기본 LightFM top-100은 후보 생성 당시 watched/passed를 제외한다. 상태를 해제해도 필터만 즉시 풀리고, 제외됐던 상위 후보와 그 아래 후보는 다음 장기 후보 생성 전까지 저장 목록에 없을 수 있다.
-
-결정 질문: negative 해제 시 해당 사용자 장기 후보만 재계산할지, 다음 정기 후보 생성까지 기다릴지 결정해야 한다.
-
-#### R8. 현재 상태만 있고 행동 이력이 없음
-
-현재 schema는 pin/pass/watch의 현재 상태와 playlist 현재 구성을 중심으로 한다. 행동 반복, 해제 후 재행동, 과거 playlist 구성을 정확히 학습할 수 없다.
-
-결정 질문: 추천 고도화 전에 immutable 행동 event table이 필요한지 결정해야 한다.
-
-#### R9. 추천 근거는 유형 수준이며 상세 연결 경로는 없음
-
-현재 추천 근거는 “배우 일치”, “테마 일치” 같은 유형과 점수까지 기록한다. 어떤 배우·어떤 원본 행동·어떤 edge를 거쳤는지 최종 사용자 설명으로 조회하는 단계는 없다.
-
-결정 질문: 내부 디버깅과 사용자 문구에 필요한 상세 정도를 정해야 한다.
-
-#### R10. 화면 API fallback이 V3 장애를 사용자에게 숨김
-
-엔진 경계는 V3 준비 실패를 명시적으로 알리지만 탐색·숏츠 API는 기존 DB 추천 또는 인기 목록을 반환한다. 서비스 가용성에는 유리하지만 V3 장애가 오래 지속돼도 사용자 응답은 성공처럼 보일 수 있다.
-
-결정 질문: fallback 자체는 유지하되 source 응답, metric, alert 중 어떤 방식으로 V3 실패를 반드시 관측할지 정해야 한다.
-
-### 13.2 명시적으로 보류된 정책
-
-- random 후보 혼합
-- 신작 강제 비율
-- long-tail 강제 비율
-- 낮은 노출량 기반 탐색
-- 게시글 본문·hashtag 감정/의미 분석
-- 소셜 행동의 LightFM 학습 반영
-
-정확도 기준선이 안정되기 전에는 추가하지 않는다.
-
-### 13.3 추천 동작·미구현 정책·고도화 뒤 진행할 트래픽 최적화
-
-성능 최적화는 폐기한 작업이 아니다. 다만 통합 우선순위는 `08_additional_work_backlog.md`를 따르며 추천 동작 보완, 정책상 미구현 항목, 추천 고도화 다음에 진행한다.
-
-우선순위 후보:
-
-1. 알려진 사용자 요청에서 최대 100개 ontology 상세 집계 시간 단축
-2. 신규 사용자와 온보딩 변경 사용자의 graph 후보·분석 시간 단축
-3. TTL 만료/cache miss 시 요청 안에서 발생하는 단기 역조회 제거 또는 선제 갱신
-4. 매 요청 진단 row 저장 비용 분리·비동기화 검토
-5. 장르 변경 시 feature-only 후보 선계산으로 첫 요청 지연 제거
-
-현재 기준:
-
-- 알려진 사용자 평균 3.25초, p95 3.66초
-- 신규 사용자 평균 3.05초, p95 7.42초
-- 온보딩 변경 사용자 평균 8.45초
-- 기능 검증에서는 known 경로 132건 모두 단기 후보 cache hit
-
-## 14. 권장 점검 순서
-
-사용자가 다음 순서로 정책을 판단한다.
-
-1. 추천 결과가 limit보다 부족할 때 반드시 보충할지 결정
-2. 같은 세션의 노출 영화와 `shuffle_seed` 의미 결정
-3. 게시글·좋아요·댓글을 실제 취향 신호로 사용할지 결정
-4. 온보딩 장르·선호 영화 변경의 갱신 방식을 통일할지 결정
-5. passed/watched 해제 후 장기 후보를 즉시 복구할지 결정
-6. 현재 상태 스냅샷으로 충분한지, 행동 event 이력이 필요한지 결정
-7. 사용자에게 보여줄 추천 근거의 상세 수준 결정
-8. 화면 API fallback의 V3 실패 관측 방법 결정
-9. 정책상 미구현 항목 구현
-10. 사용자 시나리오 기반 추천 결과 검토와 정책별 고도화 진행
-11. 위 작업 뒤 응답 시간과 동시 트래픽 최적화 진행
-12. 사용자가 현재 미구현으로 지정한 탐색·강제 혼합·정량 지표는 맨 마지막에 재검토
-
-## 15. 주요 코드 위치
-
-| 기능 | 코드 |
+| 기능 | 위치 |
 | --- | --- |
-| 추천 엔진 선택 | `app/services/recsys/registry.py` |
-| V3 전체 요청 조정 | `app/services/recsys/v3/recommender.py` |
-| 사용자 프로필 | `app/services/recsys/v3/profiles/profile_builder.py` |
-| LightFM 실시간 후보 | `app/services/recsys/v3/retrieval/lightfm_retriever.py` |
-| 장기·단기 후보 병합 | `app/services/recsys/v3/retrieval/candidate_merger.py` |
-| 신규 사용자 병합 | `app/services/recsys/v3/cold_start/cold_start_pipeline.py`, `cold_start_merger.py` |
-| 단기 후보 조회 | `app/services/recsys/v3/retrieval/short_term_retriever.py` |
+| 전체 요청 | `app/services/recsys/v3/recommender.py` |
+| runtime profile | `app/services/recsys/v3/profiles/profile_builder.py` |
+| LightFM retrieval | `app/services/recsys/v3/retrieval/lightfm_retriever.py` |
+| 장기 ontology retrieval | `app/services/recsys/v3/retrieval/long_term_ontology_retriever.py` |
+| 후보 병합 | `app/services/recsys/v3/retrieval/candidate_merger.py` |
 | 단기 갱신 기준 | `app/services/recsys/v3/retrieval/short_term_refresh_policy.py` |
-| 단기 작업 큐 | `app/services/recsys/profile_change.py` |
 | 단기 worker | `app/jobs/recsys/v3/workers/short_term_candidate_worker.py` |
-| 온톨로지 후보 분석 | `app/services/recsys/v3/retrieval/ontology_analyzer.py` |
+| ontology 분석 | `app/services/recsys/v3/retrieval/ontology_analyzer.py` |
 | 최종 정책 | `app/services/recsys/v3/policy/policy_engine.py` |
-| 정책 숫자 | `app/services/recsys/v3/config.py` |
-| 직접 행동 학습 데이터 | `app/jobs/recsys/v3/datasets/dataset_builder.py` |
-| 소셜 행동 진단 | `app/jobs/recsys/v3/datasets/social_signal_projector.py` |
-| 영화 특성 export | `app/jobs/recsys/v3/features/feature_builder.py` |
-| 사용자 특성 export | `app/jobs/recsys/v3/features/user_feature_builder.py` |
-| LightFM 학습 | `app/jobs/recsys/v3/training/train_hybrid_model.py`, `trainer.py` |
-| 장기 저장 후보 150개 | `app/jobs/recsys/v3/candidates/candidate_materializer.py` |
-| bundle 활성화 | `app/jobs/recsys/v3/serving/serving_bundle_publisher.py` |
-| 온톨로지 build | `app/jobs/recsys/v3/ontology/ontology_build_pipeline.py`, `ontology_graph_builder.py` |
+| LightFM 학습 | `app/jobs/recsys/v3/training/train_hybrid_model.py` |
+| 장기 후보 | `app/jobs/recsys/v3/candidates/candidate_materializer.py` |
+| bundle 게시 | `app/jobs/recsys/v3/serving/serving_bundle_publisher.py` |
+| graph build | `app/jobs/recsys/v3/ontology/ontology_build_pipeline.py` |

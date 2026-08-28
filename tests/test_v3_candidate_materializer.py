@@ -136,6 +136,88 @@ class CandidateMaterializerTest(unittest.TestCase):
         )
         self.assertEqual(batch.movie_ids.tolist(), [10, 20, 30])
 
+    def test_dynamic_worker_queue_matches_sequential_result(self) -> None:
+        base_config = CandidateMaterializationConfig(
+            top_k=3,
+            user_block_size=1,
+            item_block_size=2,
+            checkpoint_user_count=3,
+            worker_count=1,
+        )
+        exclusions = {101: {10}, 202: {30}}
+        sequential = materialize_candidate_batch(
+            self.artifact,
+            [0, 1, 2],
+            exclusions_by_user_id=exclusions,
+            config=base_config,
+        )
+        parallel = materialize_candidate_batch(
+            self.artifact,
+            [0, 1, 2],
+            exclusions_by_user_id=exclusions,
+            config=replace(base_config, worker_count=2),
+        )
+
+        self.assertEqual(parallel.failures, sequential.failures)
+        np.testing.assert_array_equal(parallel.successful_user_ids, sequential.successful_user_ids)
+        np.testing.assert_array_equal(parallel.candidate_user_ids, sequential.candidate_user_ids)
+        np.testing.assert_array_equal(parallel.movie_ids, sequential.movie_ids)
+        np.testing.assert_array_equal(parallel.source_ranks, sequential.source_ranks)
+        np.testing.assert_allclose(parallel.model_scores, sequential.model_scores, atol=1e-7)
+        self.assertGreaterEqual(
+            parallel.peak_score_block_bytes,
+            sequential.peak_score_block_bytes,
+        )
+
+    def test_worker_count_does_not_change_result_config_hash(self) -> None:
+        sequential = CandidateMaterializationConfig(worker_count=1)
+        parallel = replace(sequential, worker_count=4)
+
+        self.assertEqual(parallel.result_config, sequential.result_config)
+        self.assertEqual(parallel.config_hash, sequential.config_hash)
+        self.assertNotEqual(parallel.execution_config, sequential.execution_config)
+
+    def test_known_user_score_centering_matches_manual_scores(self) -> None:
+        weight = 0.9
+        artifact = replace(
+            self.artifact,
+            config=replace(
+                self.artifact.config,
+                known_user_score_centering_weight=weight,
+            ),
+        )
+        batch = materialize_candidate_batch(
+            artifact,
+            [0],
+            config=CandidateMaterializationConfig(
+                top_k=3,
+                user_block_size=1,
+                item_block_size=2,
+                checkpoint_user_count=1,
+            ),
+        )
+        all_user_biases, all_user_embeddings = artifact.model.get_user_representations(
+            artifact.user_features
+        )
+        item_biases, item_embeddings = artifact.model.get_item_representations(
+            artifact.item_features
+        )
+        user_embedding = (
+            all_user_embeddings[0] - weight * np.mean(all_user_embeddings, axis=0)
+        )
+        scores = item_embeddings @ user_embedding
+        scores += (1.0 - weight) * item_biases
+        scores += all_user_biases[0] - weight * np.mean(all_user_biases)
+        expected = sorted(
+            range(len(artifact.movie_ids)),
+            key=lambda index: (-float(scores[index]), int(artifact.movie_ids[index])),
+        )[:3]
+        self.assertEqual(
+            batch.movie_ids.tolist(),
+            [int(artifact.movie_ids[index]) for index in expected],
+        )
+        np.testing.assert_allclose(batch.model_scores, scores[expected], atol=1e-6)
+
     def test_failed_user_is_isolated_after_block_retry(self) -> None:
         artifact = replace(
             self.artifact,
@@ -149,6 +231,7 @@ class CandidateMaterializerTest(unittest.TestCase):
                 user_block_size=3,
                 item_block_size=3,
                 checkpoint_user_count=3,
+                worker_count=2,
             ),
         )
         self.assertEqual(batch.successful_user_ids.tolist(), [101, 303])

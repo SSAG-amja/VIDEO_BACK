@@ -15,17 +15,14 @@ from app.services.recsys.v3.config import (
     POLICY_MMR_SIMILARITY_PENALTY_MAX,
     POLICY_NEGATIVE_CONFIDENCE_PAIR_COUNT,
     POLICY_NEGATIVE_FEATURE_WEIGHTS,
-    POLICY_NEGATIVE_MAX_ABSOLUTE,
-    POLICY_NEGATIVE_MAX_BASE_RATIO,
     POLICY_NEGATIVE_SHORT_TERM_MULTIPLIER,
-    POLICY_ONTOLOGY_COMPONENT_WEIGHT,
-    POLICY_ONTOLOGY_SHORT_TERM_MULTIPLIER,
     POLICY_OTT_BONUS_MAX,
-    POLICY_PERSONAL_COMPONENT_WEIGHT,
     POLICY_QUALITY_BONUS_MAX,
     POLICY_RECENCY_BONUS_MAX,
     POLICY_RECENCY_WINDOW_DAYS,
     POLICY_REPETITION_PENALTY_MAX,
+    POLICY_SHORT_TERM_MAX_RATIO,
+    POLICY_SHORT_TERM_MIN_RATIO,
 )
 from app.services.recsys.v3.domain.feature_registry import FeatureName
 from app.services.recsys.v3.policy.policy_schemas import (
@@ -33,6 +30,8 @@ from app.services.recsys.v3.policy.policy_schemas import (
     MoviePolicyMetadata,
     PolicyDiagnostics,
     PolicyEvaluationResult,
+    PolicyAdjustmentSettings,
+    PolicyComponentWeights,
     PolicyRequestContext,
     PolicyScoreTrace,
     RankedPolicyCandidate,
@@ -42,11 +41,16 @@ from app.services.recsys.v3.policy.policy_schemas import (
 from app.services.recsys.v3.retrieval.retrieval_schemas import (
     CandidateFeatureSet,
     CandidateOntologyAnalysis,
+    CandidateSource,
     MergedCandidate,
     RetrievalPipelineResult,
 )
 from app.services.recsys.v3.policy.quality import reliable_quality_score
-from app.services.recsys.v3.domain.schemas import OttFilterMode, UserProfileBundle
+from app.services.recsys.v3.domain.schemas import (
+    OttFilterMode,
+    ShortTermPreferenceState,
+    UserProfileBundle,
+)
 from app.services.recsys.v3.retrieval.score_normalizer import percentile_normalize
 
 
@@ -59,6 +63,8 @@ def evaluate_policy_candidates(
     retrieval: RetrievalPipelineResult,
     profile: UserProfileBundle,
     context: PolicyRequestContext,
+    component_weights: PolicyComponentWeights | None = None,
+    adjustment_settings: PolicyAdjustmentSettings | None = None,
 ) -> PolicyEvaluationResult:
     return evaluate_candidate_set(
         db,
@@ -66,6 +72,8 @@ def evaluate_policy_candidates(
         analyses=retrieval.ontology.candidates,
         profile=profile,
         context=context,
+        component_weights=component_weights,
+        adjustment_settings=adjustment_settings,
         prior_rejections=retrieval.prefilter_rejections,
         input_candidate_count=(
             retrieval.eligibility.input_candidate_count or len(retrieval.merged.candidates)
@@ -82,6 +90,8 @@ def evaluate_candidate_set(
     context: PolicyRequestContext,
     prior_rejections: Sequence[HardFilterRejection] = (),
     input_candidate_count: int | None = None,
+    component_weights: PolicyComponentWeights | None = None,
+    adjustment_settings: PolicyAdjustmentSettings | None = None,
 ) -> PolicyEvaluationResult:
     started = time.monotonic()
     if tuple(item.movie_id for item in candidates) != tuple(item.movie_id for item in analyses):
@@ -110,9 +120,11 @@ def evaluate_candidate_set(
         elif movie is not None:
             eligible.append((candidate, analysis, movie))
 
+    weights = component_weights or PolicyComponentWeights()
+    adjustments = adjustment_settings or PolicyAdjustmentSettings()
     ontology_raw = {
         candidate.movie_id: analysis.long_positive_total
-        + POLICY_ONTOLOGY_SHORT_TERM_MULTIPLIER * analysis.short_positive_total
+        + weights.ontology_short_term_multiplier * analysis.short_positive_total
         for candidate, analysis, _movie in eligible
     }
     normalized_ontology = _normalize_ontology_scores(ontology_raw)
@@ -124,10 +136,22 @@ def evaluate_candidate_set(
             normalized_ontology_score=normalized_ontology[candidate.movie_id],
             profile=profile,
             as_of=context.as_of.date(),
+            component_weights=weights,
+            adjustment_settings=adjustments,
         )
         for candidate, analysis, movie in eligible
     )
-    ranked = _deterministic_rerank(scored, limit=min(context.limit, len(scored)))
+    short_term_lane_ratio = _short_term_lane_ratio(profile)
+    short_term_lane_target = _short_term_lane_target(
+        scored,
+        limit=min(context.limit, len(scored)),
+        profile=profile,
+    )
+    ranked = _deterministic_rerank(
+        scored,
+        limit=min(context.limit, len(scored)),
+        profile=profile,
+    )
     return PolicyEvaluationResult(
         candidates=ranked,
         rejections=tuple(rejections),
@@ -140,6 +164,25 @@ def evaluate_candidate_set(
             returned_candidate_count=len(ranked),
             metadata_query_count=int(bool(candidates)),
             elapsed_seconds=round(time.monotonic() - started, 6),
+            short_term_lane_ratio=round(short_term_lane_ratio, 8),
+            short_term_lane_target=short_term_lane_target,
+            input_short_term_only_count=sum(
+                _is_short_term_only_candidate(item) for item in candidates
+            ),
+            eligible_short_term_only_count=sum(
+                _is_short_term_only_candidate(item) for item in scored
+            ),
+            selected_short_term_only_count=sum(
+                _is_short_term_only_candidate(item) for item in ranked
+            ),
+            forced_short_term_only_count=sum(
+                item.score.short_term_lane_forced for item in ranked
+            ),
+            unselected_short_term_only_count=max(
+                0,
+                sum(_is_short_term_only_candidate(item) for item in scored)
+                - sum(_is_short_term_only_candidate(item) for item in ranked),
+            ),
         ),
     )
 
@@ -152,12 +195,14 @@ def _score_candidate(
     normalized_ontology_score: float,
     profile: UserProfileBundle,
     as_of: date,
+    component_weights: PolicyComponentWeights,
+    adjustment_settings: PolicyAdjustmentSettings,
 ) -> RankedPolicyCandidate:
-    personal_component = POLICY_PERSONAL_COMPONENT_WEIGHT * candidate.candidate_selection_score
+    personal_component = component_weights.personal * candidate.candidate_selection_score
     ontology_raw = analysis.long_positive_total + (
-        POLICY_ONTOLOGY_SHORT_TERM_MULTIPLIER * analysis.short_positive_total
+        component_weights.ontology_short_term_multiplier * analysis.short_positive_total
     )
-    ontology_component = POLICY_ONTOLOGY_COMPONENT_WEIGHT * normalized_ontology_score
+    ontology_component = component_weights.ontology * normalized_ontology_score
     base_score = personal_component + ontology_component
     recency = _recency_adjustment(metadata.release_date, as_of)
     ott = (
@@ -167,11 +212,24 @@ def _score_candidate(
         else 0.0
     )
     quality = _quality_adjustment(metadata)
-    negative = _negative_penalty(analysis, profile=profile, base_score=base_score)
-    pre_rerank = max(0.0, base_score + recency + ott + quality - negative)
+    catalog_trust = _catalog_trust_penalty(metadata, settings=adjustment_settings)
+    negative = _negative_penalty(
+        analysis,
+        profile=profile,
+        base_score=base_score,
+        settings=adjustment_settings,
+    )
+    pre_rerank = max(
+        0.0,
+        base_score + recency + ott + quality - catalog_trust - negative,
+    )
     trace = PolicyScoreTrace(
         model_raw_score=candidate.model_raw_score,
         normalized_long_term_score=candidate.normalized_long_term_score,
+        long_term_ontology_raw_score=candidate.long_term_ontology_raw_score,
+        normalized_long_term_ontology_score=(
+            candidate.normalized_long_term_ontology_score
+        ),
         normalized_short_term_score=candidate.normalized_short_term_score,
         cold_start_raw_score=candidate.cold_start_raw_score,
         normalized_cold_start_score=candidate.normalized_cold_start_score,
@@ -195,6 +253,7 @@ def _score_candidate(
         recency_adjustment=recency,
         ott_adjustment=ott,
         quality_adjustment=quality,
+        catalog_trust_penalty=catalog_trust,
         negative_preference_penalty=negative,
         pre_rerank_score=round(pre_rerank, 8),
         final_score=round(pre_rerank, 8),
@@ -215,7 +274,9 @@ def _negative_penalty(
     *,
     profile: UserProfileBundle,
     base_score: float,
+    settings: PolicyAdjustmentSettings | None = None,
 ) -> float:
+    resolved = settings or PolicyAdjustmentSettings()
     weighted_raw = 0.0
     for type_score in analysis.type_scores:
         weight = POLICY_NEGATIVE_FEATURE_WEIGHTS[type_score.feature.value]
@@ -227,7 +288,10 @@ def _negative_penalty(
         1.0,
         profile.long_term.passed_pair_count / POLICY_NEGATIVE_CONFIDENCE_PAIR_COUNT,
     )
-    cap = min(POLICY_NEGATIVE_MAX_ABSOLUTE, base_score * POLICY_NEGATIVE_MAX_BASE_RATIO)
+    cap = min(
+        resolved.negative_max_absolute,
+        base_score * resolved.negative_max_base_ratio,
+    )
     return round(cap * evidence_confidence * (1.0 - math.exp(-weighted_raw)), 8)
 
 
@@ -241,6 +305,20 @@ def _quality_adjustment(metadata: MoviePolicyMetadata) -> float:
         ),
         8,
     )
+
+
+def _catalog_trust_penalty(
+    metadata: MoviePolicyMetadata,
+    *,
+    settings: PolicyAdjustmentSettings | None = None,
+) -> float:
+    resolved = settings or PolicyAdjustmentSettings()
+    if metadata.vote_count >= resolved.catalog_trust_vote_threshold:
+        return 0.0
+    evidence_gap = (
+        resolved.catalog_trust_vote_threshold - metadata.vote_count
+    ) / resolved.catalog_trust_vote_threshold
+    return round(resolved.catalog_trust_penalty_max * evidence_gap, 8)
 
 
 def _recency_adjustment(release_date: date | None, as_of: date) -> float:
@@ -259,10 +337,13 @@ def _deterministic_rerank(
     candidates: tuple[RankedPolicyCandidate, ...],
     *,
     limit: int,
+    profile: UserProfileBundle,
 ) -> tuple[RankedPolicyCandidate, ...]:
     remaining = list(candidates)
     selected: list[RankedPolicyCandidate] = []
     feature_counts = {family: Counter() for family in _REPETITION_FAMILIES}
+    short_term_ratio = _short_term_lane_ratio(profile)
+    short_term_available = sum(_is_short_term_only_candidate(item) for item in candidates)
     while remaining and len(selected) < limit:
         scored_options: list[tuple[float, float, float, RankedPolicyCandidate]] = []
         for candidate in remaining:
@@ -278,8 +359,22 @@ def _deterministic_rerank(
                 candidate.score.pre_rerank_score - repetition - similarity_penalty,
             )
             scored_options.append((final_score, max_similarity, repetition, candidate))
+        short_term_selected = sum(_is_short_term_only_candidate(item) for item in selected)
+        required_at_position = min(
+            short_term_available,
+            math.floor((len(selected) + 1) * short_term_ratio + 0.5),
+        )
+        force_short_term = (
+            short_term_selected < required_at_position
+            and any(_is_short_term_only_candidate(item) for item in remaining)
+        )
+        options = (
+            [item for item in scored_options if _is_short_term_only_candidate(item[3])]
+            if force_short_term
+            else scored_options
+        )
         final_score, max_similarity, repetition, chosen = min(
-            scored_options,
+            options,
             key=lambda item: (
                 -item[0],
                 item[3].candidate.selection_rank,
@@ -296,6 +391,7 @@ def _deterministic_rerank(
                 max_selected_similarity=round(max_similarity, 8),
                 repetition_penalty=round(repetition, 8),
                 mmr_similarity_penalty=round(similarity_penalty, 8),
+                short_term_lane_forced=force_short_term,
                 final_score=round(final_score, 8),
             ),
         )
@@ -303,6 +399,33 @@ def _deterministic_rerank(
         remaining.remove(original)
         _update_feature_counts(chosen.ontology.repetition_features, feature_counts)
     return tuple(selected)
+
+
+def _short_term_lane_target(
+    candidates: tuple[RankedPolicyCandidate, ...],
+    *,
+    limit: int,
+    profile: UserProfileBundle,
+) -> int:
+    ratio = _short_term_lane_ratio(profile)
+    requested = math.floor(limit * ratio + 0.5)
+    available = sum(_is_short_term_only_candidate(item) for item in candidates)
+    return min(requested, available)
+
+
+def _short_term_lane_ratio(profile: UserProfileBundle) -> float:
+    if profile.short_term.preference_state != ShortTermPreferenceState.DRIFT:
+        return 0.0
+    return POLICY_SHORT_TERM_MIN_RATIO + (
+        POLICY_SHORT_TERM_MAX_RATIO - POLICY_SHORT_TERM_MIN_RATIO
+    ) * profile.short_term.drift_confidence
+
+
+def _is_short_term_only_candidate(
+    candidate: RankedPolicyCandidate | MergedCandidate,
+) -> bool:
+    merged = candidate.candidate if isinstance(candidate, RankedPolicyCandidate) else candidate
+    return merged.sources == (CandidateSource.SHORT_TERM_CONTEXT,)
 
 
 def _candidate_similarity(left: CandidateFeatureSet, right: CandidateFeatureSet) -> float:

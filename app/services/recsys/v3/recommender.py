@@ -150,12 +150,22 @@ def get_recommendations(
             context=context,
         )
         merged_result = getattr(retrieval, "merged", None)
+        long_term_ontology_result = getattr(
+            retrieval,
+            "long_term_ontology",
+            None,
+        )
         request_path = {
             "candidate_path": "known_user_hybrid",
             "published_candidate_kind": published_kind,
             "short_term_cache_status": retrieval.short_term.diagnostics.cache_status,
             "short_term_profile_signature": retrieval.short_term.diagnostics.profile_signature,
             "short_term_candidate_count": len(retrieval.short_term.candidates),
+            "long_term_ontology_candidate_count": (
+                len(long_term_ontology_result.candidates)
+                if long_term_ontology_result is not None
+                else 0
+            ),
             "candidate_merge": (
                 asdict(merged_result.diagnostics) if merged_result is not None else {}
             ),
@@ -339,11 +349,20 @@ def _persist_request_diagnostics(
             ontology_build_id=bundle.ontology_build_id,
             run_type="request",
             config_snapshot={
+                "request_marker": shuffle_seed,
                 "bundle_id": bundle.bundle_id,
                 "model_build_id": bundle.model.model_build_id,
                 "candidate_snapshot_id": bundle.candidate_snapshot_id,
                 "policy": policy_config_snapshot(),
                 "request_path": request_path,
+                "policy_diagnostics": asdict(policy.diagnostics),
+                "policy_rejections": [
+                    {
+                        "movie_id": rejection.movie_id,
+                        "reasons": [reason.value for reason in rejection.reasons],
+                    }
+                    for rejection in policy.rejections
+                ],
             },
         )
         rows = _diagnostic_rows(

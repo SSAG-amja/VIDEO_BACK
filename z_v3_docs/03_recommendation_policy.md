@@ -6,7 +6,7 @@
 
 구체적인 숫자와 조정 위치는 [04 LightFM 조정 지점](04_lightfm_tuning.md)을 따른다.
 
-피드 세션, 연속 페이지, 새로고침, 행동 반영 시점과 worker 게시 안전성은 점수 정책보다 먼저 [10 V1/V2 기준 V3 뼈대 감사](10_v1_v2_skeleton_audit.md)에서 확정한다. 현재 registry에 이 결정들이 없으므로 V1 정책 감사가 끝났다고 간주하지 않는다.
+피드 세션, 연속 페이지, 새로고침, 행동 반영 시점과 worker 게시 안전성은 점수 정책과 분리한다. 현재 미구현 상태와 결정 항목은 [08 후속 작업](08_additional_work_backlog.md) P0에 기록한다.
 
 ## 2. 정책 기준 우선순위
 
@@ -144,6 +144,7 @@ identity interaction이 없는 신규 사용자는 기존 feature vocabulary로 
 - 과거 cutoff build에서는 발생 시점을 증명할 수 없는 게시글 좋아요를 제외한다.
 - 현재 상태 snapshot에서 사라진 unsaved/unpinned/unliked 이력은 추정하지 않는다.
 - source별 pair 수, 사용자 coverage, missing timestamp, cap 도달 수, playlist 투영 수와 제외 수를 artifact diagnostics에 저장한다.
+- 직접 행동은 행동별 연속 half-life를 사용한다. saved/pinned 60일, watched 180일, passed 90일이며 favorite은 감쇠하지 않는다. 오래된 timestamp 행동은 0.05까지 낮아질 수 있고 영구 40% floor는 사용하지 않는다.
 
 ### 4.5 점수 해석
 
@@ -158,16 +159,17 @@ identity interaction이 없는 신규 사용자는 기존 feature vocabulary로 
 
 ```text
 1. LightFM 장기 후보 생성
-2. 최근 행동 기반 short-term ontology 후보 생성
-3. 신규/희소 영화 ontology 후보 보충
-4. source별 점수 정규화와 순위 후보 최대 150개 병합
-5. metadata·watched/passed·상태·OTT hard filter를 먼저 적용
-6. 통과 순서대로 활성 후보 최대 100개 확정
-7. 활성 후보에 대한 ontology evidence 계산
-8. 상세 분석 이후에도 같은 hard filter를 방어적으로 재확인
-9. 개인 정책 가감점 적용
-10. 반복 감점과 결정적 MMR 재정렬
-11. 최종 영화, 점수 구성, 추천 이유 저장
+2. 장기 profile 기반 ontology 후보 독립 생성
+3. 최근 행동 기반 short-term ontology 후보 생성
+4. 신규/희소 영화 ontology 후보 보충
+5. source별 점수 정규화와 순위 후보 최대 150개 병합
+6. metadata·watched/passed·상태·OTT hard filter를 먼저 적용
+7. 통과 순서대로 활성 후보 최대 100개 확정
+8. 활성 후보에 대한 ontology evidence 계산
+9. 상세 분석 이후에도 같은 hard filter를 방어적으로 재확인
+10. 개인 정책 가감점 적용
+11. 반복 감점과 결정적 MMR 재정렬
+12. 최종 영화, 점수 구성, 추천 이유 저장
 ```
 
 단기 취향은 LightFM 후보에 가점만 주는 방식으로 제한하지 않는다. 범죄 취향 사용자가 최근 로맨스 행동을 보이면 로맨스 관련 후보가 별도 source에서 들어올 수 있어야 한다.
@@ -179,6 +181,9 @@ V3 1차 source:
 ```text
 model
   LightFM 장기 취향 후보
+
+long_term_ontology
+  장기 positive concept 기반 ontology 후보
 
 short_term_context
   최근 positive concept 기반 ontology 후보
@@ -224,6 +229,8 @@ exploration은 정확도 기준선이 안정된 뒤 별도 source로 추가한�
 ```text
 model_raw_score
 normalized_long_term_score
+long_term_ontology_raw_score
+normalized_long_term_ontology_score
 normalized_short_term_score
 candidate_selection_score
 ontology_type_scores
@@ -237,12 +244,16 @@ LightFM raw score와 ontology raw score를 직접 더하지 않는다.
 후보 선택 단계:
 
 ```text
+long_term_selection_score
+  = model_weight * normalized_long_term_score
+  + ontology_weight * normalized_long_term_ontology_score
+
 candidate_selection_score
-  = (1 - drift_weight) * normalized_long_term_score
+  = (1 - drift_weight) * long_term_selection_score
   + drift_weight * normalized_short_term_score
 ```
 
-한 source에 없는 후보의 해당 source 점수는 `0`이다. 강한 단기 변화에서는 short-term 후보가 장기 후보에 모두 밀리지 않도록 contextual source floor를 적용한다.
+model/ontology 상위 50개 일치율에 따라 model weight는 0.45~0.65, 장기 ontology weight는 0.55~0.35를 사용한다. 장기 ontology 후보는 상세 분석 전 100개 중 최소 20%가 생존하도록 보호한다. 한 source에 없는 후보의 해당 source 점수는 `0`이다. 강한 단기 변화에서는 short-term 후보가 장기 후보에 모두 밀리지 않도록 contextual source floor를 적용한다.
 
 최종 단계:
 

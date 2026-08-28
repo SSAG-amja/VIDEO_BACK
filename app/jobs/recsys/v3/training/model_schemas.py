@@ -37,12 +37,20 @@ class LightFMTrainingConfig:
     max_sampled: int = LIGHTFM_IDENTITY_MAX_SAMPLED
     random_seed: int = LIGHTFM_IDENTITY_RANDOM_SEED
     num_threads: int = LIGHTFM_IDENTITY_NUM_THREADS
+    item_frequency_weighting: str = "none"
+    known_user_score_centering_weight: float = 0.0
 
     def __post_init__(self) -> None:
         if self.stage not in {"identity_only", "hybrid_ontology"}:
             raise ValueError("LightFM training stage must be identity_only or hybrid_ontology")
         if self.loss != "warp":
             raise ValueError("V3 LightFM training requires WARP loss")
+        if self.item_frequency_weighting not in {"none", "inverse_sqrt"}:
+            raise ValueError("unsupported LightFM item frequency weighting")
+        if not math.isfinite(self.known_user_score_centering_weight) or not (
+            0.0 <= self.known_user_score_centering_weight <= 1.0
+        ):
+            raise ValueError("known-user score centering weight must be in [0, 1]")
         for name, value in (
             ("no_components", self.no_components),
             ("epochs", self.epochs),
@@ -64,7 +72,12 @@ class LightFMTrainingConfig:
             raise ValueError("learning_rate must be positive")
 
     def as_dict(self) -> dict[str, int | float | str]:
-        return asdict(self)
+        payload = asdict(self)
+        if self.item_frequency_weighting == "none":
+            payload.pop("item_frequency_weighting")
+        if self.known_user_score_centering_weight == 0.0:
+            payload.pop("known_user_score_centering_weight")
+        return payload
 
     @property
     def config_hash(self) -> str:

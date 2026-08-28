@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Any
 
 from app.services.recsys.v3.domain.feature_registry import FeatureName
@@ -59,6 +60,9 @@ class ItemFeatureManifest:
     pruning_rules: dict[str, dict[str, int | float | None]]
     family_diagnostics: tuple[ItemFeatureFamilyDiagnostics, ...]
     ontology_build_status: str = "unknown"
+    representation_policy: str = "full_identity_raw"
+    identity_block_weight: float = 1.0
+    semantic_block_weight: float = 1.0
 
     def __post_init__(self) -> None:
         if not self.exporter_version.strip() or not self.ontology_source_hash.strip():
@@ -67,6 +71,16 @@ class ItemFeatureManifest:
             raise ValueError("ontology build ID must be positive")
         if self.ontology_build_status not in {"unknown", "running", "success"}:
             raise ValueError("item feature ontology build status is invalid")
+        if not self.representation_policy.strip():
+            raise ValueError("item feature representation policy is required")
+        for name, value in (
+            ("identity_block_weight", self.identity_block_weight),
+            ("semantic_block_weight", self.semantic_block_weight),
+        ):
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"item feature {name} must be finite and non-negative")
+        if self.semantic_block_weight == 0:
+            raise ValueError("item semantic block weight must be positive")
         if self.movie_count <= 0 or self.feature_count <= 0 or self.matrix_nnz <= 0:
             raise ValueError("item feature manifest counts must be positive")
         if self.matrix_shape != (self.movie_count, self.feature_count):
@@ -122,6 +136,9 @@ class UserFeatureManifest:
     explicit_genre_weight: float = 1.0
     favorite_derived_weight: float = 0.5
     vocabulary_policy: str = "identity_all_genres_observed_favorite_features"
+    representation_policy: str = "full_identity_raw"
+    identity_block_weight: float = 1.0
+    semantic_block_weight: float = 1.0
 
     def __post_init__(self) -> None:
         if not self.exporter_version.strip() or not self.ontology_source_hash.strip():
@@ -151,6 +168,14 @@ class UserFeatureManifest:
                 raise ValueError(f"{name} must be in (0, 1]")
         if not self.vocabulary_policy.strip():
             raise ValueError("user feature vocabulary policy is required")
+        if not self.representation_policy.strip():
+            raise ValueError("user feature representation policy is required")
+        for name, value in (
+            ("identity_block_weight", self.identity_block_weight),
+            ("semantic_block_weight", self.semantic_block_weight),
+        ):
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"user feature {name} must be finite and positive")
         for value in (
             self.item_feature_export_hash,
             self.user_mapping_hash,

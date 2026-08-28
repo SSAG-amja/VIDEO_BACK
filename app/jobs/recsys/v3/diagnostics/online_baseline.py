@@ -34,6 +34,7 @@ REQUIRED_SCORE_TRACE_KEYS = {
     "personal_component",
     "ontology_component",
     "base_score",
+    "catalog_trust_penalty",
     "negative_preference_penalty",
     "repetition_penalty",
     "mmr_similarity_penalty",
@@ -331,6 +332,7 @@ def run_case(
             excluded=exclusions[user_id],
             subscribed_ids=subscribed_ids,
             diagnostics=diagnostics,
+            allow_empty_candidates=mode == RecommendationMode.SUBSCRIBED_ONLY,
         )
         return {
             **user,
@@ -377,10 +379,20 @@ def load_diagnostics(db, request_marker: str) -> dict[str, object]:
             .order_by(OntologyRecommendation.candidate_stage, OntologyRecommendation.rank)
         ).scalars()
     )
-    if not rows:
+    run = db.get(RecommendationRun, rows[0].run_id) if rows else db.scalar(
+        select(RecommendationRun)
+        .where(
+            RecommendationRun.engine == "v3",
+            RecommendationRun.run_type == "request",
+            RecommendationRun.config_snapshot["request_marker"].as_string()
+            == request_marker,
+        )
+        .order_by(RecommendationRun.started_at.desc())
+        .limit(1)
+    )
+    if run is None:
         raise ValueError("request diagnostics were not persisted")
-    run = db.get(RecommendationRun, rows[0].run_id)
-    if run is None or run.status != "success":
+    if run.status != "success":
         raise ValueError("request diagnostic run did not finish successfully")
     request_path = (run.config_snapshot or {}).get("request_path") or {}
     candidate_rows = [row for row in rows if row.candidate_stage == "candidate_slice"]
@@ -432,6 +444,7 @@ def validate_response(
     excluded: frozenset[int],
     subscribed_ids: set[int],
     diagnostics: dict[str, object],
+    allow_empty_candidates: bool = False,
 ) -> list[str]:
     violations = []
     if response_count != len(movie_ids):
@@ -448,7 +461,7 @@ def validate_response(
         violations.append("final_diagnostic_count_mismatch")
     if diagnostics["candidate_count"] > 100:
         violations.append("candidate_pool_exceeded")
-    if diagnostics["candidate_count"] == 0:
+    if diagnostics["candidate_count"] == 0 and not allow_empty_candidates:
         violations.append("candidate_pool_empty")
     if diagnostics["candidate_path"] not in {"known_user_hybrid", "cold_start"}:
         violations.append("candidate_path_missing")

@@ -1,0 +1,6840 @@
+{
+  "generated_at": "2026-08-27T17:20:56.909727+00:00",
+  "scope": {
+    "artifact_count": 1,
+    "representative_user_count": 24,
+    "top_k": 100,
+    "display_limit": 20,
+    "same_dataset_hash": true,
+    "dataset_hashes": [
+      "77a977915f6b9b9b5c6f40cd2fb2496722b0d61f9ab91fde2578b17673402080"
+    ],
+    "metric_note": "Genre alignment is a fixture sanity signal, not relevance ground truth. No NDCG or Recall is computed."
+  },
+  "models": [
+    {
+      "label": "supported_identity_normalized:u4.0+s0.25:i1.0+s1.0:freq-none:item-bias-learned:center-0.9:c32-e20-lr0.01",
+      "artifact_path": "assets/ml_models/v3/experiments/hybrid-77a977915f6b-abb9c7b0706d-bf89dc0a3ba9-e0b8d8686041-a401dba670c5-7b869d3b",
+      "model_build_id": "hybrid-77a977915f6b-abb9c7b0706d-bf89dc0a3ba9-e0b8d8686041-a401dba670c5-7b869d3b",
+      "dataset_hash": "77a977915f6b9b9b5c6f40cd2fb2496722b0d61f9ab91fde2578b17673402080",
+      "data_cutoff_at": "2026-08-25T09:09:58.676400",
+      "training_config": {
+        "stage": "hybrid_ontology",
+        "no_components": 32,
+        "loss": "warp",
+        "epochs": 20,
+        "learning_rate": 0.01,
+        "user_alpha": 1e-05,
+        "item_alpha": 1e-05,
+        "max_sampled": 10,
+        "random_seed": 42,
+        "num_threads": 1,
+        "known_user_score_centering_weight": 0.9
+      },
+      "model_health": {
+        "candidate_sample": {
+          "applicable": true,
+          "pairwise_jaccard_mean": 0.43794706009658274,
+          "top_k": 100,
+          "unique_item_count": 310,
+          "user_count": 8
+        },
+        "parameters": {
+          "item_biases": {
+            "count": 1502427,
+            "max_abs": 0.3808712661266327,
+            "row_norm_max": 0.0,
+            "row_norm_sample_median": 0.0,
+            "row_norm_sample_p95": 0.0,
+            "row_norm_sample_p99": 0.0,
+            "sample_abs_median": 0.0,
+            "sample_abs_p95": 0.0,
+            "sample_abs_p99": 0.008252971423789883
+          },
+          "item_embeddings": {
+            "count": 48077664,
+            "max_abs": 0.28423500061035156,
+            "row_norm_max": 1.0594875854176886,
+            "row_norm_sample_median": 0.05080688443585575,
+            "row_norm_sample_p95": 0.05757082125023289,
+            "row_norm_sample_p99": 0.06044293021466315,
+            "sample_abs_median": 0.007805010536685586,
+            "sample_abs_p95": 0.01485138228163123,
+            "sample_abs_p99": 0.015494083063676953
+          },
+          "user_biases": {
+            "count": 1552,
+            "max_abs": 0.6777436137199402,
+            "row_norm_max": 0.0,
+            "row_norm_sample_median": 0.0,
+            "row_norm_sample_p95": 0.0,
+            "row_norm_sample_p99": 0.0,
+            "sample_abs_median": 0.023833105340600014,
+            "sample_abs_p95": 0.49565699845552447,
+            "sample_abs_p99": 0.5171087676286698
+          },
+          "user_embeddings": {
+            "count": 49664,
+            "max_abs": 0.29409754276275635,
+            "row_norm_max": 1.1577971402835736,
+            "row_norm_sample_median": 0.05209865083741202,
+            "row_norm_sample_p95": 0.5196492597105568,
+            "row_norm_sample_p99": 0.6352502500398284,
+            "sample_abs_median": 0.008531717117875814,
+            "sample_abs_p95": 0.09193084202706801,
+            "sample_abs_p99": 0.12608117014169737
+          }
+        },
+        "prediction_sample": {
+          "count": 2048,
+          "max": -1.8235750198364258,
+          "max_abs": 4.626653671264648,
+          "median": -2.3295135498046875,
+          "min": -4.626653671264648,
+          "p95": -1.9837223291397095,
+          "p99": -1.8801167011260986
+        },
+        "status": "pass",
+        "thresholds": {
+          "bias_max_abs": 100.0,
+          "candidate_pairwise_jaccard_max": 0.98,
+          "embedding_max_abs": 100.0,
+          "embedding_row_norm_max": 500.0,
+          "prediction_max_abs": 1000.0
+        },
+        "violations": []
+      },
+      "candidate_elapsed_seconds": 0.659797,
+      "raw_score": {
+        "count": 2400,
+        "min": -0.1797044426202774,
+        "median": -0.060197653248906136,
+        "p95": 0.058328169770538764,
+        "max": 0.14142926037311554
+      },
+      "score_components": {
+        "mode": "known_user_mean_centered",
+        "weight": 0.9
+      },
+      "profile_summary": {
+        "stable": {
+          "top_display_any_overlap_rate": 0.858333,
+          "top_display_mean_genre_share": 0.407917,
+          "top_k_any_overlap_rate": 0.606667
+        },
+        "mixed": {
+          "top_display_any_overlap_rate": 0.941667,
+          "top_display_mean_genre_share": 0.577916,
+          "top_k_any_overlap_rate": 0.795
+        },
+        "drift": {
+          "top_display_any_overlap_rate": 0.483333,
+          "top_display_mean_genre_share": 0.210417,
+          "top_k_any_overlap_rate": 0.453333
+        },
+        "negative_heavy": {
+          "top_display_any_overlap_rate": 0.691667,
+          "top_display_mean_genre_share": 0.291528,
+          "top_k_any_overlap_rate": 0.455
+        }
+      },
+      "concentration": {
+        "unique_movie_count": 433,
+        "pairwise_jaccard_mean": 0.33765,
+        "max_user_frequency": 23,
+        "top_display_unique_movie_count": 135,
+        "top_display_pairwise_jaccard_mean": 0.212335,
+        "top_display_max_user_frequency": 19,
+        "top_repeated_movies": [
+          {
+            "movie_id": 299536,
+            "user_count": 23,
+            "tmdb_id": 299536,
+            "title": "어벤져스: 인피니티 워"
+          },
+          {
+            "movie_id": 293660,
+            "user_count": 23,
+            "tmdb_id": 293660,
+            "title": "데드풀"
+          },
+          {
+            "movie_id": 24428,
+            "user_count": 23,
+            "tmdb_id": 24428,
+            "title": "어벤져스"
+          },
+          {
+            "movie_id": 19995,
+            "user_count": 23,
+            "tmdb_id": 19995,
+            "title": "아바타"
+          },
+          {
+            "movie_id": 155,
+            "user_count": 21,
+            "tmdb_id": 155,
+            "title": "다크 나이트"
+          },
+          {
+            "movie_id": 122,
+            "user_count": 21,
+            "tmdb_id": 122,
+            "title": "반지의 제왕: 왕의 귀환"
+          },
+          {
+            "movie_id": 383498,
+            "user_count": 21,
+            "tmdb_id": 383498,
+            "title": "데드풀 2"
+          },
+          {
+            "movie_id": 1891,
+            "user_count": 21,
+            "tmdb_id": 1891,
+            "title": "스타워즈 에피소드 5: 제국의 역습"
+          },
+          {
+            "movie_id": 118340,
+            "user_count": 20,
+            "tmdb_id": 118340,
+            "title": "가디언즈 오브 갤럭시"
+          },
+          {
+            "movie_id": 680,
+            "user_count": 20,
+            "tmdb_id": 680,
+            "title": "펄프 픽션"
+          }
+        ]
+      },
+      "catalog_quality": {
+        "candidate_count": 2400,
+        "zero_vote_ratio": 0.079167,
+        "low_vote_ratio": 0.116667,
+        "missing_genre_ratio": 0.011667,
+        "overbroad_genre_ratio": 0.0
+      },
+      "users": [
+        {
+          "user_id": 887,
+          "email": "v3seed-train-007@pinlm.test",
+          "user_number": 7,
+          "profile_type": "stable",
+          "cohort_id": 1,
+          "cohort_name": "action_crime_thriller",
+          "target_genre_ids": [
+            28,
+            53,
+            80
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              28,
+              53,
+              80
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.6,
+            "mean_genre_share": 0.275
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              28,
+              53,
+              80
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.43,
+            "mean_genre_share": 0.191667
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": -0.156319,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": -0.159708,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": -0.161241,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 299534,
+              "tmdb_id": 299534,
+              "title": "어벤져스: 엔드게임",
+              "score": -0.162997,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": -0.163557,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 155,
+              "tmdb_id": 155,
+              "title": "다크 나이트",
+              "score": -0.166355,
+              "genre_ids": [
+                28,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 680,
+              "tmdb_id": 680,
+              "title": "펄프 픽션",
+              "score": -0.16636,
+              "genre_ids": [
+                35,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": -0.166362,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 475557,
+              "tmdb_id": 475557,
+              "title": "조커",
+              "score": -0.166535,
+              "genre_ids": [
+                18,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 120,
+              "tmdb_id": 120,
+              "title": "반지의 제왕: 반지 원정대",
+              "score": -0.167738,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 207703,
+              "tmdb_id": 207703,
+              "title": "킹스맨: 시크릿 에이전트",
+              "score": -0.168064,
+              "genre_ids": [
+                12,
+                28,
+                35,
+                80
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 673,
+              "tmdb_id": 673,
+              "title": "해리 포터와 아즈카반의 죄수",
+              "score": -0.169685,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 284053,
+              "tmdb_id": 284053,
+              "title": "토르: 라그나로크",
+              "score": -0.17043,
+              "genre_ids": [
+                28,
+                35,
+                878
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 609319,
+              "tmdb_id": 609319,
+              "title": "The Alchemists",
+              "score": -0.170546,
+              "genre_ids": []
+            },
+            {
+              "rank": 15,
+              "movie_id": 943783,
+              "tmdb_id": 943783,
+              "title": "Regular maintenance of the car",
+              "score": -0.170546,
+              "genre_ids": []
+            },
+            {
+              "rank": 16,
+              "movie_id": 1300596,
+              "tmdb_id": 1300596,
+              "title": "女の決闘",
+              "score": -0.170546,
+              "genre_ids": []
+            },
+            {
+              "rank": 17,
+              "movie_id": 1358101,
+              "tmdb_id": 1358101,
+              "title": "Twelfth Knight",
+              "score": -0.170546,
+              "genre_ids": []
+            },
+            {
+              "rank": 18,
+              "movie_id": 1373977,
+              "tmdb_id": 1373977,
+              "title": "The Alchemist",
+              "score": -0.170546,
+              "genre_ids": []
+            },
+            {
+              "rank": 19,
+              "movie_id": 1465077,
+              "tmdb_id": 1465077,
+              "title": "Lloyd McNeil’s Last Ride",
+              "score": -0.170546,
+              "genre_ids": []
+            },
+            {
+              "rank": 20,
+              "movie_id": 1560672,
+              "tmdb_id": 1560672,
+              "title": "Rapunzel",
+              "score": -0.170546,
+              "genre_ids": []
+            }
+          ]
+        },
+        {
+          "user_id": 888,
+          "email": "v3seed-train-008@pinlm.test",
+          "user_number": 8,
+          "profile_type": "stable",
+          "cohort_id": 2,
+          "cohort_name": "romance_drama_comedy",
+          "target_genre_ids": [
+            18,
+            35,
+            10749
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              18,
+              35,
+              10749
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.75,
+            "mean_genre_share": 0.333333
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              18,
+              35,
+              10749
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.82,
+            "mean_genre_share": 0.3345
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 16869,
+              "tmdb_id": 16869,
+              "title": "바스터즈: 거친 녀석들",
+              "score": 0.018307,
+              "genre_ids": [
+                18,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 550,
+              "tmdb_id": 550,
+              "title": "파이트 클럽",
+              "score": 0.015167,
+              "genre_ids": [
+                18,
+                53
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 374720,
+              "tmdb_id": 374720,
+              "title": "덩케르크",
+              "score": 0.011068,
+              "genre_ids": [
+                18,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": 0.007849,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 13,
+              "tmdb_id": 13,
+              "title": "포레스트 검프",
+              "score": -0.004711,
+              "genre_ids": [
+                18,
+                35,
+                10749
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 920,
+              "tmdb_id": 920,
+              "title": "카",
+              "score": -0.013849,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 857,
+              "tmdb_id": 857,
+              "title": "라이언 일병 구하기",
+              "score": -0.017956,
+              "genre_ids": [
+                18,
+                36,
+                10752
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 155,
+              "tmdb_id": 155,
+              "title": "다크 나이트",
+              "score": -0.018342,
+              "genre_ids": [
+                28,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 680,
+              "tmdb_id": 680,
+              "title": "펄프 픽션",
+              "score": -0.019273,
+              "genre_ids": [
+                35,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 324786,
+              "tmdb_id": 324786,
+              "title": "핵소 고지",
+              "score": -0.019284,
+              "genre_ids": [
+                18,
+                36,
+                10752
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 597,
+              "tmdb_id": 597,
+              "title": "타이타닉",
+              "score": -0.020133,
+              "genre_ids": [
+                18,
+                10749
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 244786,
+              "tmdb_id": 244786,
+              "title": "위플래쉬",
+              "score": -0.025774,
+              "genre_ids": [
+                18,
+                53,
+                10402
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 190859,
+              "tmdb_id": 190859,
+              "title": "아메리칸 스나이퍼",
+              "score": -0.026706,
+              "genre_ids": [
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 1368,
+              "tmdb_id": 1368,
+              "title": "람보",
+              "score": -0.02847,
+              "genre_ids": [
+                12,
+                28,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": -0.029566,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": -0.029896,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 862,
+              "tmdb_id": 862,
+              "title": "토이 스토리",
+              "score": -0.031131,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 1578,
+              "tmdb_id": 1578,
+              "title": "분노의 주먹",
+              "score": -0.032444,
+              "genre_ids": [
+                18,
+                36
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 11322,
+              "tmdb_id": 11322,
+              "title": "퍼블릭 에너미",
+              "score": -0.034165,
+              "genre_ids": [
+                18,
+                36,
+                80
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 935,
+              "tmdb_id": 935,
+              "title": "닥터 스트레인지러브",
+              "score": -0.034752,
+              "genre_ids": [
+                35,
+                10752
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 889,
+          "email": "v3seed-train-009@pinlm.test",
+          "user_number": 9,
+          "profile_type": "stable",
+          "cohort_id": 3,
+          "cohort_name": "horror_mystery_thriller",
+          "target_genre_ids": [
+            27,
+            53,
+            9648
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              27,
+              53,
+              9648
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.8,
+            "mean_genre_share": 0.366667
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              27,
+              53,
+              9648
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.51,
+            "mean_genre_share": 0.234167
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 680,
+              "tmdb_id": 680,
+              "title": "펄프 픽션",
+              "score": -0.003548,
+              "genre_ids": [
+                35,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 550,
+              "tmdb_id": 550,
+              "title": "파이트 클럽",
+              "score": -0.00798,
+              "genre_ids": [
+                18,
+                53
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 155,
+              "tmdb_id": 155,
+              "title": "다크 나이트",
+              "score": -0.023849,
+              "genre_ids": [
+                28,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 475557,
+              "tmdb_id": 475557,
+              "title": "조커",
+              "score": -0.025775,
+              "genre_ids": [
+                18,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": -0.026682,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 11324,
+              "tmdb_id": 11324,
+              "title": "셔터 아일랜드",
+              "score": -0.035397,
+              "genre_ids": [
+                18,
+                53,
+                9648
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 274,
+              "tmdb_id": 274,
+              "title": "양들의 침묵",
+              "score": -0.040215,
+              "genre_ids": [
+                18,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 51876,
+              "tmdb_id": 51876,
+              "title": "리미트리스",
+              "score": -0.042002,
+              "genre_ids": [
+                53,
+                878,
+                9648
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": -0.043124,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": -0.047985,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 546554,
+              "tmdb_id": 546554,
+              "title": "나이브스 아웃",
+              "score": -0.053795,
+              "genre_ids": [
+                35,
+                80,
+                9648
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 6479,
+              "tmdb_id": 6479,
+              "title": "나는 전설이다",
+              "score": -0.054459,
+              "genre_ids": [
+                18,
+                53,
+                878
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 16869,
+              "tmdb_id": 16869,
+              "title": "바스터즈: 거친 녀석들",
+              "score": -0.054857,
+              "genre_ids": [
+                18,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 61791,
+              "tmdb_id": 61791,
+              "title": "혹성탈출: 진화의 시작",
+              "score": -0.054952,
+              "genre_ids": [
+                18,
+                28,
+                53,
+                878
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 244786,
+              "tmdb_id": 244786,
+              "title": "위플래쉬",
+              "score": -0.057008,
+              "genre_ids": [
+                18,
+                53,
+                10402
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 205596,
+              "tmdb_id": 205596,
+              "title": "이미테이션 게임",
+              "score": -0.058354,
+              "genre_ids": [
+                18,
+                36,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 6977,
+              "tmdb_id": 6977,
+              "title": "노인을 위한 나라는 없다",
+              "score": -0.06022,
+              "genre_ids": [
+                37,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": -0.060375,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 419430,
+              "tmdb_id": 419430,
+              "title": "겟 아웃",
+              "score": -0.060769,
+              "genre_ids": [
+                27,
+                53,
+                9648
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 381288,
+              "tmdb_id": 381288,
+              "title": "23 아이덴티티",
+              "score": -0.060918,
+              "genre_ids": [
+                27,
+                53
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 890,
+          "email": "v3seed-train-010@pinlm.test",
+          "user_number": 10,
+          "profile_type": "stable",
+          "cohort_id": 4,
+          "cohort_name": "animation_family_adventure",
+          "target_genre_ids": [
+            12,
+            16,
+            10751
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              12,
+              16,
+              10751
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 1.0,
+            "mean_genre_share": 0.391667
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              12,
+              16,
+              10751
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.63,
+            "mean_genre_share": 0.261167
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": -0.057748,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": -0.058184,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": -0.061204,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": -0.070437,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": -0.07578,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 672,
+              "tmdb_id": 672,
+              "title": "해리 포터와 비밀의 방",
+              "score": -0.076268,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 673,
+              "tmdb_id": 673,
+              "title": "해리 포터와 아즈카반의 죄수",
+              "score": -0.076738,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 121,
+              "tmdb_id": 121,
+              "title": "반지의 제왕: 두 개의 탑",
+              "score": -0.077882,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 10195,
+              "tmdb_id": 10195,
+              "title": "토르: 천둥의 신",
+              "score": -0.082326,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 11,
+              "tmdb_id": 11,
+              "title": "스타워즈 에피소드 4: 새로운 희망",
+              "score": -0.084689,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 76338,
+              "tmdb_id": 76338,
+              "title": "토르: 다크 월드",
+              "score": -0.086596,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 9806,
+              "tmdb_id": 9806,
+              "title": "인크레더블",
+              "score": -0.087035,
+              "genre_ids": [
+                12,
+                16,
+                28,
+                10751
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 12445,
+              "tmdb_id": 12445,
+              "title": "해리 포터와 죽음의 성물 2",
+              "score": -0.088463,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 585,
+              "tmdb_id": 585,
+              "title": "몬스터 주식회사",
+              "score": -0.088649,
+              "genre_ids": [
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 135397,
+              "tmdb_id": 135397,
+              "title": "쥬라기 월드",
+              "score": -0.089039,
+              "genre_ids": [
+                12,
+                28,
+                53,
+                878
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 76341,
+              "tmdb_id": 76341,
+              "title": "매드맥스: 분노의 도로",
+              "score": -0.089294,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 102899,
+              "tmdb_id": 102899,
+              "title": "앤트맨",
+              "score": -0.090718,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 209112,
+              "tmdb_id": 209112,
+              "title": "배트맨 대 슈퍼맨: 저스티스의 시작",
+              "score": -0.091035,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 284052,
+              "tmdb_id": 284052,
+              "title": "닥터 스트레인지",
+              "score": -0.092322,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 297761,
+              "tmdb_id": 297761,
+              "title": "수어사이드 스쿼드",
+              "score": -0.093144,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 891,
+          "email": "v3seed-train-011@pinlm.test",
+          "user_number": 11,
+          "profile_type": "stable",
+          "cohort_id": 5,
+          "cohort_name": "scifi_fantasy_adventure",
+          "target_genre_ids": [
+            12,
+            14,
+            878
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              12,
+              14,
+              878
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 1.0,
+            "mean_genre_share": 0.6875
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              12,
+              14,
+              878
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.72,
+            "mean_genre_share": 0.402
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 673,
+              "tmdb_id": 673,
+              "title": "해리 포터와 아즈카반의 죄수",
+              "score": -0.083309,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": -0.08453,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": -0.084833,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": -0.085331,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": -0.091058,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 862,
+              "tmdb_id": 862,
+              "title": "토이 스토리",
+              "score": -0.09125,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": -0.091712,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 10195,
+              "tmdb_id": 10195,
+              "title": "토르: 천둥의 신",
+              "score": -0.093274,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 1771,
+              "tmdb_id": 1771,
+              "title": "퍼스트 어벤져",
+              "score": -0.093372,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 557,
+              "tmdb_id": 557,
+              "title": "스파이더맨",
+              "score": -0.095612,
+              "genre_ids": [
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 672,
+              "tmdb_id": 672,
+              "title": "해리 포터와 비밀의 방",
+              "score": -0.098053,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 671,
+              "tmdb_id": 671,
+              "title": "해리 포터와 마법사의 돌",
+              "score": -0.099258,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 1891,
+              "tmdb_id": 1891,
+              "title": "스타워즈 에피소드 5: 제국의 역습",
+              "score": -0.101186,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 76338,
+              "tmdb_id": 76338,
+              "title": "토르: 다크 월드",
+              "score": -0.101345,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 299534,
+              "tmdb_id": 299534,
+              "title": "어벤져스: 엔드게임",
+              "score": -0.103398,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 297761,
+              "tmdb_id": 297761,
+              "title": "수어사이드 스쿼드",
+              "score": -0.10356,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 675,
+              "tmdb_id": 675,
+              "title": "해리 포터와 불사조 기사단",
+              "score": -0.103659,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 121,
+              "tmdb_id": 121,
+              "title": "반지의 제왕: 두 개의 탑",
+              "score": -0.104037,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 209112,
+              "tmdb_id": 209112,
+              "title": "배트맨 대 슈퍼맨: 저스티스의 시작",
+              "score": -0.104236,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 140607,
+              "tmdb_id": 140607,
+              "title": "스타워즈 에피소드 7: 깨어난 포스",
+              "score": -0.105899,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 892,
+          "email": "v3seed-train-012@pinlm.test",
+          "user_number": 12,
+          "profile_type": "stable",
+          "cohort_id": 6,
+          "cohort_name": "documentary_history_war",
+          "target_genre_ids": [
+            36,
+            99,
+            10752
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              36,
+              99,
+              10752
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 1.0,
+            "mean_genre_share": 0.393333
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              36,
+              99,
+              10752
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.53,
+            "mean_genre_share": 0.2255
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 374720,
+              "tmdb_id": 374720,
+              "title": "덩케르크",
+              "score": 0.141429,
+              "genre_ids": [
+                18,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 16869,
+              "tmdb_id": 16869,
+              "title": "바스터즈: 거친 녀석들",
+              "score": 0.121033,
+              "genre_ids": [
+                18,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 424694,
+              "tmdb_id": 424694,
+              "title": "보헤미안 랩소디",
+              "score": 0.104957,
+              "genre_ids": [
+                18,
+                36,
+                10402
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 935,
+              "tmdb_id": 935,
+              "title": "닥터 스트레인지러브",
+              "score": 0.101838,
+              "genre_ids": [
+                35,
+                10752
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 1578,
+              "tmdb_id": 1578,
+              "title": "분노의 주먹",
+              "score": 0.101765,
+              "genre_ids": [
+                18,
+                36
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 857,
+              "tmdb_id": 857,
+              "title": "라이언 일병 구하기",
+              "score": 0.098169,
+              "genre_ids": [
+                18,
+                36,
+                10752
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 1271,
+              "tmdb_id": 1271,
+              "title": "300",
+              "score": 0.09767,
+              "genre_ids": [
+                12,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 193756,
+              "tmdb_id": 193756,
+              "title": "론 서바이버",
+              "score": 0.097633,
+              "genre_ids": [
+                18,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 369885,
+              "tmdb_id": 369885,
+              "title": "얼라이드",
+              "score": 0.095699,
+              "genre_ids": [
+                18,
+                28,
+                53,
+                10749,
+                10752
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 792,
+              "tmdb_id": 792,
+              "title": "플래툰",
+              "score": 0.095604,
+              "genre_ids": [
+                18,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 11322,
+              "tmdb_id": 11322,
+              "title": "퍼블릭 에너미",
+              "score": 0.095395,
+              "genre_ids": [
+                18,
+                36,
+                80
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 399404,
+              "tmdb_id": 399404,
+              "title": "다키스트 아워",
+              "score": 0.091711,
+              "genre_ids": [
+                18,
+                36
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 190859,
+              "tmdb_id": 190859,
+              "title": "아메리칸 스나이퍼",
+              "score": 0.091476,
+              "genre_ids": [
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 205596,
+              "tmdb_id": 205596,
+              "title": "이미테이션 게임",
+              "score": 0.090778,
+              "genre_ids": [
+                18,
+                36,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 302401,
+              "tmdb_id": 302401,
+              "title": "스노든",
+              "score": 0.085659,
+              "genre_ids": [
+                18,
+                36,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 12477,
+              "tmdb_id": 12477,
+              "title": "반딧불의 묘",
+              "score": 0.081507,
+              "genre_ids": [
+                16,
+                18,
+                10752
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 1368,
+              "tmdb_id": 1368,
+              "title": "람보",
+              "score": 0.080644,
+              "genre_ids": [
+                12,
+                28,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 228150,
+              "tmdb_id": 228150,
+              "title": "퓨리",
+              "score": 0.077869,
+              "genre_ids": [
+                18,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 423,
+              "tmdb_id": 423,
+              "title": "피아니스트",
+              "score": 0.075642,
+              "genre_ids": [
+                18,
+                10752
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 45269,
+              "tmdb_id": 45269,
+              "title": "킹스 스피치",
+              "score": 0.07379,
+              "genre_ids": [
+                18,
+                36
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 953,
+          "email": "v3seed-train-073@pinlm.test",
+          "user_number": 73,
+          "profile_type": "mixed",
+          "cohort_id": 1,
+          "cohort_name": "action_crime_thriller",
+          "target_genre_ids": [
+            14,
+            28,
+            53,
+            80,
+            878
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              14,
+              28,
+              53,
+              80,
+              878
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.95,
+            "mean_genre_share": 0.595833
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              14,
+              28,
+              53,
+              80,
+              878
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.88,
+            "mean_genre_share": 0.506667
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": 0.01746,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": 0.012905,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": 0.011389,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 76338,
+              "tmdb_id": 76338,
+              "title": "토르: 다크 월드",
+              "score": 0.001794,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": 0.000964,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": -8e-06,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 209112,
+              "tmdb_id": 209112,
+              "title": "배트맨 대 슈퍼맨: 저스티스의 시작",
+              "score": -0.005342,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 672,
+              "tmdb_id": 672,
+              "title": "해리 포터와 비밀의 방",
+              "score": -0.011065,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 12,
+              "tmdb_id": 12,
+              "title": "니모를 찾아서",
+              "score": -0.013684,
+              "genre_ids": [
+                12,
+                16,
+                10751
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 383498,
+              "tmdb_id": 383498,
+              "title": "데드풀 2",
+              "score": -0.014398,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 1891,
+              "tmdb_id": 1891,
+              "title": "스타워즈 에피소드 5: 제국의 역습",
+              "score": -0.015244,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 155,
+              "tmdb_id": 155,
+              "title": "다크 나이트",
+              "score": -0.015301,
+              "genre_ids": [
+                28,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 135397,
+              "tmdb_id": 135397,
+              "title": "쥬라기 월드",
+              "score": -0.016299,
+              "genre_ids": [
+                12,
+                28,
+                53,
+                878
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 10195,
+              "tmdb_id": 10195,
+              "title": "토르: 천둥의 신",
+              "score": -0.018629,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 673,
+              "tmdb_id": 673,
+              "title": "해리 포터와 아즈카반의 죄수",
+              "score": -0.018962,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 122,
+              "tmdb_id": 122,
+              "title": "반지의 제왕: 왕의 귀환",
+              "score": -0.020125,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 284052,
+              "tmdb_id": 284052,
+              "title": "닥터 스트레인지",
+              "score": -0.020547,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 767,
+              "tmdb_id": 767,
+              "title": "해리 포터와 혼혈왕자",
+              "score": -0.021463,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 76341,
+              "tmdb_id": 76341,
+              "title": "매드맥스: 분노의 도로",
+              "score": -0.021584,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 299534,
+              "tmdb_id": 299534,
+              "title": "어벤져스: 엔드게임",
+              "score": -0.022114,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 954,
+          "email": "v3seed-train-074@pinlm.test",
+          "user_number": 74,
+          "profile_type": "mixed",
+          "cohort_id": 2,
+          "cohort_name": "romance_drama_comedy",
+          "target_genre_ids": [
+            18,
+            28,
+            35,
+            80,
+            10749
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              18,
+              28,
+              35,
+              80,
+              10749
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.8,
+            "mean_genre_share": 0.333333
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              18,
+              28,
+              35,
+              80,
+              10749
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.79,
+            "mean_genre_share": 0.347167
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": -0.013461,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": -0.018319,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": -0.029553,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 680,
+              "tmdb_id": 680,
+              "title": "펄프 픽션",
+              "score": -0.035661,
+              "genre_ids": [
+                35,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 550,
+              "tmdb_id": 550,
+              "title": "파이트 클럽",
+              "score": -0.037354,
+              "genre_ids": [
+                18,
+                53
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": -0.037504,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": -0.039336,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 155,
+              "tmdb_id": 155,
+              "title": "다크 나이트",
+              "score": -0.040143,
+              "genre_ids": [
+                28,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 76338,
+              "tmdb_id": 76338,
+              "title": "토르: 다크 월드",
+              "score": -0.049278,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 135397,
+              "tmdb_id": 135397,
+              "title": "쥬라기 월드",
+              "score": -0.051072,
+              "genre_ids": [
+                12,
+                28,
+                53,
+                878
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 1891,
+              "tmdb_id": 1891,
+              "title": "스타워즈 에피소드 5: 제국의 역습",
+              "score": -0.052211,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 862,
+              "tmdb_id": 862,
+              "title": "토이 스토리",
+              "score": -0.053263,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 672,
+              "tmdb_id": 672,
+              "title": "해리 포터와 비밀의 방",
+              "score": -0.053873,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 673,
+              "tmdb_id": 673,
+              "title": "해리 포터와 아즈카반의 죄수",
+              "score": -0.053971,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 12,
+              "tmdb_id": 12,
+              "title": "니모를 찾아서",
+              "score": -0.054695,
+              "genre_ids": [
+                12,
+                16,
+                10751
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 383498,
+              "tmdb_id": 383498,
+              "title": "데드풀 2",
+              "score": -0.055704,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 122,
+              "tmdb_id": 122,
+              "title": "반지의 제왕: 왕의 귀환",
+              "score": -0.057657,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 299534,
+              "tmdb_id": 299534,
+              "title": "어벤져스: 엔드게임",
+              "score": -0.058,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 11,
+              "tmdb_id": 11,
+              "title": "스타워즈 에피소드 4: 새로운 희망",
+              "score": -0.059017,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 767,
+              "tmdb_id": 767,
+              "title": "해리 포터와 혼혈왕자",
+              "score": -0.060536,
+              "genre_ids": [
+                12,
+                14
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 955,
+          "email": "v3seed-train-075@pinlm.test",
+          "user_number": 75,
+          "profile_type": "mixed",
+          "cohort_id": 3,
+          "cohort_name": "horror_mystery_thriller",
+          "target_genre_ids": [
+            27,
+            28,
+            53,
+            80,
+            9648
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              27,
+              28,
+              53,
+              80,
+              9648
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.95,
+            "mean_genre_share": 0.458333
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              27,
+              28,
+              53,
+              80,
+              9648
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.81,
+            "mean_genre_share": 0.421667
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": -0.023226,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 680,
+              "tmdb_id": 680,
+              "title": "펄프 픽션",
+              "score": -0.026355,
+              "genre_ids": [
+                35,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": -0.03632,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 155,
+              "tmdb_id": 155,
+              "title": "다크 나이트",
+              "score": -0.037315,
+              "genre_ids": [
+                28,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 550,
+              "tmdb_id": 550,
+              "title": "파이트 클럽",
+              "score": -0.043507,
+              "genre_ids": [
+                18,
+                53
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": -0.047029,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": -0.049806,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 475557,
+              "tmdb_id": 475557,
+              "title": "조커",
+              "score": -0.056004,
+              "genre_ids": [
+                18,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 122,
+              "tmdb_id": 122,
+              "title": "반지의 제왕: 왕의 귀환",
+              "score": -0.058188,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": -0.058616,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 75612,
+              "tmdb_id": 75612,
+              "title": "오블리비언",
+              "score": -0.060951,
+              "genre_ids": [
+                12,
+                28,
+                878,
+                9648
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 11324,
+              "tmdb_id": 11324,
+              "title": "셔터 아일랜드",
+              "score": -0.064058,
+              "genre_ids": [
+                18,
+                53,
+                9648
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 76338,
+              "tmdb_id": 76338,
+              "title": "토르: 다크 월드",
+              "score": -0.064358,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 383498,
+              "tmdb_id": 383498,
+              "title": "데드풀 2",
+              "score": -0.067668,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 381288,
+              "tmdb_id": 381288,
+              "title": "23 아이덴티티",
+              "score": -0.068151,
+              "genre_ids": [
+                27,
+                53
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 1891,
+              "tmdb_id": 1891,
+              "title": "스타워즈 에피소드 5: 제국의 역습",
+              "score": -0.068161,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 299534,
+              "tmdb_id": 299534,
+              "title": "어벤져스: 엔드게임",
+              "score": -0.06828,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 673,
+              "tmdb_id": 673,
+              "title": "해리 포터와 아즈카반의 죄수",
+              "score": -0.071284,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 209112,
+              "tmdb_id": 209112,
+              "title": "배트맨 대 슈퍼맨: 저스티스의 시작",
+              "score": -0.072129,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 135397,
+              "tmdb_id": 135397,
+              "title": "쥬라기 월드",
+              "score": -0.073405,
+              "genre_ids": [
+                12,
+                28,
+                53,
+                878
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 956,
+          "email": "v3seed-train-076@pinlm.test",
+          "user_number": 76,
+          "profile_type": "mixed",
+          "cohort_id": 4,
+          "cohort_name": "animation_family_adventure",
+          "target_genre_ids": [
+            12,
+            14,
+            16,
+            878,
+            10751
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              12,
+              14,
+              16,
+              878,
+              10751
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 1.0,
+            "mean_genre_share": 0.720833
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              12,
+              14,
+              16,
+              878,
+              10751
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.76,
+            "mean_genre_share": 0.486
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 76341,
+              "tmdb_id": 76341,
+              "title": "매드맥스: 분노의 도로",
+              "score": -0.070399,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 672,
+              "tmdb_id": 672,
+              "title": "해리 포터와 비밀의 방",
+              "score": -0.072023,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": -0.07514,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 2062,
+              "tmdb_id": 2062,
+              "title": "라따뚜이",
+              "score": -0.079459,
+              "genre_ids": [
+                14,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": -0.080458,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 129,
+              "tmdb_id": 129,
+              "title": "센과 치히로의 행방불명",
+              "score": -0.080986,
+              "genre_ids": [
+                14,
+                16,
+                10751
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 354912,
+              "tmdb_id": 354912,
+              "title": "코코",
+              "score": -0.081001,
+              "genre_ids": [
+                12,
+                16,
+                10402,
+                10751
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 76338,
+              "tmdb_id": 76338,
+              "title": "토르: 다크 월드",
+              "score": -0.081207,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": -0.081845,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 1930,
+              "tmdb_id": 1930,
+              "title": "어메이징 스파이더맨",
+              "score": -0.082735,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 207703,
+              "tmdb_id": 207703,
+              "title": "킹스맨: 시크릿 에이전트",
+              "score": -0.082903,
+              "genre_ids": [
+                12,
+                28,
+                35,
+                80
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 109445,
+              "tmdb_id": 109445,
+              "title": "겨울왕국",
+              "score": -0.084678,
+              "genre_ids": [
+                12,
+                14,
+                16,
+                10751
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 284054,
+              "tmdb_id": 284054,
+              "title": "블랙 팬서",
+              "score": -0.086604,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 284052,
+              "tmdb_id": 284052,
+              "title": "닥터 스트레인지",
+              "score": -0.086805,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 297761,
+              "tmdb_id": 297761,
+              "title": "수어사이드 스쿼드",
+              "score": -0.087217,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 209112,
+              "tmdb_id": 209112,
+              "title": "배트맨 대 슈퍼맨: 저스티스의 시작",
+              "score": -0.087808,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 101299,
+              "tmdb_id": 101299,
+              "title": "헝거게임: 캣칭 파이어",
+              "score": -0.08789,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 12,
+              "tmdb_id": 12,
+              "title": "니모를 찾아서",
+              "score": -0.088333,
+              "genre_ids": [
+                12,
+                16,
+                10751
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 102899,
+              "tmdb_id": 102899,
+              "title": "앤트맨",
+              "score": -0.090149,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 121,
+              "tmdb_id": 121,
+              "title": "반지의 제왕: 두 개의 탑",
+              "score": -0.090217,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 957,
+          "email": "v3seed-train-077@pinlm.test",
+          "user_number": 77,
+          "profile_type": "mixed",
+          "cohort_id": 5,
+          "cohort_name": "scifi_fantasy_adventure",
+          "target_genre_ids": [
+            12,
+            14,
+            16,
+            878,
+            10751
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              12,
+              14,
+              16,
+              878,
+              10751
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 1.0,
+            "mean_genre_share": 0.691667
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              12,
+              14,
+              16,
+              878,
+              10751
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.75,
+            "mean_genre_share": 0.473667
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": 0.021519,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": 0.018988,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": 0.014702,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": 0.012805,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": -0.001263,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 672,
+              "tmdb_id": 672,
+              "title": "해리 포터와 비밀의 방",
+              "score": -0.014654,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 76338,
+              "tmdb_id": 76338,
+              "title": "토르: 다크 월드",
+              "score": -0.01676,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 135397,
+              "tmdb_id": 135397,
+              "title": "쥬라기 월드",
+              "score": -0.01698,
+              "genre_ids": [
+                12,
+                28,
+                53,
+                878
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 383498,
+              "tmdb_id": 383498,
+              "title": "데드풀 2",
+              "score": -0.018299,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 673,
+              "tmdb_id": 673,
+              "title": "해리 포터와 아즈카반의 죄수",
+              "score": -0.019109,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 12,
+              "tmdb_id": 12,
+              "title": "니모를 찾아서",
+              "score": -0.019814,
+              "genre_ids": [
+                12,
+                16,
+                10751
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 76341,
+              "tmdb_id": 76341,
+              "title": "매드맥스: 분노의 도로",
+              "score": -0.023787,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 11,
+              "tmdb_id": 11,
+              "title": "스타워즈 에피소드 4: 새로운 희망",
+              "score": -0.026083,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 209112,
+              "tmdb_id": 209112,
+              "title": "배트맨 대 슈퍼맨: 저스티스의 시작",
+              "score": -0.026145,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 10195,
+              "tmdb_id": 10195,
+              "title": "토르: 천둥의 신",
+              "score": -0.026513,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 121,
+              "tmdb_id": 121,
+              "title": "반지의 제왕: 두 개의 탑",
+              "score": -0.028242,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 1891,
+              "tmdb_id": 1891,
+              "title": "스타워즈 에피소드 5: 제국의 역습",
+              "score": -0.029256,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 585,
+              "tmdb_id": 585,
+              "title": "몬스터 주식회사",
+              "score": -0.030201,
+              "genre_ids": [
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 767,
+              "tmdb_id": 767,
+              "title": "해리 포터와 혼혈왕자",
+              "score": -0.031451,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 284052,
+              "tmdb_id": 284052,
+              "title": "닥터 스트레인지",
+              "score": -0.036842,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 958,
+          "email": "v3seed-train-078@pinlm.test",
+          "user_number": 78,
+          "profile_type": "mixed",
+          "cohort_id": 6,
+          "cohort_name": "documentary_history_war",
+          "target_genre_ids": [
+            18,
+            36,
+            99,
+            10749,
+            10752
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              18,
+              36,
+              99,
+              10749,
+              10752
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.95,
+            "mean_genre_share": 0.6675
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              18,
+              36,
+              99,
+              10749,
+              10752
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.78,
+            "mean_genre_share": 0.518833
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 16869,
+              "tmdb_id": 16869,
+              "title": "바스터즈: 거친 녀석들",
+              "score": 0.080979,
+              "genre_ids": [
+                18,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 205596,
+              "tmdb_id": 205596,
+              "title": "이미테이션 게임",
+              "score": 0.054528,
+              "genre_ids": [
+                18,
+                36,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 424694,
+              "tmdb_id": 424694,
+              "title": "보헤미안 랩소디",
+              "score": 0.040359,
+              "genre_ids": [
+                18,
+                36,
+                10402
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 550,
+              "tmdb_id": 550,
+              "title": "파이트 클럽",
+              "score": 0.031659,
+              "genre_ids": [
+                18,
+                53
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 253412,
+              "tmdb_id": 253412,
+              "title": "에베레스트",
+              "score": 0.019258,
+              "genre_ids": [
+                12,
+                18,
+                36
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 314365,
+              "tmdb_id": 314365,
+              "title": "스포트라이트",
+              "score": 0.018969,
+              "genre_ids": [
+                18,
+                36
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 281338,
+              "tmdb_id": 281338,
+              "title": "혹성탈출: 종의 전쟁",
+              "score": 0.018828,
+              "genre_ids": [
+                18,
+                878,
+                10752
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 13,
+              "tmdb_id": 13,
+              "title": "포레스트 검프",
+              "score": 0.017806,
+              "genre_ids": [
+                18,
+                35,
+                10749
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 1578,
+              "tmdb_id": 1578,
+              "title": "분노의 주먹",
+              "score": 0.01655,
+              "genre_ids": [
+                18,
+                36
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 14574,
+              "tmdb_id": 14574,
+              "title": "줄무늬 파자마를 입은 소년",
+              "score": 0.016133,
+              "genre_ids": [
+                18,
+                36,
+                10752
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 228150,
+              "tmdb_id": 228150,
+              "title": "퓨리",
+              "score": 0.013745,
+              "genre_ids": [
+                18,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 12477,
+              "tmdb_id": 12477,
+              "title": "반딧불의 묘",
+              "score": 0.012856,
+              "genre_ids": [
+                16,
+                18,
+                10752
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 423,
+              "tmdb_id": 423,
+              "title": "피아니스트",
+              "score": 0.011249,
+              "genre_ids": [
+                18,
+                10752
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 190859,
+              "tmdb_id": 190859,
+              "title": "아메리칸 스나이퍼",
+              "score": 0.00911,
+              "genre_ids": [
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 935,
+              "tmdb_id": 935,
+              "title": "닥터 스트레인지러브",
+              "score": 0.009058,
+              "genre_ids": [
+                35,
+                10752
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 193756,
+              "tmdb_id": 193756,
+              "title": "론 서바이버",
+              "score": 0.007217,
+              "genre_ids": [
+                18,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 11322,
+              "tmdb_id": 11322,
+              "title": "퍼블릭 에너미",
+              "score": 0.007112,
+              "genre_ids": [
+                18,
+                36,
+                80
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 487558,
+              "tmdb_id": 487558,
+              "title": "블랙클랜스맨",
+              "score": 0.006719,
+              "genre_ids": [
+                18,
+                35,
+                36,
+                80
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": 0.005582,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 369885,
+              "tmdb_id": 369885,
+              "title": "얼라이드",
+              "score": 0.004551,
+              "genre_ids": [
+                18,
+                28,
+                53,
+                10749,
+                10752
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 977,
+          "email": "v3seed-train-097@pinlm.test",
+          "user_number": 97,
+          "profile_type": "drift",
+          "cohort_id": 1,
+          "cohort_name": "action_crime_thriller",
+          "target_genre_ids": [
+            28,
+            53,
+            80
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              28,
+              53,
+              80
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.65,
+            "mean_genre_share": 0.254167
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              28,
+              53,
+              80
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.57,
+            "mean_genre_share": 0.217667
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": -0.027806,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": -0.038699,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": -0.044758,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": -0.045711,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 550,
+              "tmdb_id": 550,
+              "title": "파이트 클럽",
+              "score": -0.052944,
+              "genre_ids": [
+                18,
+                53
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 16869,
+              "tmdb_id": 16869,
+              "title": "바스터즈: 거친 녀석들",
+              "score": -0.053408,
+              "genre_ids": [
+                18,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 155,
+              "tmdb_id": 155,
+              "title": "다크 나이트",
+              "score": -0.05557,
+              "genre_ids": [
+                28,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 383498,
+              "tmdb_id": 383498,
+              "title": "데드풀 2",
+              "score": -0.058873,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": -0.059079,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 862,
+              "tmdb_id": 862,
+              "title": "토이 스토리",
+              "score": -0.061035,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 767,
+              "tmdb_id": 767,
+              "title": "해리 포터와 혼혈왕자",
+              "score": -0.064456,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 374720,
+              "tmdb_id": 374720,
+              "title": "덩케르크",
+              "score": -0.065155,
+              "genre_ids": [
+                18,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 205596,
+              "tmdb_id": 205596,
+              "title": "이미테이션 게임",
+              "score": -0.065946,
+              "genre_ids": [
+                18,
+                36,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 13,
+              "tmdb_id": 13,
+              "title": "포레스트 검프",
+              "score": -0.068115,
+              "genre_ids": [
+                18,
+                35,
+                10749
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 585,
+              "tmdb_id": 585,
+              "title": "몬스터 주식회사",
+              "score": -0.068635,
+              "genre_ids": [
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 597,
+              "tmdb_id": 597,
+              "title": "타이타닉",
+              "score": -0.068735,
+              "genre_ids": [
+                18,
+                10749
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 920,
+              "tmdb_id": 920,
+              "title": "카",
+              "score": -0.068758,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 263115,
+              "tmdb_id": 263115,
+              "title": "로건",
+              "score": -0.070471,
+              "genre_ids": [
+                18,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 122,
+              "tmdb_id": 122,
+              "title": "반지의 제왕: 왕의 귀환",
+              "score": -0.071836,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 12,
+              "tmdb_id": 12,
+              "title": "니모를 찾아서",
+              "score": -0.072029,
+              "genre_ids": [
+                12,
+                16,
+                10751
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 978,
+          "email": "v3seed-train-098@pinlm.test",
+          "user_number": 98,
+          "profile_type": "drift",
+          "cohort_id": 2,
+          "cohort_name": "romance_drama_comedy",
+          "target_genre_ids": [
+            18,
+            35,
+            10749
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              18,
+              35,
+              10749
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.55,
+            "mean_genre_share": 0.25
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              18,
+              35,
+              10749
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.44,
+            "mean_genre_share": 0.178333
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": 0.07586,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 550,
+              "tmdb_id": 550,
+              "title": "파이트 클럽",
+              "score": 0.071983,
+              "genre_ids": [
+                18,
+                53
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 680,
+              "tmdb_id": 680,
+              "title": "펄프 픽션",
+              "score": 0.05629,
+              "genre_ids": [
+                35,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": 0.050921,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 155,
+              "tmdb_id": 155,
+              "title": "다크 나이트",
+              "score": 0.047594,
+              "genre_ids": [
+                28,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": 0.039027,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": 0.033069,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 862,
+              "tmdb_id": 862,
+              "title": "토이 스토리",
+              "score": 0.029384,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 16869,
+              "tmdb_id": 16869,
+              "title": "바스터즈: 거친 녀석들",
+              "score": 0.022529,
+              "genre_ids": [
+                18,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 205596,
+              "tmdb_id": 205596,
+              "title": "이미테이션 게임",
+              "score": 0.021854,
+              "genre_ids": [
+                18,
+                36,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 475557,
+              "tmdb_id": 475557,
+              "title": "조커",
+              "score": 0.020238,
+              "genre_ids": [
+                18,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 13,
+              "tmdb_id": 13,
+              "title": "포레스트 검프",
+              "score": 0.016078,
+              "genre_ids": [
+                18,
+                35,
+                10749
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": 0.011426,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 11324,
+              "tmdb_id": 11324,
+              "title": "셔터 아일랜드",
+              "score": 0.009233,
+              "genre_ids": [
+                18,
+                53,
+                9648
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 673,
+              "tmdb_id": 673,
+              "title": "해리 포터와 아즈카반의 죄수",
+              "score": 0.006952,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 135397,
+              "tmdb_id": 135397,
+              "title": "쥬라기 월드",
+              "score": 0.006591,
+              "genre_ids": [
+                12,
+                28,
+                53,
+                878
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 597,
+              "tmdb_id": 597,
+              "title": "타이타닉",
+              "score": 0.006548,
+              "genre_ids": [
+                18,
+                10749
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 1891,
+              "tmdb_id": 1891,
+              "title": "스타워즈 에피소드 5: 제국의 역습",
+              "score": 0.006016,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 329865,
+              "tmdb_id": 329865,
+              "title": "컨택트",
+              "score": 0.005661,
+              "genre_ids": [
+                18,
+                878,
+                9648
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 122,
+              "tmdb_id": 122,
+              "title": "반지의 제왕: 왕의 귀환",
+              "score": 0.004563,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 979,
+          "email": "v3seed-train-099@pinlm.test",
+          "user_number": 99,
+          "profile_type": "drift",
+          "cohort_id": 3,
+          "cohort_name": "horror_mystery_thriller",
+          "target_genre_ids": [
+            27,
+            53,
+            9648
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              27,
+              53,
+              9648
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.3,
+            "mean_genre_share": 0.120833
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              27,
+              53,
+              9648
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.4,
+            "mean_genre_share": 0.175833
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": 0.00857,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": -0.006868,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 680,
+              "tmdb_id": 680,
+              "title": "펄프 픽션",
+              "score": -0.017734,
+              "genre_ids": [
+                35,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 550,
+              "tmdb_id": 550,
+              "title": "파이트 클럽",
+              "score": -0.019273,
+              "genre_ids": [
+                18,
+                53
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": -0.019472,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 155,
+              "tmdb_id": 155,
+              "title": "다크 나이트",
+              "score": -0.021014,
+              "genre_ids": [
+                28,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": -0.025428,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 673,
+              "tmdb_id": 673,
+              "title": "해리 포터와 아즈카반의 죄수",
+              "score": -0.032635,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": -0.0362,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 209112,
+              "tmdb_id": 209112,
+              "title": "배트맨 대 슈퍼맨: 저스티스의 시작",
+              "score": -0.039363,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 122,
+              "tmdb_id": 122,
+              "title": "반지의 제왕: 왕의 귀환",
+              "score": -0.040519,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 76338,
+              "tmdb_id": 76338,
+              "title": "토르: 다크 월드",
+              "score": -0.040534,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 1891,
+              "tmdb_id": 1891,
+              "title": "스타워즈 에피소드 5: 제국의 역습",
+              "score": -0.040691,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 862,
+              "tmdb_id": 862,
+              "title": "토이 스토리",
+              "score": -0.042505,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 383498,
+              "tmdb_id": 383498,
+              "title": "데드풀 2",
+              "score": -0.042844,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 10195,
+              "tmdb_id": 10195,
+              "title": "토르: 천둥의 신",
+              "score": -0.04349,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 475557,
+              "tmdb_id": 475557,
+              "title": "조커",
+              "score": -0.045572,
+              "genre_ids": [
+                18,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 135397,
+              "tmdb_id": 135397,
+              "title": "쥬라기 월드",
+              "score": -0.045936,
+              "genre_ids": [
+                12,
+                28,
+                53,
+                878
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 11324,
+              "tmdb_id": 11324,
+              "title": "셔터 아일랜드",
+              "score": -0.047113,
+              "genre_ids": [
+                18,
+                53,
+                9648
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 12,
+              "tmdb_id": 12,
+              "title": "니모를 찾아서",
+              "score": -0.047933,
+              "genre_ids": [
+                12,
+                16,
+                10751
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 980,
+          "email": "v3seed-train-100@pinlm.test",
+          "user_number": 100,
+          "profile_type": "drift",
+          "cohort_id": 4,
+          "cohort_name": "animation_family_adventure",
+          "target_genre_ids": [
+            12,
+            16,
+            10751
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              12,
+              16,
+              10751
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.8,
+            "mean_genre_share": 0.354167
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              12,
+              16,
+              10751
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.53,
+            "mean_genre_share": 0.2295
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": 0.095688,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": 0.082315,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": 0.067589,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 550,
+              "tmdb_id": 550,
+              "title": "파이트 클럽",
+              "score": 0.067531,
+              "genre_ids": [
+                18,
+                53
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 155,
+              "tmdb_id": 155,
+              "title": "다크 나이트",
+              "score": 0.062225,
+              "genre_ids": [
+                28,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": 0.059943,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 680,
+              "tmdb_id": 680,
+              "title": "펄프 픽션",
+              "score": 0.05157,
+              "genre_ids": [
+                35,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 862,
+              "tmdb_id": 862,
+              "title": "토이 스토리",
+              "score": 0.050019,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": 0.046549,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 383498,
+              "tmdb_id": 383498,
+              "title": "데드풀 2",
+              "score": 0.045776,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 76338,
+              "tmdb_id": 76338,
+              "title": "토르: 다크 월드",
+              "score": 0.044005,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 1891,
+              "tmdb_id": 1891,
+              "title": "스타워즈 에피소드 5: 제국의 역습",
+              "score": 0.043919,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 12,
+              "tmdb_id": 12,
+              "title": "니모를 찾아서",
+              "score": 0.033954,
+              "genre_ids": [
+                12,
+                16,
+                10751
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 16869,
+              "tmdb_id": 16869,
+              "title": "바스터즈: 거친 녀석들",
+              "score": 0.033582,
+              "genre_ids": [
+                18,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 673,
+              "tmdb_id": 673,
+              "title": "해리 포터와 아즈카반의 죄수",
+              "score": 0.032236,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 122,
+              "tmdb_id": 122,
+              "title": "반지의 제왕: 왕의 귀환",
+              "score": 0.032136,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 209112,
+              "tmdb_id": 209112,
+              "title": "배트맨 대 슈퍼맨: 저스티스의 시작",
+              "score": 0.03191,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 767,
+              "tmdb_id": 767,
+              "title": "해리 포터와 혼혈왕자",
+              "score": 0.029569,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 672,
+              "tmdb_id": 672,
+              "title": "해리 포터와 비밀의 방",
+              "score": 0.027654,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 12444,
+              "tmdb_id": 12444,
+              "title": "해리 포터와 죽음의 성물 1",
+              "score": 0.026581,
+              "genre_ids": [
+                12,
+                14
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 981,
+          "email": "v3seed-train-101@pinlm.test",
+          "user_number": 101,
+          "profile_type": "drift",
+          "cohort_id": 5,
+          "cohort_name": "scifi_fantasy_adventure",
+          "target_genre_ids": [
+            12,
+            14,
+            878
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              12,
+              14,
+              878
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.35,
+            "mean_genre_share": 0.175
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              12,
+              14,
+              878
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.43,
+            "mean_genre_share": 0.211833
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": 0.124367,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 16869,
+              "tmdb_id": 16869,
+              "title": "바스터즈: 거친 녀석들",
+              "score": 0.119858,
+              "genre_ids": [
+                18,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 374720,
+              "tmdb_id": 374720,
+              "title": "덩케르크",
+              "score": 0.106794,
+              "genre_ids": [
+                18,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": 0.096734,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 550,
+              "tmdb_id": 550,
+              "title": "파이트 클럽",
+              "score": 0.096211,
+              "genre_ids": [
+                18,
+                53
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 205596,
+              "tmdb_id": 205596,
+              "title": "이미테이션 게임",
+              "score": 0.092767,
+              "genre_ids": [
+                18,
+                36,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": 0.074266,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 13,
+              "tmdb_id": 13,
+              "title": "포레스트 검프",
+              "score": 0.072072,
+              "genre_ids": [
+                18,
+                35,
+                10749
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": 0.067841,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 862,
+              "tmdb_id": 862,
+              "title": "토이 스토리",
+              "score": 0.067297,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 857,
+              "tmdb_id": 857,
+              "title": "라이언 일병 구하기",
+              "score": 0.064451,
+              "genre_ids": [
+                18,
+                36,
+                10752
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 155,
+              "tmdb_id": 155,
+              "title": "다크 나이트",
+              "score": 0.063262,
+              "genre_ids": [
+                28,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 11322,
+              "tmdb_id": 11322,
+              "title": "퍼블릭 에너미",
+              "score": 0.05669,
+              "genre_ids": [
+                18,
+                36,
+                80
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 597,
+              "tmdb_id": 597,
+              "title": "타이타닉",
+              "score": 0.055809,
+              "genre_ids": [
+                18,
+                10749
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 424694,
+              "tmdb_id": 424694,
+              "title": "보헤미안 랩소디",
+              "score": 0.052743,
+              "genre_ids": [
+                18,
+                36,
+                10402
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 920,
+              "tmdb_id": 920,
+              "title": "카",
+              "score": 0.051897,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 1578,
+              "tmdb_id": 1578,
+              "title": "분노의 주먹",
+              "score": 0.050836,
+              "genre_ids": [
+                18,
+                36
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": 0.049637,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 935,
+              "tmdb_id": 935,
+              "title": "닥터 스트레인지러브",
+              "score": 0.048816,
+              "genre_ids": [
+                35,
+                10752
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 369885,
+              "tmdb_id": 369885,
+              "title": "얼라이드",
+              "score": 0.046478,
+              "genre_ids": [
+                18,
+                28,
+                53,
+                10749,
+                10752
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 982,
+          "email": "v3seed-train-102@pinlm.test",
+          "user_number": 102,
+          "profile_type": "drift",
+          "cohort_id": 6,
+          "cohort_name": "documentary_history_war",
+          "target_genre_ids": [
+            36,
+            99,
+            10752
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              36,
+              99,
+              10752
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.25,
+            "mean_genre_share": 0.108333
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              36,
+              99,
+              10752
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.35,
+            "mean_genre_share": 0.145333
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": 0.139227,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 16869,
+              "tmdb_id": 16869,
+              "title": "바스터즈: 거친 녀석들",
+              "score": 0.137713,
+              "genre_ids": [
+                18,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 374720,
+              "tmdb_id": 374720,
+              "title": "덩케르크",
+              "score": 0.126045,
+              "genre_ids": [
+                18,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": 0.115418,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 205596,
+              "tmdb_id": 205596,
+              "title": "이미테이션 게임",
+              "score": 0.110814,
+              "genre_ids": [
+                18,
+                36,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": 0.102968,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": 0.0989,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 862,
+              "tmdb_id": 862,
+              "title": "토이 스토리",
+              "score": 0.098848,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 550,
+              "tmdb_id": 550,
+              "title": "파이트 클럽",
+              "score": 0.095504,
+              "genre_ids": [
+                18,
+                53
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 857,
+              "tmdb_id": 857,
+              "title": "라이언 일병 구하기",
+              "score": 0.09164,
+              "genre_ids": [
+                18,
+                36,
+                10752
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 155,
+              "tmdb_id": 155,
+              "title": "다크 나이트",
+              "score": 0.091312,
+              "genre_ids": [
+                28,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": 0.0815,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 13,
+              "tmdb_id": 13,
+              "title": "포레스트 검프",
+              "score": 0.079646,
+              "genre_ids": [
+                18,
+                35,
+                10749
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 424694,
+              "tmdb_id": 424694,
+              "title": "보헤미안 랩소디",
+              "score": 0.078818,
+              "genre_ids": [
+                18,
+                36,
+                10402
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 597,
+              "tmdb_id": 597,
+              "title": "타이타닉",
+              "score": 0.076299,
+              "genre_ids": [
+                18,
+                10749
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 122,
+              "tmdb_id": 122,
+              "title": "반지의 제왕: 왕의 귀환",
+              "score": 0.073129,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 209112,
+              "tmdb_id": 209112,
+              "title": "배트맨 대 슈퍼맨: 저스티스의 시작",
+              "score": 0.072604,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 383498,
+              "tmdb_id": 383498,
+              "title": "데드풀 2",
+              "score": 0.072549,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 920,
+              "tmdb_id": 920,
+              "title": "카",
+              "score": 0.070985,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 284054,
+              "tmdb_id": 284054,
+              "title": "블랙 팬서",
+              "score": 0.069083,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 989,
+          "email": "v3seed-train-109@pinlm.test",
+          "user_number": 109,
+          "profile_type": "negative_heavy",
+          "cohort_id": 1,
+          "cohort_name": "action_crime_thriller",
+          "target_genre_ids": [
+            28,
+            53,
+            80
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              28,
+              53,
+              80
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.75,
+            "mean_genre_share": 0.254167
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              28,
+              53,
+              80
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.16,
+            "mean_genre_share": 0.054167
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": -0.107694,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": -0.111911,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 99861,
+              "tmdb_id": 99861,
+              "title": "어벤져스: 에이지 오브 울트론",
+              "score": -0.112147,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": -0.11256,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 329,
+              "tmdb_id": 329,
+              "title": "쥬라기 공원",
+              "score": -0.112921,
+              "genre_ids": [
+                12,
+                878
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 675,
+              "tmdb_id": 675,
+              "title": "해리 포터와 불사조 기사단",
+              "score": -0.112977,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": -0.113271,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 566032,
+              "tmdb_id": 566032,
+              "title": "Como Se Nada Pudesse Cair",
+              "score": -0.11355,
+              "genre_ids": []
+            },
+            {
+              "rank": 9,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": -0.113676,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 207703,
+              "tmdb_id": 207703,
+              "title": "킹스맨: 시크릿 에이전트",
+              "score": -0.113808,
+              "genre_ids": [
+                12,
+                28,
+                35,
+                80
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 283995,
+              "tmdb_id": 283995,
+              "title": "가디언즈 오브 갤럭시 Vol. 2",
+              "score": -0.113871,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 9806,
+              "tmdb_id": 9806,
+              "title": "인크레더블",
+              "score": -0.114315,
+              "genre_ids": [
+                12,
+                16,
+                28,
+                10751
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 120,
+              "tmdb_id": 120,
+              "title": "반지의 제왕: 반지 원정대",
+              "score": -0.11498,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 271110,
+              "tmdb_id": 271110,
+              "title": "캡틴 아메리카: 시빌 워",
+              "score": -0.11595,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 315635,
+              "tmdb_id": 315635,
+              "title": "스파이더맨: 홈커밍",
+              "score": -0.115966,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 767,
+              "tmdb_id": 767,
+              "title": "해리 포터와 혼혈왕자",
+              "score": -0.116181,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 10195,
+              "tmdb_id": 10195,
+              "title": "토르: 천둥의 신",
+              "score": -0.117043,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 1771,
+              "tmdb_id": 1771,
+              "title": "퍼스트 어벤져",
+              "score": -0.117093,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 129,
+              "tmdb_id": 129,
+              "title": "센과 치히로의 행방불명",
+              "score": -0.117164,
+              "genre_ids": [
+                14,
+                16,
+                10751
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 121,
+              "tmdb_id": 121,
+              "title": "반지의 제왕: 두 개의 탑",
+              "score": -0.117392,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 990,
+          "email": "v3seed-train-110@pinlm.test",
+          "user_number": 110,
+          "profile_type": "negative_heavy",
+          "cohort_id": 2,
+          "cohort_name": "romance_drama_comedy",
+          "target_genre_ids": [
+            18,
+            35,
+            10749
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              18,
+              35,
+              10749
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.8,
+            "mean_genre_share": 0.389167
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              18,
+              35,
+              10749
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.63,
+            "mean_genre_share": 0.268833
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": 0.051614,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 550,
+              "tmdb_id": 550,
+              "title": "파이트 클럽",
+              "score": 0.036019,
+              "genre_ids": [
+                18,
+                53
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 597,
+              "tmdb_id": 597,
+              "title": "타이타닉",
+              "score": 0.025887,
+              "genre_ids": [
+                18,
+                10749
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 13,
+              "tmdb_id": 13,
+              "title": "포레스트 검프",
+              "score": 0.023451,
+              "genre_ids": [
+                18,
+                35,
+                10749
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": 0.01794,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 155,
+              "tmdb_id": 155,
+              "title": "다크 나이트",
+              "score": 0.017642,
+              "genre_ids": [
+                28,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 862,
+              "tmdb_id": 862,
+              "title": "토이 스토리",
+              "score": 0.013013,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 680,
+              "tmdb_id": 680,
+              "title": "펄프 픽션",
+              "score": 0.009829,
+              "genre_ids": [
+                35,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 205596,
+              "tmdb_id": 205596,
+              "title": "이미테이션 게임",
+              "score": 0.009512,
+              "genre_ids": [
+                18,
+                36,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 16869,
+              "tmdb_id": 16869,
+              "title": "바스터즈: 거친 녀석들",
+              "score": 0.008118,
+              "genre_ids": [
+                18,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 20352,
+              "tmdb_id": 20352,
+              "title": "슈퍼배드",
+              "score": 0.003153,
+              "genre_ids": [
+                16,
+                35,
+                80,
+                878,
+                10751
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 920,
+              "tmdb_id": 920,
+              "title": "카",
+              "score": 8.8e-05,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 244786,
+              "tmdb_id": 244786,
+              "title": "위플래쉬",
+              "score": 8.8e-05,
+              "genre_ids": [
+                18,
+                53,
+                10402
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": -0.00405,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 38,
+              "tmdb_id": 38,
+              "title": "이터널 선샤인",
+              "score": -0.005405,
+              "genre_ids": [
+                18,
+                878,
+                10749
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 496243,
+              "tmdb_id": 496243,
+              "title": "기생충",
+              "score": -0.009154,
+              "genre_ids": [
+                18,
+                35,
+                53
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 273248,
+              "tmdb_id": 273248,
+              "title": "헤이트풀8",
+              "score": -0.009374,
+              "genre_ids": [
+                18,
+                37,
+                9648
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": -0.00997,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 475557,
+              "tmdb_id": 475557,
+              "title": "조커",
+              "score": -0.011754,
+              "genre_ids": [
+                18,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 120467,
+              "tmdb_id": 120467,
+              "title": "그랜드 부다페스트 호텔",
+              "score": -0.012218,
+              "genre_ids": [
+                18,
+                35
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 991,
+          "email": "v3seed-train-111@pinlm.test",
+          "user_number": 111,
+          "profile_type": "negative_heavy",
+          "cohort_id": 3,
+          "cohort_name": "horror_mystery_thriller",
+          "target_genre_ids": [
+            27,
+            53,
+            9648
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              27,
+              53,
+              9648
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.6,
+            "mean_genre_share": 0.2625
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              27,
+              53,
+              9648
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.53,
+            "mean_genre_share": 0.235833
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 550,
+              "tmdb_id": 550,
+              "title": "파이트 클럽",
+              "score": 0.04583,
+              "genre_ids": [
+                18,
+                53
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 293660,
+              "tmdb_id": 293660,
+              "title": "데드풀",
+              "score": 0.044667,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 680,
+              "tmdb_id": 680,
+              "title": "펄프 픽션",
+              "score": 0.043703,
+              "genre_ids": [
+                35,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 155,
+              "tmdb_id": 155,
+              "title": "다크 나이트",
+              "score": 0.02803,
+              "genre_ids": [
+                28,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 19995,
+              "tmdb_id": 19995,
+              "title": "아바타",
+              "score": 0.026342,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 24428,
+              "tmdb_id": 24428,
+              "title": "어벤져스",
+              "score": 0.01358,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 475557,
+              "tmdb_id": 475557,
+              "title": "조커",
+              "score": 0.008325,
+              "genre_ids": [
+                18,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 6479,
+              "tmdb_id": 6479,
+              "title": "나는 전설이다",
+              "score": 0.006201,
+              "genre_ids": [
+                18,
+                53,
+                878
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": 0.001265,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 122,
+              "tmdb_id": 122,
+              "title": "반지의 제왕: 왕의 귀환",
+              "score": -0.002258,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 11324,
+              "tmdb_id": 11324,
+              "title": "셔터 아일랜드",
+              "score": -0.003516,
+              "genre_ids": [
+                18,
+                53,
+                9648
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 546554,
+              "tmdb_id": 546554,
+              "title": "나이브스 아웃",
+              "score": -0.003738,
+              "genre_ids": [
+                35,
+                80,
+                9648
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 61791,
+              "tmdb_id": 61791,
+              "title": "혹성탈출: 진화의 시작",
+              "score": -0.004097,
+              "genre_ids": [
+                18,
+                28,
+                53,
+                878
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 291805,
+              "tmdb_id": 291805,
+              "title": "나우 유 씨 미 2",
+              "score": -0.00448,
+              "genre_ids": [
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 1891,
+              "tmdb_id": 1891,
+              "title": "스타워즈 에피소드 5: 제국의 역습",
+              "score": -0.006189,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 381288,
+              "tmdb_id": 381288,
+              "title": "23 아이덴티티",
+              "score": -0.006343,
+              "genre_ids": [
+                27,
+                53
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 62,
+              "tmdb_id": 62,
+              "title": "2001 스페이스 오디세이",
+              "score": -0.006672,
+              "genre_ids": [
+                12,
+                878,
+                9648
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 383498,
+              "tmdb_id": 383498,
+              "title": "데드풀 2",
+              "score": -0.007893,
+              "genre_ids": [
+                12,
+                28,
+                35
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 76338,
+              "tmdb_id": 76338,
+              "title": "토르: 다크 월드",
+              "score": -0.008292,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 496243,
+              "tmdb_id": 496243,
+              "title": "기생충",
+              "score": -0.008774,
+              "genre_ids": [
+                18,
+                35,
+                53
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 992,
+          "email": "v3seed-train-112@pinlm.test",
+          "user_number": 112,
+          "profile_type": "negative_heavy",
+          "cohort_id": 4,
+          "cohort_name": "animation_family_adventure",
+          "target_genre_ids": [
+            12,
+            16,
+            10751
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              12,
+              16,
+              10751
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 1.0,
+            "mean_genre_share": 0.445833
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              12,
+              16,
+              10751
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.84,
+            "mean_genre_share": 0.540167
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 76341,
+              "tmdb_id": 76341,
+              "title": "매드맥스: 분노의 도로",
+              "score": -0.078771,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 675,
+              "tmdb_id": 675,
+              "title": "해리 포터와 불사조 기사단",
+              "score": -0.081553,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 102899,
+              "tmdb_id": 102899,
+              "title": "앤트맨",
+              "score": -0.081846,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 76338,
+              "tmdb_id": 76338,
+              "title": "토르: 다크 월드",
+              "score": -0.082077,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 672,
+              "tmdb_id": 672,
+              "title": "해리 포터와 비밀의 방",
+              "score": -0.082113,
+              "genre_ids": [
+                12,
+                14
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 118340,
+              "tmdb_id": 118340,
+              "title": "가디언즈 오브 갤럭시",
+              "score": -0.082151,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 129,
+              "tmdb_id": 129,
+              "title": "센과 치히로의 행방불명",
+              "score": -0.082216,
+              "genre_ids": [
+                14,
+                16,
+                10751
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 2062,
+              "tmdb_id": 2062,
+              "title": "라따뚜이",
+              "score": -0.082592,
+              "genre_ids": [
+                14,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 354912,
+              "tmdb_id": 354912,
+              "title": "코코",
+              "score": -0.084075,
+              "genre_ids": [
+                12,
+                16,
+                10402,
+                10751
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 11,
+              "tmdb_id": 11,
+              "title": "스타워즈 에피소드 4: 새로운 희망",
+              "score": -0.084243,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 109445,
+              "tmdb_id": 109445,
+              "title": "겨울왕국",
+              "score": -0.084623,
+              "genre_ids": [
+                12,
+                14,
+                16,
+                10751
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 297762,
+              "tmdb_id": 297762,
+              "title": "원더 우먼",
+              "score": -0.084654,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 299536,
+              "tmdb_id": 299536,
+              "title": "어벤져스: 인피니티 워",
+              "score": -0.08548,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 329,
+              "tmdb_id": 329,
+              "title": "쥬라기 공원",
+              "score": -0.086164,
+              "genre_ids": [
+                12,
+                878
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 1930,
+              "tmdb_id": 1930,
+              "title": "어메이징 스파이더맨",
+              "score": -0.086392,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 209112,
+              "tmdb_id": 209112,
+              "title": "배트맨 대 슈퍼맨: 저스티스의 시작",
+              "score": -0.086539,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 99861,
+              "tmdb_id": 99861,
+              "title": "어벤져스: 에이지 오브 울트론",
+              "score": -0.086813,
+              "genre_ids": [
+                12,
+                28,
+                878
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 297761,
+              "tmdb_id": 297761,
+              "title": "수어사이드 스쿼드",
+              "score": -0.087098,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 14160,
+              "tmdb_id": 14160,
+              "title": "업",
+              "score": -0.087182,
+              "genre_ids": [
+                12,
+                16,
+                35,
+                10751
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 10195,
+              "tmdb_id": 10195,
+              "title": "토르: 천둥의 신",
+              "score": -0.088313,
+              "genre_ids": [
+                12,
+                14,
+                28
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 993,
+          "email": "v3seed-train-113@pinlm.test",
+          "user_number": 113,
+          "profile_type": "negative_heavy",
+          "cohort_id": 5,
+          "cohort_name": "scifi_fantasy_adventure",
+          "target_genre_ids": [
+            12,
+            14,
+            878
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              12,
+              14,
+              878
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 0.0,
+            "mean_genre_share": 0.0
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              12,
+              14,
+              878
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.0,
+            "mean_genre_share": 0.0
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 2203,
+              "tmdb_id": 2203,
+              "title": "Für ein paar Filme mehr...",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 5263,
+              "tmdb_id": 5263,
+              "title": "Ist das Licht im Kühlschrank wirklich aus?",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 7302,
+              "tmdb_id": 7302,
+              "title": "Toma de Razon",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 12563,
+              "tmdb_id": 12563,
+              "title": "Original Child Bomb",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 12680,
+              "tmdb_id": 12680,
+              "title": "Surviving the Terror",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 12730,
+              "tmdb_id": 12730,
+              "title": "GSG 9 - Die Spezialeinheit",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 12880,
+              "tmdb_id": 12880,
+              "title": "Dalai Lama Renaissance",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 13175,
+              "tmdb_id": 13175,
+              "title": "Esoteric Agenda",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 14264,
+              "tmdb_id": 14264,
+              "title": "Hip Hop Immortals We Got Your Kids",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 14265,
+              "tmdb_id": 14265,
+              "title": "Hip Hop Legends",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 15847,
+              "tmdb_id": 15847,
+              "title": "Generation Model",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 15848,
+              "tmdb_id": 15848,
+              "title": "Kangaroos: Faces in the Mob",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 16855,
+              "tmdb_id": 16855,
+              "title": "Urospredere",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 18052,
+              "tmdb_id": 18052,
+              "title": "Cereal Killerz",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 18151,
+              "tmdb_id": 18151,
+              "title": "Shadow Company",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 18246,
+              "tmdb_id": 18246,
+              "title": "STRONG: The Movie",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 18864,
+              "tmdb_id": 18864,
+              "title": "The Art of Eric Gill",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 19332,
+              "tmdb_id": 19332,
+              "title": "The Lamborghini Experience 40 Years of Excellence",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 20138,
+              "tmdb_id": 20138,
+              "title": "Alien Gods",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 22906,
+              "tmdb_id": 22906,
+              "title": "American Blackout",
+              "score": -0.087024,
+              "genre_ids": [
+                99
+              ]
+            }
+          ]
+        },
+        {
+          "user_id": 994,
+          "email": "v3seed-train-114@pinlm.test",
+          "user_number": 114,
+          "profile_type": "negative_heavy",
+          "cohort_id": 6,
+          "cohort_name": "documentary_history_war",
+          "target_genre_ids": [
+            36,
+            99,
+            10752
+          ],
+          "top_display_alignment": {
+            "target_genre_ids": [
+              36,
+              99,
+              10752
+            ],
+            "candidate_count": 20,
+            "any_overlap_rate": 1.0,
+            "mean_genre_share": 0.3975
+          },
+          "top_k_alignment": {
+            "target_genre_ids": [
+              36,
+              99,
+              10752
+            ],
+            "candidate_count": 100,
+            "any_overlap_rate": 0.57,
+            "mean_genre_share": 0.241333
+          },
+          "top_movies": [
+            {
+              "rank": 1,
+              "movie_id": 374720,
+              "tmdb_id": 374720,
+              "title": "덩케르크",
+              "score": 0.114696,
+              "genre_ids": [
+                18,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 2,
+              "movie_id": 424694,
+              "tmdb_id": 424694,
+              "title": "보헤미안 랩소디",
+              "score": 0.096159,
+              "genre_ids": [
+                18,
+                36,
+                10402
+              ]
+            },
+            {
+              "rank": 3,
+              "movie_id": 16869,
+              "tmdb_id": 16869,
+              "title": "바스터즈: 거친 녀석들",
+              "score": 0.090946,
+              "genre_ids": [
+                18,
+                53,
+                10752
+              ]
+            },
+            {
+              "rank": 4,
+              "movie_id": 14574,
+              "tmdb_id": 14574,
+              "title": "줄무늬 파자마를 입은 소년",
+              "score": 0.090502,
+              "genre_ids": [
+                18,
+                36,
+                10752
+              ]
+            },
+            {
+              "rank": 5,
+              "movie_id": 792,
+              "tmdb_id": 792,
+              "title": "플래툰",
+              "score": 0.0887,
+              "genre_ids": [
+                18,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 6,
+              "movie_id": 1578,
+              "tmdb_id": 1578,
+              "title": "분노의 주먹",
+              "score": 0.087227,
+              "genre_ids": [
+                18,
+                36
+              ]
+            },
+            {
+              "rank": 7,
+              "movie_id": 193756,
+              "tmdb_id": 193756,
+              "title": "론 서바이버",
+              "score": 0.085126,
+              "genre_ids": [
+                18,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 8,
+              "movie_id": 11322,
+              "tmdb_id": 11322,
+              "title": "퍼블릭 에너미",
+              "score": 0.080039,
+              "genre_ids": [
+                18,
+                36,
+                80
+              ]
+            },
+            {
+              "rank": 9,
+              "movie_id": 190859,
+              "tmdb_id": 190859,
+              "title": "아메리칸 스나이퍼",
+              "score": 0.07875,
+              "genre_ids": [
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 10,
+              "movie_id": 363676,
+              "tmdb_id": 363676,
+              "title": "설리: 허드슨강의 기적",
+              "score": 0.07854,
+              "genre_ids": [
+                18,
+                36
+              ]
+            },
+            {
+              "rank": 11,
+              "movie_id": 302401,
+              "tmdb_id": 302401,
+              "title": "스노든",
+              "score": 0.07758,
+              "genre_ids": [
+                18,
+                36,
+                53,
+                80
+              ]
+            },
+            {
+              "rank": 12,
+              "movie_id": 857,
+              "tmdb_id": 857,
+              "title": "라이언 일병 구하기",
+              "score": 0.076282,
+              "genre_ids": [
+                18,
+                36,
+                10752
+              ]
+            },
+            {
+              "rank": 13,
+              "movie_id": 935,
+              "tmdb_id": 935,
+              "title": "닥터 스트레인지러브",
+              "score": 0.074751,
+              "genre_ids": [
+                35,
+                10752
+              ]
+            },
+            {
+              "rank": 14,
+              "movie_id": 369885,
+              "tmdb_id": 369885,
+              "title": "얼라이드",
+              "score": 0.072377,
+              "genre_ids": [
+                18,
+                28,
+                53,
+                10749,
+                10752
+              ]
+            },
+            {
+              "rank": 15,
+              "movie_id": 1271,
+              "tmdb_id": 1271,
+              "title": "300",
+              "score": 0.070567,
+              "genre_ids": [
+                12,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 16,
+              "movie_id": 359724,
+              "tmdb_id": 359724,
+              "title": "포드 V 페라리",
+              "score": 0.07014,
+              "genre_ids": [
+                18,
+                28,
+                36
+              ]
+            },
+            {
+              "rank": 17,
+              "movie_id": 399404,
+              "tmdb_id": 399404,
+              "title": "다키스트 아워",
+              "score": 0.065686,
+              "genre_ids": [
+                18,
+                36
+              ]
+            },
+            {
+              "rank": 18,
+              "movie_id": 616,
+              "tmdb_id": 616,
+              "title": "라스트 사무라이",
+              "score": 0.065581,
+              "genre_ids": [
+                18,
+                28,
+                10752
+              ]
+            },
+            {
+              "rank": 19,
+              "movie_id": 12477,
+              "tmdb_id": 12477,
+              "title": "반딧불의 묘",
+              "score": 0.063348,
+              "genre_ids": [
+                16,
+                18,
+                10752
+              ]
+            },
+            {
+              "rank": 20,
+              "movie_id": 279,
+              "tmdb_id": 279,
+              "title": "아마데우스",
+              "score": 0.062441,
+              "genre_ids": [
+                18,
+                36,
+                10402
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "training_data": {
+    "dataset_hash": "77a977915f6b9b9b5c6f40cd2fb2496722b0d61f9ab91fde2578b17673402080",
+    "user_count": 128,
+    "positive_pair_count": 3373,
+    "unique_positive_movie_count": 213,
+    "representative_pairwise_positive_jaccard": 0.103834,
+    "max_movie_user_support": 86,
+    "top_supported_movies": [
+      {
+        "movie_id": 293660,
+        "user_count": 86,
+        "tmdb_id": 293660,
+        "title": "데드풀"
+      },
+      {
+        "movie_id": 19995,
+        "user_count": 68,
+        "tmdb_id": 19995,
+        "title": "아바타"
+      },
+      {
+        "movie_id": 24428,
+        "user_count": 64,
+        "tmdb_id": 24428,
+        "title": "어벤져스"
+      },
+      {
+        "movie_id": 299536,
+        "user_count": 64,
+        "tmdb_id": 299536,
+        "title": "어벤져스: 인피니티 워"
+      },
+      {
+        "movie_id": 118340,
+        "user_count": 54,
+        "tmdb_id": 118340,
+        "title": "가디언즈 오브 갤럭시"
+      },
+      {
+        "movie_id": 550,
+        "user_count": 48,
+        "tmdb_id": 550,
+        "title": "파이트 클럽"
+      },
+      {
+        "movie_id": 680,
+        "user_count": 48,
+        "tmdb_id": 680,
+        "title": "펄프 픽션"
+      },
+      {
+        "movie_id": 155,
+        "user_count": 43,
+        "tmdb_id": 155,
+        "title": "다크 나이트"
+      },
+      {
+        "movie_id": 16869,
+        "user_count": 43,
+        "tmdb_id": 16869,
+        "title": "바스터즈: 거친 녀석들"
+      },
+      {
+        "movie_id": 205596,
+        "user_count": 40,
+        "tmdb_id": 205596,
+        "title": "이미테이션 게임"
+      }
+    ],
+    "matches_artifacts": true
+  },
+  "cross_model_overlap": []
+}

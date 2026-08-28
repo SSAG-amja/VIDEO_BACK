@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 from enum import StrEnum
 
 from app.services.recsys.v3.config import (
-    TRAINING_MISSING_TIMESTAMP_MULTIPLIER,
-    TRAINING_OLDER_RECENCY_MULTIPLIER,
-    TRAINING_RECENCY_BUCKETS,
+    TRAINING_MISSING_TIMESTAMP_MULTIPLIERS,
+    TRAINING_RECENCY_HALF_LIFE_DAYS,
+    TRAINING_RECENCY_MIN_MULTIPLIER,
 )
 
 
@@ -52,16 +52,25 @@ def append_current_signal(
     )
 
 
-def recency_multiplier(occurred_at: datetime | None, *, data_cutoff_at: datetime) -> float:
+def recency_multiplier(
+    occurred_at: datetime | None,
+    *,
+    data_cutoff_at: datetime,
+    action: SnapshotAction,
+) -> float:
+    action_name = action.value
     if occurred_at is None:
-        return TRAINING_MISSING_TIMESTAMP_MULTIPLIER
+        return TRAINING_MISSING_TIMESTAMP_MULTIPLIERS[action_name]
+    half_life_days = TRAINING_RECENCY_HALF_LIFE_DAYS[action_name]
+    if half_life_days is None:
+        return 1.0
     cutoff_at = normalize_datetime(data_cutoff_at)
     action_at = normalize_datetime(occurred_at)
-    age_days = max((cutoff_at - action_at).days, 0)
-    for max_days, multiplier in TRAINING_RECENCY_BUCKETS:
-        if age_days <= max_days:
-            return multiplier
-    return TRAINING_OLDER_RECENCY_MULTIPLIER
+    age_days = max((cutoff_at - action_at).total_seconds(), 0.0) / 86_400.0
+    return max(
+        TRAINING_RECENCY_MIN_MULTIPLIER,
+        0.5 ** (age_days / half_life_days),
+    )
 
 
 def normalize_optional_datetime(value: datetime | None) -> datetime | None:
