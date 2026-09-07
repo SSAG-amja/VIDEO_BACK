@@ -5,6 +5,9 @@ from app.db.session import SessionLocal
 from app.jobs.recsys.v3.training.artifact_publisher import load_hybrid_artifact
 from app.jobs.recsys.v3.candidates.candidate_schemas import CandidateMaterializationConfig, LoadedCandidateSnapshot
 from app.jobs.recsys.v3.candidates.candidate_snapshot import materialize_candidate_snapshot
+from app.jobs.recsys.v3.candidates.candidate_confidence import (
+    load_training_collaborative_confidences,
+)
 
 
 def run_worker(
@@ -16,10 +19,12 @@ def run_worker(
     artifact = load_hybrid_artifact(model_artifact)
     with SessionLocal() as db:
         eligible_user_ids, exclusions = load_eligible_users_and_exclusions(db, artifact.user_ids)
+        collaborative_confidences = load_training_collaborative_confidences(db, artifact)
         db.rollback()
     return materialize_candidate_snapshot(
         artifact,
         exclusions_by_user_id=exclusions,
+        collaborative_confidence_by_user_id=collaborative_confidences,
         eligible_user_ids=eligible_user_ids,
         config=config,
         output_root=output_root,

@@ -13,7 +13,7 @@ This package owns recommendation work executed in or directly supporting an API 
 
 - `domain/`: behavior, feature, ontology, catalog, and profile data contracts
 - `profiles/`: runtime user-profile construction
-- `retrieval/`: long-term and short-term retrieval, merge, eligibility, ontology analysis, and retrieval schemas
+- `retrieval/`: long-term and short-term retrieval, collaborative confidence, merge, eligibility, ontology analysis, and retrieval schemas
 - `cold_start/`: onboarding and feature-only cold-start retrieval and merge
 - `policy/`: hard/soft policy evaluation, policy configuration, registry, and quality adjustment
 - `serving/`: runtime model loading and active serving-bundle validation

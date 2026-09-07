@@ -14,8 +14,8 @@ from app.jobs.recsys.v3.candidates.candidate_schemas import (
 )
 from app.jobs.recsys.v3.training.model_schemas import LoadedHybridArtifact
 from app.services.recsys.v3.retrieval.score_calibration import (
-    center_known_user_representations,
-    mean_known_user_representation,
+    collaborative_adjusted_user_representations,
+    mean_user_representation_components,
 )
 
 
@@ -24,6 +24,7 @@ def materialize_candidate_batch(
     user_indices: Sequence[int],
     *,
     exclusions_by_user_id: Mapping[int, set[int] | frozenset[int]] | None = None,
+    collaborative_confidence_by_user_id: Mapping[int, float] | None = None,
     config: CandidateMaterializationConfig | None = None,
 ) -> CandidateBatch:
     materialization_config = config or CandidateMaterializationConfig()
@@ -31,9 +32,14 @@ def materialize_candidate_batch(
     _validate_artifact(artifact)
     _validate_user_indices(indices, len(artifact.user_ids))
     exclusions = exclusions_by_user_id or {}
+    collaborative_confidences = collaborative_confidence_by_user_id or {}
     centering_weight = artifact.config.known_user_score_centering_weight
-    mean_user_representation = (
-        mean_known_user_representation(artifact.model, artifact.user_features)
+    component_means = (
+        mean_user_representation_components(
+            artifact.model,
+            artifact.user_features,
+            identity_feature_count=len(artifact.user_ids),
+        )
         if centering_weight > 0
         else None
     )
@@ -58,7 +64,8 @@ def materialize_candidate_batch(
                     exclusions_by_user_id=exclusions,
                     config=materialization_config,
                     centering_weight=centering_weight,
-                    mean_user_representation=mean_user_representation,
+                    component_means=component_means,
+                    collaborative_confidence_by_user_id=collaborative_confidences,
                 ),
             )
             for ordinal, block_indices in blocks
@@ -71,7 +78,8 @@ def materialize_candidate_batch(
             exclusions_by_user_id=exclusions,
             config=materialization_config,
             centering_weight=centering_weight,
-            mean_user_representation=mean_user_representation,
+            component_means=component_means,
+            collaborative_confidence_by_user_id=collaborative_confidences,
         )
         active_workers = min(materialization_config.worker_count, len(blocks))
 
@@ -103,7 +111,8 @@ def _score_dynamic_blocks(
     exclusions_by_user_id: Mapping[int, set[int] | frozenset[int]],
     config: CandidateMaterializationConfig,
     centering_weight: float,
-    mean_user_representation,
+    component_means,
+    collaborative_confidence_by_user_id: Mapping[int, float],
 ) -> list[tuple[int, list[CandidateBatch]]]:
     work_queue: queue.Queue[tuple[int, np.ndarray]] = queue.Queue()
     for block in blocks:
@@ -126,7 +135,10 @@ def _score_dynamic_blocks(
                             exclusions_by_user_id=exclusions_by_user_id,
                             config=config,
                             centering_weight=centering_weight,
-                            mean_user_representation=mean_user_representation,
+                            component_means=component_means,
+                            collaborative_confidence_by_user_id=(
+                                collaborative_confidence_by_user_id
+                            ),
                         ),
                     )
                 )
@@ -150,7 +162,8 @@ def _score_block_with_fallback(
     exclusions_by_user_id: Mapping[int, set[int] | frozenset[int]],
     config: CandidateMaterializationConfig,
     centering_weight: float,
-    mean_user_representation,
+    component_means,
+    collaborative_confidence_by_user_id: Mapping[int, float],
 ) -> list[CandidateBatch]:
     try:
         return [
@@ -160,7 +173,10 @@ def _score_block_with_fallback(
                 exclusions_by_user_id=exclusions_by_user_id,
                 config=config,
                 centering_weight=centering_weight,
-                mean_user_representation=mean_user_representation,
+                component_means=component_means,
+                collaborative_confidence_by_user_id=(
+                    collaborative_confidence_by_user_id
+                ),
             )
         ]
     except Exception as block_error:
@@ -174,7 +190,10 @@ def _score_block_with_fallback(
                         exclusions_by_user_id=exclusions_by_user_id,
                         config=config,
                         centering_weight=centering_weight,
-                        mean_user_representation=mean_user_representation,
+                        component_means=component_means,
+                        collaborative_confidence_by_user_id=(
+                            collaborative_confidence_by_user_id
+                        ),
                     )
                 )
             except Exception as user_error:
@@ -182,6 +201,7 @@ def _score_block_with_fallback(
                 batches.append(
                     CandidateBatch(
                         successful_user_ids=np.empty(0, dtype=np.int64),
+                        collaborative_confidences=np.empty(0, dtype=np.float32),
                         candidate_user_ids=np.empty(0, dtype=np.int64),
                         movie_ids=np.empty(0, dtype=np.int64),
                         model_scores=np.empty(0, dtype=np.float32),
@@ -209,21 +229,24 @@ def _score_user_block(
     exclusions_by_user_id: Mapping[int, set[int] | frozenset[int]],
     config: CandidateMaterializationConfig,
     centering_weight: float,
-    mean_user_representation,
+    component_means,
+    collaborative_confidence_by_user_id: Mapping[int, float],
 ) -> CandidateBatch:
     started = time.perf_counter()
     user_features = artifact.user_features[user_indices]
-    user_biases, user_embeddings = artifact.model.get_user_representations(user_features)
-    user_biases = np.asarray(user_biases, dtype=np.float32)
-    user_embeddings = np.asarray(user_embeddings, dtype=np.float32)
-    if mean_user_representation is not None:
-        user_biases, user_embeddings = center_known_user_representations(
-            user_biases,
-            user_embeddings,
-            mean_user_bias=mean_user_representation[0],
-            mean_user_embedding=mean_user_representation[1],
-            weight=centering_weight,
-        )
+    user_ids = [int(artifact.user_ids[int(index)]) for index in user_indices]
+    confidences = np.asarray(
+        [collaborative_confidence_by_user_id.get(user_id, 1.0) for user_id in user_ids],
+        dtype=np.float32,
+    )
+    user_biases, user_embeddings = collaborative_adjusted_user_representations(
+        artifact.model,
+        user_features,
+        identity_feature_count=len(artifact.user_ids),
+        collaborative_confidences=confidences,
+        centering_weight=centering_weight,
+        component_means=component_means,
+    )
     if (
         user_biases.shape != (user_indices.size,)
         or user_embeddings.shape[0] != user_indices.size
@@ -289,6 +312,7 @@ def _score_user_block(
 
     return CandidateBatch(
         successful_user_ids=np.asarray(successful_user_ids, dtype=np.int64),
+        collaborative_confidences=confidences,
         candidate_user_ids=np.asarray(candidate_user_ids, dtype=np.int64),
         movie_ids=np.asarray(candidate_movie_ids, dtype=np.int64),
         model_scores=np.asarray(candidate_scores, dtype=np.float32),
@@ -347,6 +371,7 @@ def _merge_batches(
     if not batches:
         return CandidateBatch(
             successful_user_ids=np.empty(0, dtype=np.int64),
+            collaborative_confidences=np.empty(0, dtype=np.float32),
             candidate_user_ids=np.empty(0, dtype=np.int64),
             movie_ids=np.empty(0, dtype=np.int64),
             model_scores=np.empty(0, dtype=np.float32),
@@ -362,6 +387,10 @@ def _merge_batches(
 
     return CandidateBatch(
         successful_user_ids=concatenate("successful_user_ids", np.int64),
+        collaborative_confidences=concatenate(
+            "collaborative_confidences",
+            np.float32,
+        ),
         candidate_user_ids=concatenate("candidate_user_ids", np.int64),
         movie_ids=concatenate("movie_ids", np.int64),
         model_scores=concatenate("model_scores", np.float32),

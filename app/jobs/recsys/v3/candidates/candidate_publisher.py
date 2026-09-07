@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,7 @@ from app.crud.recsys.recommendations import (
 from app.jobs.recsys.v3.candidates.candidate_schemas import LoadedCandidateSnapshot
 from app.jobs.recsys.v3.candidates.candidate_snapshot import (
     hash_eligible_user_ids,
+    hash_collaborative_confidences,
     hash_exclusions,
     iter_candidate_snapshot_batches,
 )
@@ -27,6 +28,14 @@ def publish_candidate_snapshot(
     seen_users: set[int] = set()
     for batch in iter_candidate_snapshot_batches(snapshot):
         successful_user_ids = [int(value) for value in batch.successful_user_ids]
+        confidence_by_user_id = {
+            user_id: float(confidence)
+            for user_id, confidence in zip(
+                successful_user_ids,
+                batch.collaborative_confidences,
+                strict=True,
+            )
+        }
         duplicates = seen_users.intersection(successful_user_ids)
         if duplicates:
             raise ValueError(f"candidate snapshot repeats successful users: {sorted(duplicates)[:5]}")
@@ -45,6 +54,8 @@ def publish_candidate_snapshot(
                     "model_source_rank": int(rank),
                     "model_build_id": snapshot.model_build_id,
                     "candidate_snapshot_id": snapshot.snapshot_id,
+                    "collaborative_confidence": confidence_by_user_id[int(user_id)],
+                    "collaborative_adjustment_scope": "user_identity",
                 },
             }
             for user_id, movie_id, score, rank in zip(
@@ -74,10 +85,17 @@ def validate_snapshot_publication_state(
     db: Session,
     snapshot: LoadedCandidateSnapshot,
     artifact_user_ids: Sequence[int],
+    *,
+    collaborative_confidence_by_user_id: Mapping[int, float] | None = None,
 ) -> tuple[tuple[int, ...], dict[int, set[int]]]:
     eligible_user_ids, exclusions = load_eligible_users_and_exclusions(db, artifact_user_ids)
     if hash_eligible_user_ids(eligible_user_ids) != snapshot.manifest["eligible_user_ids_hash"]:
         raise RuntimeError("eligible users changed after candidate materialization")
     if hash_exclusions(exclusions, eligible_user_ids) != snapshot.manifest["exclusion_hash"]:
         raise RuntimeError("watched/passed exclusions changed after candidate materialization")
+    if collaborative_confidence_by_user_id is not None and hash_collaborative_confidences(
+        collaborative_confidence_by_user_id,
+        eligible_user_ids,
+    ) != snapshot.manifest.get("collaborative_confidence_hash"):
+        raise RuntimeError("collaborative confidence changed after candidate materialization")
     return eligible_user_ids, exclusions

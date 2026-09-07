@@ -206,6 +206,10 @@ class CandidateMergeDiagnostics:
     effective_model_weight: float = 1.0
     effective_long_term_ontology_weight: float = 0.0
     model_ontology_agreement: float = 0.0
+    base_model_weight: float = 1.0
+    collaborative_population_confidence: float = 1.0
+    collaborative_user_evidence_confidence: float = 1.0
+    collaborative_effective_confidence: float = 1.0
 
 
 @dataclass(frozen=True, slots=True)

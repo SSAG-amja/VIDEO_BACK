@@ -142,6 +142,9 @@ def get_recommendations(
             long_term_candidates=long_term,
             context=context,
             redis=redis,
+            collaborative_population_confidence=(
+                bundle.model.collaborative_population_confidence
+            ),
         )
         policy = evaluate_policy_candidates(
             db,

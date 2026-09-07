@@ -212,6 +212,29 @@ class CandidateMergerTest(unittest.TestCase):
         self.assertEqual(result.diagnostics.model_ontology_agreement, 1.0)
         self.assertEqual(result.diagnostics.effective_model_weight, 0.65)
 
+    def test_collaborative_confidence_does_not_reduce_model_lane_weight(self) -> None:
+        result = merge_candidates(
+            (LongTermCandidate(10, 2.0, 1), LongTermCandidate(20, 1.0, 2)),
+            (),
+            (
+                LongTermOntologyCandidate(10, 3.0, 1),
+                LongTermOntologyCandidate(30, 2.0, 2),
+            ),
+            drift_confidence=0.0,
+            collaborative_population_confidence=0.25,
+            collaborative_user_evidence_confidence=1.0,
+            collaborative_effective_confidence=0.25,
+            limit=3,
+        )
+
+        self.assertEqual(result.diagnostics.base_model_weight, 0.55)
+        self.assertAlmostEqual(result.diagnostics.effective_model_weight, 0.55)
+        self.assertAlmostEqual(
+            result.diagnostics.effective_long_term_ontology_weight,
+            0.45,
+        )
+        self.assertEqual(result.diagnostics.collaborative_effective_confidence, 0.25)
+
 
 class OntologyAnalyzerTest(unittest.TestCase):
     def test_profile_rows_keep_scope_direction_and_actor_relation(self) -> None:

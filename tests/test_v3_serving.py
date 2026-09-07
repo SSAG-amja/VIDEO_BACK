@@ -140,6 +140,8 @@ class ServingBundleTest(unittest.TestCase):
         self.assertIs(first, second)
         self.assertEqual(first.bundle_id, self.manifest["bundle_id"])
         self.assertEqual(first.ontology_build_id, 22)
+        self.assertGreaterEqual(first.model.collaborative_population_confidence, 0.0)
+        self.assertLessEqual(first.model.collaborative_population_confidence, 1.0)
         self.assertTrue(self.activation_session.committed)
 
     def test_invalid_reload_keeps_previous_valid_bundle(self) -> None:

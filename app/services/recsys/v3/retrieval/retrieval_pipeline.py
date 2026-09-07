@@ -8,6 +8,9 @@ from redis import Redis
 
 from app.services.recsys.v3.retrieval.candidate_eligibility import select_eligible_candidates
 from app.services.recsys.v3.retrieval.candidate_merger import merge_candidates
+from app.services.recsys.v3.retrieval.collaborative_confidence import (
+    assess_user_collaborative_confidence,
+)
 from app.services.recsys.v3.config import CANDIDATE_POOL_SIZE, CANDIDATE_STORAGE_SIZE
 from app.services.recsys.v3.retrieval.ontology_analyzer import analyze_candidates
 from app.services.recsys.v3.retrieval.long_term_ontology_retriever import (
@@ -33,6 +36,7 @@ def build_retrieval_candidates(
     long_term_candidates: Sequence[LongTermCandidate],
     context: PolicyRequestContext,
     redis: Redis | None = None,
+    collaborative_population_confidence: float = 1.0,
     limit: int = CANDIDATE_POOL_SIZE,
 ) -> RetrievalPipelineResult:
     started = time.monotonic()
@@ -49,11 +53,18 @@ def build_retrieval_candidates(
         profile=profile,
         limit=limit,
     )
+    collaborative = assess_user_collaborative_confidence(
+        positive_pair_count=profile.long_term.positive_pair_count,
+        population_confidence=collaborative_population_confidence,
+    )
     merged = merge_candidates(
         long_term_candidates,
         short_term.candidates,
         long_term_ontology.candidates,
         drift_confidence=profile.short_term.drift_confidence,
+        collaborative_population_confidence=collaborative.population_confidence,
+        collaborative_user_evidence_confidence=collaborative.user_evidence_confidence,
+        collaborative_effective_confidence=collaborative.effective_confidence,
         limit=CANDIDATE_STORAGE_SIZE,
     )
     eligibility = select_eligible_candidates(

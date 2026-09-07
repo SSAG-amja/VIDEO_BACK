@@ -17,6 +17,9 @@ from app.jobs.recsys.v3.candidates.candidate_snapshot import (
 )
 from app.jobs.recsys.v3.training.model_schemas import LightFMTrainingConfig
 from app.jobs.recsys.v3.training.trainer import train_hybrid_model
+from app.services.recsys.v3.retrieval.score_calibration import (
+    without_user_identity_features,
+)
 from tests.test_v3_hybrid_trainer import synthetic_item_export, synthetic_user_export
 from tests.test_v3_identity_trainer import synthetic_dataset
 
@@ -218,6 +221,44 @@ class CandidateMaterializerTest(unittest.TestCase):
         )
         np.testing.assert_allclose(batch.model_scores, scores[expected], atol=1e-6)
 
+    def test_zero_collaborative_confidence_keeps_semantic_lightfm_score(self) -> None:
+        user_id = int(self.artifact.user_ids[0])
+        batch = materialize_candidate_batch(
+            self.artifact,
+            [0],
+            collaborative_confidence_by_user_id={user_id: 0.0},
+            config=CandidateMaterializationConfig(
+                top_k=3,
+                user_block_size=1,
+                item_block_size=2,
+                checkpoint_user_count=1,
+            ),
+        )
+        semantic_features = without_user_identity_features(
+            self.artifact.user_features[0],
+            identity_feature_count=len(self.artifact.user_ids),
+        )
+        user_biases, user_embeddings = self.artifact.model.get_user_representations(
+            semantic_features
+        )
+        item_biases, item_embeddings = self.artifact.model.get_item_representations(
+            self.artifact.item_features
+        )
+        scores = item_embeddings @ user_embeddings[0]
+        scores += item_biases
+        scores += user_biases[0]
+        expected = sorted(
+            range(len(self.artifact.movie_ids)),
+            key=lambda index: (-float(scores[index]), int(self.artifact.movie_ids[index])),
+        )[:3]
+
+        self.assertEqual(
+            batch.movie_ids.tolist(),
+            [int(self.artifact.movie_ids[index]) for index in expected],
+        )
+        np.testing.assert_allclose(batch.model_scores, scores[expected], atol=1e-6)
+        np.testing.assert_allclose(batch.collaborative_confidences, [0.0])
+
     def test_failed_user_is_isolated_after_block_retry(self) -> None:
         artifact = replace(
             self.artifact,
@@ -282,6 +323,51 @@ class CandidateMaterializerTest(unittest.TestCase):
             self.assertTrue(all(row["source"] == "lightfm_v3" for row in inserted_rows))
             self.assertTrue(
                 all(row["source_scores"]["candidate_snapshot_id"] == loaded.snapshot_id for row in inserted_rows)
+            )
+            self.assertTrue(
+                all(
+                    row["source_scores"]["collaborative_adjustment_scope"]
+                    == "user_identity"
+                    for row in inserted_rows
+                )
+            )
+
+    def test_collaborative_confidence_changes_candidate_snapshot_identity(self) -> None:
+        user_id = int(self.artifact.user_ids[0])
+        with tempfile.TemporaryDirectory(prefix="v3-candidate-confidence-") as temporary:
+            full = materialize_candidate_snapshot(
+                self.artifact,
+                eligible_user_ids=[user_id],
+                collaborative_confidence_by_user_id={user_id: 1.0},
+                config=CandidateMaterializationConfig(
+                    top_k=3,
+                    user_block_size=1,
+                    item_block_size=2,
+                    checkpoint_user_count=1,
+                ),
+                output_root=temporary,
+            )
+            semantic = materialize_candidate_snapshot(
+                self.artifact,
+                eligible_user_ids=[user_id],
+                collaborative_confidence_by_user_id={user_id: 0.0},
+                config=CandidateMaterializationConfig(
+                    top_k=3,
+                    user_block_size=1,
+                    item_block_size=2,
+                    checkpoint_user_count=1,
+                ),
+                output_root=temporary,
+            )
+
+            self.assertNotEqual(full.snapshot_id, semantic.snapshot_id)
+            self.assertEqual(
+                semantic.manifest["lightfm_score_policy_version"],
+                "identity-confidence-v1",
+            )
+            self.assertEqual(
+                semantic.manifest["collaborative_confidence"]["mean"],
+                0.0,
             )
 
 

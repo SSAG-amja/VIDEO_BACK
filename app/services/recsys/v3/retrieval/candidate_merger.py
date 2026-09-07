@@ -32,12 +32,22 @@ def merge_candidates(
     long_term_ontology_candidates: Sequence[LongTermOntologyCandidate] = (),
     *,
     drift_confidence: float,
+    collaborative_population_confidence: float = 1.0,
+    collaborative_user_evidence_confidence: float = 1.0,
+    collaborative_effective_confidence: float = 1.0,
     limit: int = CANDIDATE_POOL_SIZE,
 ) -> CandidateMergeResult:
     if limit <= 0 or limit > CANDIDATE_STORAGE_SIZE:
         raise ValueError(f"candidate merge limit must be between 1 and {CANDIDATE_STORAGE_SIZE}")
     if not 0.0 <= drift_confidence <= 1.0:
         raise ValueError("drift confidence must be between 0 and 1")
+    for name, value in (
+        ("collaborative population confidence", collaborative_population_confidence),
+        ("collaborative user evidence confidence", collaborative_user_evidence_confidence),
+        ("collaborative effective confidence", collaborative_effective_confidence),
+    ):
+        if not 0.0 <= value <= 1.0:
+            raise ValueError(f"{name} must be between 0 and 1")
     _validate_unique_candidates(long_term_candidates, "long-term")
     _validate_unique_candidates(short_term_candidates, "short-term")
     _validate_unique_candidates(long_term_ontology_candidates, "long-term ontology")
@@ -82,19 +92,22 @@ def merge_candidates(
             if agreement_denominator
             else 0.0
         )
-        model_weight = LONG_TERM_MODEL_MIN_SELECTION_WEIGHT + (
+        base_model_weight = LONG_TERM_MODEL_MIN_SELECTION_WEIGHT + (
             LONG_TERM_MODEL_SELECTION_WEIGHT
             - LONG_TERM_MODEL_MIN_SELECTION_WEIGHT
         ) * semantic_agreement
         ontology_weight = LONG_TERM_ONTOLOGY_SELECTION_WEIGHT + (
-            LONG_TERM_MODEL_SELECTION_WEIGHT - model_weight
+            LONG_TERM_MODEL_SELECTION_WEIGHT - base_model_weight
         )
+        model_weight = base_model_weight
     elif model_by_movie:
         semantic_agreement = 0.0
+        base_model_weight = 1.0
         model_weight = 1.0
         ontology_weight = 0.0
     else:
         semantic_agreement = 0.0
+        base_model_weight = 0.0
         model_weight = 0.0
         ontology_weight = 1.0
     drift_weight = round(drift_confidence * SHORT_TERM_DRIFT_MAX_WEIGHT, 8)
@@ -266,6 +279,12 @@ def merge_candidates(
             effective_model_weight=model_weight,
             effective_long_term_ontology_weight=ontology_weight,
             model_ontology_agreement=semantic_agreement,
+            base_model_weight=base_model_weight,
+            collaborative_population_confidence=collaborative_population_confidence,
+            collaborative_user_evidence_confidence=(
+                collaborative_user_evidence_confidence
+            ),
+            collaborative_effective_confidence=collaborative_effective_confidence,
         ),
     )
 

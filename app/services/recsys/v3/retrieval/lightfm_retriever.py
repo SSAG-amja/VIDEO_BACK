@@ -17,7 +17,10 @@ from app.services.recsys.v3.domain.feature_registry import FeatureName, get_feat
 from app.services.recsys.v3.serving.model_store import RuntimeHybridArtifact
 from app.services.recsys.v3.retrieval.retrieval_schemas import LongTermCandidate
 from app.services.recsys.v3.retrieval.score_calibration import (
-    center_known_user_representations,
+    collaborative_adjusted_user_representations,
+)
+from app.services.recsys.v3.retrieval.collaborative_confidence import (
+    assess_user_collaborative_confidence,
 )
 from app.services.recsys.v3.domain.schemas import UserProfileBundle
 
@@ -41,22 +44,28 @@ def retrieve_lightfm_candidates(
         if user_features.nnz == 0:
             return ()
 
-    user_biases, user_embeddings = artifact.model.get_user_representations(user_features)
-    user_bias = float(np.asarray(user_biases).reshape(-1)[0])
-    user_embedding = np.asarray(user_embeddings, dtype=np.float32).reshape(1, -1)
     centering_weight = (
         artifact.known_user_score_centering_weight if known_user_path else 0.0
     )
-    if centering_weight > 0:
-        centered_biases, centered_embeddings = center_known_user_representations(
-            np.asarray([user_bias], dtype=np.float32),
-            user_embedding,
-            mean_user_bias=artifact.mean_user_bias,
-            mean_user_embedding=artifact.mean_user_embedding,
-            weight=centering_weight,
+    if known_user_path:
+        collaborative = assess_user_collaborative_confidence(
+            positive_pair_count=profile.long_term.positive_pair_count,
+            population_confidence=artifact.collaborative_population_confidence,
         )
-        user_bias = float(centered_biases[0])
-        user_embedding = centered_embeddings
+        user_biases, user_embeddings = collaborative_adjusted_user_representations(
+            artifact.model,
+            user_features,
+            identity_feature_count=len(artifact.user_ids),
+            collaborative_confidences=[collaborative.effective_confidence],
+            centering_weight=centering_weight,
+            component_means=artifact.user_representation_component_means,
+        )
+    else:
+        user_biases, user_embeddings = artifact.model.get_user_representations(
+            user_features
+        )
+    user_bias = float(np.asarray(user_biases).reshape(-1)[0])
+    user_embedding = np.asarray(user_embeddings, dtype=np.float32).reshape(1, -1)
     top_movie_ids = np.empty(0, dtype=np.int64)
     top_scores = np.empty(0, dtype=np.float32)
     excluded = set(int(value) for value in excluded_movie_ids)

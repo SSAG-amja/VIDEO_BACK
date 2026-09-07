@@ -19,25 +19,36 @@ from app.jobs.recsys.v3.candidates.candidate_schemas import (
     LoadedCandidateSnapshot,
 )
 from app.jobs.recsys.v3.training.model_schemas import LoadedHybridArtifact
-from app.services.recsys.v3.config import CANDIDATE_SNAPSHOT_FORMAT_VERSION, ENGINE_NAME, ENGINE_VERSION
+from app.services.recsys.v3.config import (
+    CANDIDATE_SNAPSHOT_FORMAT_VERSION,
+    ENGINE_NAME,
+    ENGINE_VERSION,
+    LIGHTFM_CANDIDATE_SCORE_POLICY_VERSION,
+)
 
 
 def materialize_candidate_snapshot(
     artifact: LoadedHybridArtifact,
     *,
     exclusions_by_user_id: Mapping[int, set[int] | frozenset[int]] | None = None,
+    collaborative_confidence_by_user_id: Mapping[int, float] | None = None,
     eligible_user_ids: Sequence[int] | None = None,
     config: CandidateMaterializationConfig | None = None,
     output_root: str | Path = "assets/ml_models/v3/candidate_snapshots",
 ) -> LoadedCandidateSnapshot:
     materialization_config = config or CandidateMaterializationConfig()
     exclusions = exclusions_by_user_id or {}
+    collaborative_confidences = collaborative_confidence_by_user_id or {}
     user_indices = _resolve_user_indices(artifact, eligible_user_ids)
     if user_indices.size == 0:
         raise ValueError("candidate materialization requires at least one eligible artifact user")
 
     model_build_id = str(artifact.manifest["model_build_id"])
     exclusion_hash = hash_exclusions(exclusions, artifact.user_ids[user_indices])
+    collaborative_confidence_hash = hash_collaborative_confidences(
+        collaborative_confidences,
+        artifact.user_ids[user_indices],
+    )
     input_payload = {
         "snapshot_format_version": CANDIDATE_SNAPSHOT_FORMAT_VERSION,
         "model_build_id": model_build_id,
@@ -45,6 +56,8 @@ def materialize_candidate_snapshot(
         "config": materialization_config.result_config,
         "config_hash": materialization_config.config_hash,
         "exclusion_hash": exclusion_hash,
+        "lightfm_score_policy_version": LIGHTFM_CANDIDATE_SCORE_POLICY_VERSION,
+        "collaborative_confidence_hash": collaborative_confidence_hash,
         "eligible_user_ids_hash": hash_eligible_user_ids(artifact.user_ids[user_indices]),
         "eligible_user_count": int(user_indices.size),
     }
@@ -91,6 +104,7 @@ def materialize_candidate_snapshot(
                 artifact,
                 user_indices[start:end],
                 exclusions_by_user_id=exclusions,
+                collaborative_confidence_by_user_id=collaborative_confidences,
                 config=materialization_config,
             )
             _write_batch_atomic(npz_path, metadata_path, batch)
@@ -114,6 +128,12 @@ def materialize_candidate_snapshot(
             "execution_config": materialization_config.execution_config,
             "config_hash": materialization_config.config_hash,
             "exclusion_hash": exclusion_hash,
+            "lightfm_score_policy_version": LIGHTFM_CANDIDATE_SCORE_POLICY_VERSION,
+            "collaborative_confidence_hash": collaborative_confidence_hash,
+            "collaborative_confidence": _confidence_summary(
+                collaborative_confidences,
+                artifact.user_ids[user_indices],
+            ),
             "eligible_user_ids_hash": input_payload["eligible_user_ids_hash"],
             "eligible_user_count": int(user_indices.size),
             "successful_user_count": aggregate["successful_user_count"],
@@ -194,6 +214,39 @@ def hash_eligible_user_ids(eligible_user_ids: Sequence[int]) -> str:
     return _hash_int_array(eligible_user_ids)
 
 
+def hash_collaborative_confidences(
+    collaborative_confidence_by_user_id: Mapping[int, float],
+    eligible_user_ids: Sequence[int],
+) -> str:
+    digest = hashlib.sha256(b"v3-lightfm-identity-confidence-v1\0")
+    for user_id in np.asarray(eligible_user_ids, dtype=np.int64):
+        confidence = float(
+            collaborative_confidence_by_user_id.get(int(user_id), 1.0)
+        )
+        if not np.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
+            raise ValueError("candidate collaborative confidence must be in [0, 1]")
+        digest.update(f"{int(user_id)}:{confidence:.8f};".encode())
+    return digest.hexdigest()
+
+
+def _confidence_summary(
+    collaborative_confidence_by_user_id: Mapping[int, float],
+    eligible_user_ids: Sequence[int],
+) -> dict[str, float]:
+    values = np.asarray(
+        [
+            collaborative_confidence_by_user_id.get(int(user_id), 1.0)
+            for user_id in eligible_user_ids
+        ],
+        dtype=np.float64,
+    )
+    return {
+        "min": float(values.min()),
+        "mean": float(values.mean()),
+        "max": float(values.max()),
+    }
+
+
 def _resolve_user_indices(
     artifact: LoadedHybridArtifact,
     eligible_user_ids: Sequence[int] | None,
@@ -217,6 +270,7 @@ def _write_batch_atomic(npz_path: Path, metadata_path: Path, batch: CandidateBat
         np.savez_compressed(
             handle,
             successful_user_ids=batch.successful_user_ids,
+            collaborative_confidences=batch.collaborative_confidences,
             candidate_user_ids=batch.candidate_user_ids,
             movie_ids=batch.movie_ids,
             model_scores=batch.model_scores,
@@ -246,6 +300,11 @@ def _load_batch(
     with np.load(npz_path, allow_pickle=False) as data:
         batch = CandidateBatch(
             successful_user_ids=data["successful_user_ids"].astype(np.int64, copy=False),
+            collaborative_confidences=(
+                data["collaborative_confidences"].astype(np.float32, copy=False)
+                if "collaborative_confidences" in data
+                else np.ones(data["successful_user_ids"].size, dtype=np.float32)
+            ),
             candidate_user_ids=data["candidate_user_ids"].astype(np.int64, copy=False),
             movie_ids=data["movie_ids"].astype(np.int64, copy=False),
             model_scores=data["model_scores"].astype(np.float32, copy=False),
@@ -284,6 +343,13 @@ def _validate_batch(
         raise ValueError("candidate batch contains non-finite model scores")
     if np.unique(batch.successful_user_ids).size != batch.successful_user_ids.size:
         raise ValueError("candidate batch contains duplicate successful users")
+    if batch.collaborative_confidences.shape != batch.successful_user_ids.shape:
+        raise ValueError("candidate collaborative confidences must align with successful users")
+    if not np.all(np.isfinite(batch.collaborative_confidences)) or np.any(
+        (batch.collaborative_confidences < 0.0)
+        | (batch.collaborative_confidences > 1.0)
+    ):
+        raise ValueError("candidate collaborative confidences must be in [0, 1]")
     if set(batch.successful_user_ids).intersection(failure.user_id for failure in batch.failures):
         raise ValueError("candidate batch marks a user as both successful and failed")
     if artifact_movie_ids is not None and batch.movie_ids.size:

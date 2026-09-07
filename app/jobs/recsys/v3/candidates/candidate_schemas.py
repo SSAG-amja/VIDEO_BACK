@@ -59,6 +59,7 @@ class CandidateFailure:
 @dataclass(frozen=True, slots=True)
 class CandidateBatch:
     successful_user_ids: np.ndarray
+    collaborative_confidences: np.ndarray
     candidate_user_ids: np.ndarray
     movie_ids: np.ndarray
     model_scores: np.ndarray

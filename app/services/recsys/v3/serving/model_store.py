@@ -13,6 +13,13 @@ from scipy.sparse import csr_matrix, load_npz
 from app.services.recsys.v3.config import ENGINE_NAME
 from app.services.recsys.v3.domain.feature_registry import FEATURE_REGISTRY_VERSION
 from app.services.recsys.v3.retrieval.score_calibration import mean_known_user_representation
+from app.services.recsys.v3.retrieval.score_calibration import (
+    UserRepresentationComponentMeans,
+    mean_user_representation_components,
+)
+from app.services.recsys.v3.retrieval.collaborative_confidence import (
+    population_confidence_from_diagnostics,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +37,8 @@ class RuntimeHybridArtifact:
     known_user_score_centering_weight: float
     mean_user_bias: float
     mean_user_embedding: np.ndarray
+    user_representation_component_means: UserRepresentationComponentMeans
+    collaborative_population_confidence: float
 
     @property
     def model_build_id(self) -> str:
@@ -67,6 +76,7 @@ def load_runtime_hybrid_artifact(path: str | Path) -> RuntimeHybridArtifact:
     _validate_files(artifact_dir, manifest.get("files", {}))
 
     config = _read_json(artifact_dir / "config.json")
+    diagnostics = _read_json(artifact_dir / "diagnostics.json")
     if config.get("stage") != "hybrid_ontology":
         raise ValueError("serving artifact config is not hybrid ontology")
     num_threads = int(config.get("num_threads", 1))
@@ -109,6 +119,19 @@ def load_runtime_hybrid_artifact(path: str | Path) -> RuntimeHybridArtifact:
     else:
         mean_user_bias = 0.0
         mean_user_embedding = np.zeros(model.user_embeddings.shape[1], dtype=np.float32)
+    component_means = mean_user_representation_components(
+        model,
+        user_features,
+        identity_feature_count=len(user_ids),
+    )
+    collaborative_population_confidence = population_confidence_from_diagnostics(
+        diagnostics,
+        user_count=len(user_ids),
+    )
+    if not np.isfinite(collaborative_population_confidence) or not (
+        0.0 <= collaborative_population_confidence <= 1.0
+    ):
+        raise ValueError("serving artifact collaborative population confidence is invalid")
     return RuntimeHybridArtifact(
         path=artifact_dir,
         model=model,
@@ -123,6 +146,8 @@ def load_runtime_hybrid_artifact(path: str | Path) -> RuntimeHybridArtifact:
         known_user_score_centering_weight=centering_weight,
         mean_user_bias=mean_user_bias,
         mean_user_embedding=mean_user_embedding,
+        user_representation_component_means=component_means,
+        collaborative_population_confidence=collaborative_population_confidence,
     )
 
 
