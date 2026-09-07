@@ -37,7 +37,10 @@ class LightFMTrainingConfig:
     max_sampled: int = LIGHTFM_IDENTITY_MAX_SAMPLED
     random_seed: int = LIGHTFM_IDENTITY_RANDOM_SEED
     num_threads: int = LIGHTFM_IDENTITY_NUM_THREADS
+    # Keep omitted fields compatible with immutable artifacts published before
+    # these controls existed. Production CLIs explicitly select current defaults.
     item_frequency_weighting: str = "none"
+    user_activity_weighting: str = "none"
     known_user_score_centering_weight: float = 0.0
 
     def __post_init__(self) -> None:
@@ -47,6 +50,8 @@ class LightFMTrainingConfig:
             raise ValueError("V3 LightFM training requires WARP loss")
         if self.item_frequency_weighting not in {"none", "inverse_sqrt"}:
             raise ValueError("unsupported LightFM item frequency weighting")
+        if self.user_activity_weighting not in {"none", "cap_at_median"}:
+            raise ValueError("unsupported LightFM user activity weighting")
         if not math.isfinite(self.known_user_score_centering_weight) or not (
             0.0 <= self.known_user_score_centering_weight <= 1.0
         ):
@@ -75,6 +80,8 @@ class LightFMTrainingConfig:
         payload = asdict(self)
         if self.item_frequency_weighting == "none":
             payload.pop("item_frequency_weighting")
+        if self.user_activity_weighting == "none":
+            payload.pop("user_activity_weighting")
         if self.known_user_score_centering_weight == 0.0:
             payload.pop("known_user_score_centering_weight")
         return payload
@@ -171,3 +178,4 @@ class LoadedHybridArtifact:
     user_feature_tokens: tuple[str, ...]
     item_feature_tokens: tuple[str, ...]
     manifest: dict[str, Any]
+    diagnostics: dict[str, Any]

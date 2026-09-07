@@ -329,6 +329,7 @@ def load_hybrid_artifact(path: str | Path) -> LoadedHybridArtifact:
     manifest = read_json(artifact_dir / "manifest.json")
     validate_hybrid_manifest(manifest, artifact_dir)
     config = LightFMTrainingConfig(**read_json(artifact_dir / "config.json"))
+    diagnostics = read_json(artifact_dir / "diagnostics.json")
     if config.stage != "hybrid_ontology" or config.config_hash != manifest["training_config_hash"]:
         raise ValueError("hybrid artifact training config mismatch")
     exports = manifest["feature_exports"]
@@ -417,6 +418,7 @@ def load_hybrid_artifact(path: str | Path) -> LoadedHybridArtifact:
         user_feature_tokens=user_tokens,
         item_feature_tokens=item_tokens,
         manifest=manifest,
+        diagnostics=diagnostics,
     )
 
 

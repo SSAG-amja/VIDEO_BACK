@@ -20,6 +20,7 @@ from app.jobs.recsys.v3.training.model_schemas import LightFMTrainingConfig
 from app.jobs.recsys.v3.training.trainer import (
     ModelHealthError,
     apply_item_frequency_weighting,
+    apply_user_activity_weighting,
     assert_model_health,
     evaluate_model_health,
     train_hybrid_model,
@@ -279,6 +280,32 @@ class HybridTrainerTest(unittest.TestCase):
         with self.assertRaises(ModelHealthError):
             assert_model_health(report)
 
+    def test_model_health_rejects_identical_candidate_lists(self) -> None:
+        class ConcentratedModel:
+            user_embeddings = np.zeros((8, 2), dtype=np.float32)
+            item_embeddings = np.zeros((120, 2), dtype=np.float32)
+            user_biases = np.zeros(8, dtype=np.float32)
+            item_biases = np.linspace(1.0, 0.0, 120, dtype=np.float32)
+
+            @classmethod
+            def predict(cls, user_ids, item_ids, **_kwargs):
+                return cls.item_biases[np.asarray(item_ids)]
+
+        report = evaluate_model_health(
+            ConcentratedModel(),
+            user_count=8,
+            movie_count=120,
+            num_threads=1,
+        )
+
+        self.assertEqual(report["status"], "fail")
+        self.assertIn("candidate_sample.pairwise_jaccard_mean", report["violations"])
+        self.assertIn("candidate_sample.top20_unique_ratio", report["violations"])
+        self.assertIn(
+            "candidate_sample.top20_max_user_frequency_ratio",
+            report["violations"],
+        )
+
     def test_inverse_sqrt_frequency_weighting_reduces_common_item_weight(self) -> None:
         dataset = synthetic_dataset()
         interactions, weights = (
@@ -298,6 +325,32 @@ class HybridTrainerTest(unittest.TestCase):
         }
         self.assertEqual(diagnostics["mode"], "inverse_sqrt")
         self.assertLess(by_coordinate[(0, 1)] / 2.0, by_coordinate[(0, 0)] / 1.0)
+        self.assertLessEqual(diagnostics["multiplier_max"], 1.0)
+
+    def test_user_activity_weighting_caps_only_above_median_total(self) -> None:
+        interactions = csr_matrix(
+            np.array(
+                [
+                    [1, 0, 0, 0],
+                    [1, 1, 0, 0],
+                    [1, 1, 1, 1],
+                ],
+                dtype=np.float32,
+            )
+        ).tocoo()
+        weights = interactions.copy()
+        weights.data = np.ones(weights.nnz, dtype=np.float32)
+
+        adjusted, diagnostics = apply_user_activity_weighting(
+            interactions,
+            weights,
+            mode="cap_at_median",
+        )
+        row_totals = np.asarray(adjusted.tocsr().sum(axis=1)).reshape(-1)
+
+        np.testing.assert_allclose(row_totals, np.array([1.0, 2.0, 2.0]))
+        self.assertEqual(diagnostics["reference_total_weight"], 2.0)
+        self.assertEqual(diagnostics["capped_user_count"], 1)
 
 
 if __name__ == "__main__":

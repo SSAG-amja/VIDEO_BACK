@@ -10,6 +10,10 @@ from app.jobs.recsys.v3.training.artifact_publisher import publish_identity_arti
 from app.jobs.recsys.v3.datasets.dataset_builder import build_lightfm_dataset
 from app.jobs.recsys.v3.training.model_schemas import LightFMTrainingConfig
 from app.jobs.recsys.v3.training.trainer import train_identity_model
+from app.services.recsys.v3.config import (
+    TRAINING_ITEM_FREQUENCY_WEIGHTING,
+    TRAINING_USER_ACTIVITY_WEIGHTING,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -18,6 +22,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-cutoff-at", type=datetime.fromisoformat)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--num-threads", type=int, default=None)
+    parser.add_argument(
+        "--item-frequency-weighting",
+        choices=("none", "inverse_sqrt"),
+        default=TRAINING_ITEM_FREQUENCY_WEIGHTING,
+    )
+    parser.add_argument(
+        "--user-activity-weighting",
+        choices=("none", "cap_at_median"),
+        default=TRAINING_USER_ACTIVITY_WEIGHTING,
+    )
     return parser.parse_args()
 
 
@@ -28,6 +42,8 @@ def main() -> None:
         for key, value in {
             "epochs": args.epochs,
             "num_threads": args.num_threads,
+            "item_frequency_weighting": args.item_frequency_weighting,
+            "user_activity_weighting": args.user_activity_weighting,
         }.items()
         if value is not None
     }

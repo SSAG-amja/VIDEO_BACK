@@ -25,7 +25,10 @@ MODEL_HEALTH_THRESHOLDS = {
     "embedding_row_norm_max": 500.0,
     "bias_max_abs": 100.0,
     "prediction_max_abs": 1000.0,
-    "candidate_pairwise_jaccard_max": 0.98,
+    "candidate_pairwise_jaccard_max": 0.75,
+    "candidate_top20_pairwise_jaccard_max": 0.75,
+    "candidate_top20_unique_ratio_min": 0.20,
+    "candidate_top20_max_user_frequency_ratio": 0.95,
 }
 
 
@@ -35,6 +38,7 @@ class ModelHealthError(RuntimeError):
         violations = ", ".join(str(item) for item in report["violations"])
         super().__init__(f"LightFM model health gate failed: {violations}")
 from app.services.recsys.v3.config import (
+    TRAINING_ITEM_FREQUENCY_MULTIPLIER_MIN,
     TRAINING_ACTION_PRIORITY,
     TRAINING_ACTION_WEIGHTS,
     TRAINING_MAX_SAMPLE_WEIGHT,
@@ -42,6 +46,10 @@ from app.services.recsys.v3.config import (
     TRAINING_OVERLAP_CONFIDENCE_BONUS,
     TRAINING_RECENCY_HALF_LIFE_DAYS,
     TRAINING_RECENCY_MIN_MULTIPLIER,
+    TRAINING_USER_ACTIVITY_MULTIPLIER_MIN,
+)
+from app.services.recsys.v3.retrieval.collaborative_confidence import (
+    assess_population_collaborative_confidence,
 )
 from app.services.recsys.v3.retrieval.score_calibration import (
     center_known_user_representations,
@@ -63,6 +71,11 @@ def train_identity_model(
         interactions,
         sample_weights,
         mode=training_config.item_frequency_weighting,
+    )
+    sample_weights, user_activity_weighting = apply_user_activity_weighting(
+        interactions,
+        sample_weights,
+        mode=training_config.user_activity_weighting,
     )
     started = time.monotonic()
     model = LightFM(
@@ -96,6 +109,14 @@ def train_identity_model(
         score_centering_weight=training_config.known_user_score_centering_weight,
     )
     assert_model_health(model_health)
+    training_concentration = training_concentration_diagnostics(interactions)
+    collaborative_reliability = assess_population_collaborative_confidence(
+        user_count=len(dataset.user_ids),
+        max_item_user_support_ratio=training_concentration["max_item_user_support_ratio"],
+        candidate_pairwise_jaccard=model_health["candidate_sample"][
+            "pairwise_jaccard_mean"
+        ],
+    )
     versions = package_versions()
     data_policy = training_data_policy_snapshot()
     data_policy_hash = hash_json_payload(data_policy)
@@ -114,6 +135,9 @@ def train_identity_model(
             "mean": float(sample_weights.data.mean()),
         },
         "item_frequency_weighting": frequency_weighting,
+        "user_activity_weighting": user_activity_weighting,
+        "training_concentration": training_concentration,
+        "collaborative_reliability": collaborative_reliability,
         "package_versions": versions,
         "model_health": model_health,
         "artifact_reload_exact_match": False,
@@ -151,6 +175,11 @@ def train_hybrid_model(
         interactions,
         sample_weights,
         mode=training_config.item_frequency_weighting,
+    )
+    sample_weights, user_activity_weighting = apply_user_activity_weighting(
+        interactions,
+        sample_weights,
+        mode=training_config.user_activity_weighting,
     )
     user_features, item_features = validate_hybrid_feature_compatibility(
         dataset,
@@ -199,6 +228,14 @@ def train_hybrid_model(
         score_centering_weight=training_config.known_user_score_centering_weight,
     )
     assert_model_health(model_health)
+    training_concentration = training_concentration_diagnostics(interactions)
+    collaborative_reliability = assess_population_collaborative_confidence(
+        user_count=len(dataset.user_ids),
+        max_item_user_support_ratio=training_concentration["max_item_user_support_ratio"],
+        candidate_pairwise_jaccard=model_health["candidate_sample"][
+            "pairwise_jaccard_mean"
+        ],
+    )
     versions = package_versions()
     data_policy = training_data_policy_snapshot()
     data_policy_hash = hash_json_payload(data_policy)
@@ -231,6 +268,9 @@ def train_hybrid_model(
             "mean": float(sample_weights.data.mean()),
         },
         "item_frequency_weighting": frequency_weighting,
+        "user_activity_weighting": user_activity_weighting,
+        "training_concentration": training_concentration,
+        "collaborative_reliability": collaborative_reliability,
         "package_versions": versions,
         "model_health": model_health,
         "artifact_reload_exact_match": False,
@@ -330,7 +370,12 @@ def apply_item_frequency_weighting(interactions, sample_weights, *, mode: str):
         raise ValueError("item frequency weighting requires positive item support")
     reference = float(np.median(positive_supports))
     multipliers = np.sqrt(reference / supports[interactions.col].astype(np.float64))
-    multipliers = np.clip(multipliers, 0.35, 2.0).astype(np.float32)
+    # Frequency weighting is a popularity correction, not a rare-item boost.
+    multipliers = np.clip(
+        multipliers,
+        TRAINING_ITEM_FREQUENCY_MULTIPLIER_MIN,
+        1.0,
+    ).astype(np.float32)
     adjusted = type(weights)(
         (
             weights.data.astype(np.float32, copy=False) * multipliers,
@@ -345,6 +390,98 @@ def apply_item_frequency_weighting(interactions, sample_weights, *, mode: str):
         "multiplier_min": float(multipliers.min()),
         "multiplier_mean": float(multipliers.mean()),
         "multiplier_max": float(multipliers.max()),
+    }
+
+
+def apply_user_activity_weighting(interactions, sample_weights, *, mode: str):
+    if mode == "none":
+        return sample_weights, {
+            "mode": mode,
+            "reference_total_weight": None,
+            "multiplier_min": 1.0,
+            "multiplier_mean": 1.0,
+            "multiplier_max": 1.0,
+        }
+    if mode != "cap_at_median":
+        raise ValueError(f"unsupported LightFM user activity weighting: {mode}")
+    interactions = interactions.tocoo(copy=False)
+    weights = sample_weights.tocoo(copy=False)
+    row_totals = np.bincount(
+        weights.row,
+        weights=weights.data.astype(np.float64),
+        minlength=weights.shape[0],
+    )
+    active_totals = row_totals[row_totals > 0]
+    if active_totals.size == 0:
+        raise ValueError("user activity weighting requires positive row weights")
+    reference = float(np.median(active_totals))
+    per_user = np.ones(weights.shape[0], dtype=np.float64)
+    active = row_totals > reference
+    per_user[active] = reference / row_totals[active]
+    per_user = np.clip(
+        per_user,
+        TRAINING_USER_ACTIVITY_MULTIPLIER_MIN,
+        1.0,
+    ).astype(np.float32)
+    multipliers = per_user[interactions.row]
+    adjusted = type(weights)(
+        (
+            weights.data.astype(np.float32, copy=False) * multipliers,
+            (weights.row, weights.col),
+        ),
+        shape=weights.shape,
+        dtype=np.float32,
+    )
+    return adjusted, {
+        "mode": mode,
+        "reference_total_weight": reference,
+        "multiplier_min": float(multipliers.min()),
+        "multiplier_mean": float(multipliers.mean()),
+        "multiplier_max": float(multipliers.max()),
+        "capped_user_count": int(np.count_nonzero(active)),
+    }
+
+
+def training_concentration_diagnostics(interactions) -> dict[str, float | int]:
+    matrix = interactions.tocsr(copy=False)
+    user_count, _movie_count = matrix.shape
+    item_support = np.bincount(
+        matrix.indices,
+        minlength=matrix.shape[1],
+    )
+    positive_support = item_support[item_support > 0]
+    row_counts = np.diff(matrix.indptr)
+    selected_users = np.unique(
+        np.linspace(0, user_count - 1, num=min(user_count, 32), dtype=np.int64)
+    )
+    candidate_sets = [
+        set(
+            int(index)
+            for index in matrix.indices[
+                int(matrix.indptr[user_index]) : int(matrix.indptr[user_index + 1])
+            ]
+        )
+        for user_index in selected_users
+    ]
+    pairwise = [
+        len(left & right) / len(left | right)
+        for left, right in combinations(candidate_sets, 2)
+        if left or right
+    ]
+    return {
+        "user_count": int(user_count),
+        "interaction_count": int(matrix.nnz),
+        "unique_positive_item_count": int(positive_support.size),
+        "median_user_positive_pairs": float(np.median(row_counts)),
+        "max_user_positive_pairs": int(row_counts.max(initial=0)),
+        "max_item_user_support": int(positive_support.max(initial=0)),
+        "max_item_user_support_ratio": (
+            float(positive_support.max(initial=0) / user_count) if user_count else 0.0
+        ),
+        "sample_user_count": int(selected_users.size),
+        "sample_pairwise_positive_jaccard": (
+            float(np.mean(pairwise)) if pairwise else 0.0
+        ),
     }
 
 
@@ -410,11 +547,28 @@ def evaluate_model_health(
     )
     if (
         candidate_sample["applicable"]
-        and
-        candidate_sample["pairwise_jaccard_mean"]
+        and candidate_sample["pairwise_jaccard_mean"]
         > MODEL_HEALTH_THRESHOLDS["candidate_pairwise_jaccard_max"]
     ):
         violations.append("candidate_sample.pairwise_jaccard_mean")
+    if (
+        candidate_sample["applicable"]
+        and candidate_sample["top20_pairwise_jaccard_mean"]
+        > MODEL_HEALTH_THRESHOLDS["candidate_top20_pairwise_jaccard_max"]
+    ):
+        violations.append("candidate_sample.top20_pairwise_jaccard_mean")
+    if (
+        candidate_sample["applicable"]
+        and candidate_sample["top20_unique_ratio"]
+        < MODEL_HEALTH_THRESHOLDS["candidate_top20_unique_ratio_min"]
+    ):
+        violations.append("candidate_sample.top20_unique_ratio")
+    if (
+        candidate_sample["applicable"]
+        and candidate_sample["top20_max_user_frequency_ratio"]
+        > MODEL_HEALTH_THRESHOLDS["candidate_top20_max_user_frequency_ratio"]
+    ):
+        violations.append("candidate_sample.top20_max_user_frequency_ratio")
     return {
         "status": "pass" if not violations else "fail",
         "thresholds": dict(MODEL_HEALTH_THRESHOLDS),
@@ -581,18 +735,42 @@ def _candidate_concentration_health(
             top_indices[row] = merged_indices[keep]
             top_scores[row] = merged_scores[keep]
     candidate_sets = [set(values.tolist()) for values in top_indices]
-    pairwise = [
-        len(left & right) / len(left | right)
-        for left, right in combinations(candidate_sets, 2)
-        if left or right
-    ]
+    top20_sets = [set(values[: min(20, top_k)].tolist()) for values in top_indices]
+    pairwise = _pairwise_jaccard_values(candidate_sets)
+    top20_pairwise = _pairwise_jaccard_values(top20_sets)
+    top20_unique_count = len(set().union(*top20_sets))
+    top20_slot_count = sum(len(values) for values in top20_sets)
+    top20_frequencies: dict[int, int] = {}
+    for values in top20_sets:
+        for item_index in values:
+            top20_frequencies[item_index] = top20_frequencies.get(item_index, 0) + 1
     return {
         "applicable": movie_count > 100,
         "user_count": int(selected_users.size),
         "top_k": top_k,
         "unique_item_count": len(set().union(*candidate_sets)),
         "pairwise_jaccard_mean": float(np.mean(pairwise)) if pairwise else 0.0,
+        "top20_unique_item_count": top20_unique_count,
+        "top20_unique_ratio": (
+            float(top20_unique_count / top20_slot_count) if top20_slot_count else 0.0
+        ),
+        "top20_pairwise_jaccard_mean": (
+            float(np.mean(top20_pairwise)) if top20_pairwise else 0.0
+        ),
+        "top20_max_user_frequency_ratio": (
+            max(top20_frequencies.values(), default=0) / selected_users.size
+            if selected_users.size
+            else 0.0
+        ),
     }
+
+
+def _pairwise_jaccard_values(candidate_sets: list[set[int]]) -> list[float]:
+    return [
+        len(left & right) / len(left | right)
+        for left, right in combinations(candidate_sets, 2)
+        if left or right
+    ]
 
 
 def _top_k_score_indices(scores: np.ndarray, top_k: int) -> np.ndarray:

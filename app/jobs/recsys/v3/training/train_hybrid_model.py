@@ -17,6 +17,23 @@ from app.jobs.recsys.v3.features.feature_representation import (
 from app.jobs.recsys.v3.training.model_schemas import LightFMTrainingConfig
 from app.jobs.recsys.v3.training.trainer import train_hybrid_model, validate_identity_dataset
 from app.jobs.recsys.v3.features.user_feature_builder import export_user_features
+from app.services.recsys.v3.config import (
+    LIGHTFM_HYBRID_EPOCHS,
+    LIGHTFM_HYBRID_FEATURE_REPRESENTATION,
+    LIGHTFM_HYBRID_ITEM_ALPHA,
+    LIGHTFM_HYBRID_ITEM_IDENTITY_WEIGHT,
+    LIGHTFM_HYBRID_ITEM_SEMANTIC_WEIGHT,
+    LIGHTFM_HYBRID_KNOWN_USER_SCORE_CENTERING_WEIGHT,
+    LIGHTFM_HYBRID_LEARNING_RATE,
+    LIGHTFM_HYBRID_MAX_SAMPLED,
+    LIGHTFM_HYBRID_NO_COMPONENTS,
+    LIGHTFM_HYBRID_NUM_THREADS,
+    LIGHTFM_HYBRID_USER_ALPHA,
+    LIGHTFM_HYBRID_USER_IDENTITY_WEIGHT,
+    LIGHTFM_HYBRID_USER_SEMANTIC_WEIGHT,
+    TRAINING_ITEM_FREQUENCY_WEIGHTING,
+    TRAINING_USER_ACTIVITY_WEIGHTING,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -24,28 +41,53 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("ontology_build_id", type=int)
     parser.add_argument("--output-root", type=Path, default=Path("assets/ml_models/v3"))
     parser.add_argument("--data-cutoff-at", type=datetime.fromisoformat)
-    parser.add_argument("--epochs", type=int, default=None)
-    parser.add_argument("--num-threads", type=int, default=None)
-    parser.add_argument("--no-components", type=int, default=None)
-    parser.add_argument("--learning-rate", type=float, default=None)
-    parser.add_argument("--user-alpha", type=float, default=None)
-    parser.add_argument("--item-alpha", type=float, default=None)
-    parser.add_argument("--max-sampled", type=int, default=None)
+    parser.add_argument("--epochs", type=int, default=LIGHTFM_HYBRID_EPOCHS)
+    parser.add_argument("--num-threads", type=int, default=LIGHTFM_HYBRID_NUM_THREADS)
+    parser.add_argument("--no-components", type=int, default=LIGHTFM_HYBRID_NO_COMPONENTS)
+    parser.add_argument("--learning-rate", type=float, default=LIGHTFM_HYBRID_LEARNING_RATE)
+    parser.add_argument("--user-alpha", type=float, default=LIGHTFM_HYBRID_USER_ALPHA)
+    parser.add_argument("--item-alpha", type=float, default=LIGHTFM_HYBRID_ITEM_ALPHA)
+    parser.add_argument("--max-sampled", type=int, default=LIGHTFM_HYBRID_MAX_SAMPLED)
     parser.add_argument(
         "--item-frequency-weighting",
         choices=("none", "inverse_sqrt"),
-        default="none",
+        default=TRAINING_ITEM_FREQUENCY_WEIGHTING,
     )
-    parser.add_argument("--known-user-score-centering-weight", type=float, default=0.0)
+    parser.add_argument(
+        "--user-activity-weighting",
+        choices=("none", "cap_at_median"),
+        default=TRAINING_USER_ACTIVITY_WEIGHTING,
+    )
+    parser.add_argument(
+        "--known-user-score-centering-weight",
+        type=float,
+        default=LIGHTFM_HYBRID_KNOWN_USER_SCORE_CENTERING_WEIGHT,
+    )
     parser.add_argument(
         "--feature-representation",
         choices=FEATURE_REPRESENTATION_POLICIES,
-        default="full_identity_raw",
+        default=LIGHTFM_HYBRID_FEATURE_REPRESENTATION,
     )
-    parser.add_argument("--user-identity-weight", type=float, default=1.0)
-    parser.add_argument("--user-semantic-weight", type=float, default=1.0)
-    parser.add_argument("--item-identity-weight", type=float, default=1.0)
-    parser.add_argument("--item-semantic-weight", type=float, default=1.0)
+    parser.add_argument(
+        "--user-identity-weight",
+        type=float,
+        default=LIGHTFM_HYBRID_USER_IDENTITY_WEIGHT,
+    )
+    parser.add_argument(
+        "--user-semantic-weight",
+        type=float,
+        default=LIGHTFM_HYBRID_USER_SEMANTIC_WEIGHT,
+    )
+    parser.add_argument(
+        "--item-identity-weight",
+        type=float,
+        default=LIGHTFM_HYBRID_ITEM_IDENTITY_WEIGHT,
+    )
+    parser.add_argument(
+        "--item-semantic-weight",
+        type=float,
+        default=LIGHTFM_HYBRID_ITEM_SEMANTIC_WEIGHT,
+    )
     return parser.parse_args()
 
 
@@ -62,6 +104,7 @@ def main() -> None:
             "item_alpha": args.item_alpha,
             "max_sampled": args.max_sampled,
             "item_frequency_weighting": args.item_frequency_weighting,
+            "user_activity_weighting": args.user_activity_weighting,
             "known_user_score_centering_weight": args.known_user_score_centering_weight,
         }.items()
         if value is not None
