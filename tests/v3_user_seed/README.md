@@ -19,6 +19,8 @@ v3seed-train-001@pinlm.test ... v3seed-train-120@pinlm.test
 v3seed-cold-001@pinlm.test  ... v3seed-cold-024@pinlm.test
 ```
 
+The training seed assigns each movie to the single best-matching taste cohort, then rotates deterministic favorite slots among users in that cohort. This prevents one multi-genre popular movie from becoming a positive for most synthetic users while keeping runs reproducible.
+
 ## Preconditions
 
 - PostgreSQL and Redis containers are running.
@@ -86,6 +88,8 @@ Do not run this worker for every request. Interaction writes only update the acc
 ## Model and Bundle Boundary
 
 Build and activate the hybrid model only after stage 1. Record the paths printed by each command.
+
+The bare hybrid command uses the current Phase I defaults: supported-identity normalized features, user identity/semantic `2.0/0.5`, item identity/semantic `1.0/1.0`, inverse-square-root popular-item downweighting, per-user activity cap, and known-user score centering `0.9`.
 
 ```bash
 docker compose run --rm --no-deps back-seeder \

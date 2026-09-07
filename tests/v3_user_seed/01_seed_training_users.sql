@@ -172,42 +172,65 @@ CREATE TEMP TABLE _v3_seed_movies (
 ) ON COMMIT DROP;
 
 INSERT INTO _v3_seed_movies (cohort_id, slot, movie_id)
-SELECT cohort.cohort_id, ranked.slot, ranked.movie_id
-FROM _v3_cohorts AS cohort
-CROSS JOIN LATERAL (
+WITH catalog_genre_counts AS (
+    SELECT movie_genre.movie_id, count(DISTINCT movie_genre.genre_id) AS genre_count
+    FROM movie_genres AS movie_genre
+    GROUP BY movie_genre.movie_id
+), cohort_candidates AS (
     SELECT
-        candidate.id AS movie_id,
+        cohort.cohort_id,
+        movie.id AS movie_id,
+        movie.vote_count,
+        movie.popularity,
+        count(DISTINCT genre.tmdb_id) AS matched_genre_count,
+        max(catalog_genre_counts.genre_count) AS total_genre_count
+    FROM _v3_cohorts AS cohort
+    JOIN genres AS genre ON genre.tmdb_id = ANY(cohort.genre_tmdb_ids)
+    JOIN movie_genres AS movie_genre ON movie_genre.genre_id = genre.id
+    JOIN movies AS movie ON movie.id = movie_genre.movie_id
+    JOIN catalog_genre_counts ON catalog_genre_counts.movie_id = movie.id
+    WHERE movie.adult IS FALSE
+      AND COALESCE(NULLIF(trim(movie.title_ko), ''), NULLIF(trim(movie.title), '')) IS NOT NULL
+      AND COALESCE(movie.vote_count, 0) >= 20
+      AND EXISTS (
+          SELECT 1
+          FROM ontology_nodes AS movie_node
+          WHERE movie_node.build_id = 22
+            AND movie_node.node_type = 'movie'
+            AND movie_node.ref_id = movie.id::text
+            AND movie_node.is_active IS TRUE
+      )
+    GROUP BY cohort.cohort_id, movie.id, movie.vote_count, movie.popularity
+), exclusively_owned AS (
+    SELECT
+        candidate.*,
         row_number() OVER (
+            PARTITION BY candidate.movie_id
             ORDER BY
-                candidate.vote_count DESC,
-                candidate.popularity DESC NULLS LAST,
-                candidate.id
+                candidate.matched_genre_count DESC,
+                candidate.matched_genre_count::numeric
+                    / candidate.total_genre_count DESC,
+                md5(candidate.movie_id::text || ':' || candidate.cohort_id::text)
+        ) AS ownership_rank
+    FROM cohort_candidates AS candidate
+), ranked AS (
+    SELECT
+        owned.cohort_id,
+        owned.movie_id,
+        row_number() OVER (
+            PARTITION BY owned.cohort_id
+            ORDER BY
+                owned.matched_genre_count DESC,
+                owned.vote_count DESC,
+                owned.popularity DESC NULLS LAST,
+                owned.movie_id
         )::integer AS slot
-    FROM (
-        SELECT movie.id, movie.vote_count, movie.popularity
-        FROM movies AS movie
-        JOIN movie_genres AS movie_genre ON movie_genre.movie_id = movie.id
-        JOIN genres AS genre ON genre.id = movie_genre.genre_id
-        WHERE genre.tmdb_id = ANY(cohort.genre_tmdb_ids)
-          AND movie.adult IS FALSE
-          AND COALESCE(NULLIF(trim(movie.title_ko), ''), NULLIF(trim(movie.title), '')) IS NOT NULL
-          AND COALESCE(movie.vote_count, 0) >= 20
-          AND EXISTS (
-              SELECT 1
-              FROM ontology_nodes AS movie_node
-              WHERE movie_node.build_id = 22
-                AND movie_node.node_type = 'movie'
-                AND movie_node.ref_id = movie.id::text
-                AND movie_node.is_active IS TRUE
-          )
-        GROUP BY movie.id, movie.vote_count, movie.popularity
-    ) AS candidate
-    ORDER BY
-        candidate.vote_count DESC,
-        candidate.popularity DESC NULLS LAST,
-        candidate.id
-    LIMIT 120
-) AS ranked;
+    FROM exclusively_owned AS owned
+    WHERE owned.ownership_rank = 1
+)
+SELECT cohort_id, slot, movie_id
+FROM ranked
+WHERE slot <= 120;
 
 DO $$
 DECLARE
@@ -240,7 +263,9 @@ WITH candidates AS (
               THEN cohort.adjacent_cohort_id
           ELSE seed_user.cohort_id
       END
-     AND seed_movie.slot = favorite.candidate_ordinal
+     AND seed_movie.slot = 1 + (
+         (seed_user.user_no * 7 + favorite.candidate_ordinal * 11 - 1) % 40
+     )
 ), deduplicated AS (
     SELECT DISTINCT ON (user_id, movie_id)
         user_id,
