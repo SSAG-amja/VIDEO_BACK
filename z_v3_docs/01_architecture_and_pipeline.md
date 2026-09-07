@@ -86,7 +86,7 @@ flowchart TD
     H --> I[Cold 후보 병합]
     F --> J[Redis 단기 후보 조회]
     J --> K[Cache miss면 bounded DB fallback]
-    K --> L[장기·단기 source 정규화와 병합]
+    K --> L[장기·단기 source 정규화와 병합<br/>의미 일치 기반 source 비율 적용]
     I --> M[Hard filter]
     L --> M
     M --> N[예비 50개에서 탈락분만 보충]
@@ -102,6 +102,8 @@ flowchart TD
 ```
 
 추천 계산은 API event loop에서 직접 실행하지 않는다. 공용 thread executor가 최대 2건을 동시에 처리하고 대기 요청은 bounded worker 수 뒤에서 순서대로 실행된다. 각 작업은 자기 `SessionLocal`을 열며 model artifact만 메모리에서 공유한다.
+
+협업 신뢰도는 후보 source 병합 비율이 아니라 LightFM 점수 내부에 적용한다. known-user LightFM 표현을 semantic 성분과 user-identity 성분으로 분리하고, population confidence와 사용자 positive 근거량 중 작은 값으로 user-identity 성분만 감쇠한다. semantic 성분은 유지한다. 이후 model과 장기 ontology가 함께 있으면 상위 50개 의미 일치율로 model weight `0.45~0.65`를 정하며 협업 신뢰도 때문에 그 비율을 추가로 낮추거나 ontology에 넘기지 않는다.
 
 ## 후보 수 흐름
 
@@ -179,10 +181,10 @@ Ontology 근거는 후보와 사용자 사이의 의미 관계를 설명한다. 
 | --- | --- |
 | ontology | build `22`, node `3,756,594`, edge `12,640,874`, evidence `2,078,395` |
 | item feature | `1,176,540 x 1,502,427`, `nnz=10,505,033` |
-| model | `hybrid-02e666e23f10-d8dd44e869db-e2a5a2a2e0ca-45932f2c79ee-9e3651b419af-7b869d3b` |
-| candidates | `cand-dd6dd505d38733bfb53d2aa8`, 128명 x 150개 |
+| model | `hybrid-f98c2b108d40-1bb16d4f94a8-e2a5a2a2e0ca-fd3fb08817a5-bd6b02e4c74e-7b869d3b` |
+| candidates | `cand-84861554e2eed221384722f3`, 120명 x 150개 |
 | policy | `v3-policy-quality-v1` |
-| bundle | `bundle-ff3d35e49ba03cc72adc9eed` |
+| bundle | `bundle-212aeed091eac0283b15b5cb` |
 
 전체 graph build `22`는 498.3초, full item feature export는 77.8초가 걸렸다. 모델 학습과 candidate materialization의 최신 품질 결과는 [10 품질 개선 기록](10_quality_improvement_record.md)을 따른다.
 

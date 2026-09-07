@@ -10,7 +10,11 @@ from statistics import mean
 from sqlalchemy import text
 
 from app.db.session import SessionLocal
-from app.jobs.recsys.v3.diagnostics.quality_snapshot import DEFAULT_OUTPUT_DIR
+from app.jobs.recsys.v3.diagnostics.quality_snapshot import (
+    COHORT_NAMES,
+    COHORT_OPPOSITES,
+    DEFAULT_OUTPUT_DIR,
+)
 
 
 COHORT_GENRE_IDS = {
@@ -110,8 +114,9 @@ def audit_scope(snapshot: dict) -> dict:
     counts = Counter(user["profile_type"] for user in snapshot["users"])
     cohorts: dict[str, list[str]] = defaultdict(list)
     for user in snapshot["users"]:
+        current_cohort = current_cohort_name(user)
         cohorts[user["profile_type"]].append(
-            f"{user['cohort_name']} -> {user['recent_cohort_name']}"
+            f"{user['cohort_name']} -> {current_cohort}"
         )
     return {
         "user_count": len(snapshot["users"]),
@@ -166,7 +171,8 @@ def select_anomalies(snapshot: dict, *, repeated_top5: list[dict]) -> list[dict]
     repeated_ids = {int(item["movie_id"]) for item in repeated_top5}
     anomalies = []
     for user in snapshot["users"]:
-        current_genres = COHORT_GENRE_IDS[user["recent_cohort_name"]]
+        current_cohort = current_cohort_name(user)
+        current_genres = COHORT_GENRE_IDS[current_cohort]
         historical_genres = COHORT_GENRE_IDS[user["cohort_name"]]
         for candidate in user["final_recommendations"]:
             rank = int(candidate["rank"])
@@ -174,7 +180,7 @@ def select_anomalies(snapshot: dict, *, repeated_top5: list[dict]) -> list[dict]
             trace = candidate.get("score_trace") or {}
             rules = []
             if (
-                user["profile_type"] == "post_model_drift"
+                user["profile_type"] in {"drift", "post_model_drift"}
                 and rank <= 5
                 and candidate["source"] == "model"
                 and movie_genres & historical_genres
@@ -201,7 +207,7 @@ def select_anomalies(snapshot: dict, *, repeated_top5: list[dict]) -> list[dict]
                     "user_number": int(user["user_number"]),
                     "profile_type": user["profile_type"],
                     "historical_cohort": user["cohort_name"],
-                    "recent_cohort": user["recent_cohort_name"],
+                    "recent_cohort": current_cohort,
                     "movie_id": int(candidate["movie_id"]),
                     "tmdb_id": candidate.get("tmdb_id"),
                     "title": candidate.get("title"),
@@ -399,7 +405,7 @@ def top5_alignment(snapshot: dict) -> dict:
         historical_only = 0
         no_current_match = 0
         for user in users:
-            current = COHORT_GENRE_IDS[user["recent_cohort_name"]]
+            current = COHORT_GENRE_IDS[current_cohort_name(user)]
             historical = COHORT_GENRE_IDS[user["cohort_name"]]
             for candidate in user["final_recommendations"][:5]:
                 genres = {int(value) for value in candidate.get("genre_ids", ())}
@@ -417,6 +423,17 @@ def top5_alignment(snapshot: dict) -> dict:
             "historical_only_count": historical_only,
         }
     return result
+
+
+def current_cohort_name(user: dict) -> str:
+    recent_cohort = user.get("recent_cohort_name")
+    if recent_cohort:
+        return str(recent_cohort)
+    if user.get("profile_type") == "drift":
+        cohort_id_by_name = {name: cohort_id for cohort_id, name in COHORT_NAMES.items()}
+        historical_cohort_id = cohort_id_by_name[str(user["cohort_name"])]
+        return COHORT_NAMES[COHORT_OPPOSITES[historical_cohort_id]]
+    return str(user["cohort_name"])
 
 
 def top_matches(anomaly: dict, scope: str, limit: int = 4) -> str:
@@ -437,15 +454,19 @@ def render_markdown(report: dict) -> str:
         "## Audit Scope",
         "",
         f"- users: `{scope['user_count']}`",
-        f"- post_model_stable: `{scope['profile_type_counts'].get('post_model_stable', 0)}`",
-        f"- post_model_drift: `{scope['profile_type_counts'].get('post_model_drift', 0)}`",
-        f"- recommendations: `{scope['audited_recommendation_count']}` (top {scope['recommendations_per_user']} per user)",
-        f"- ontology build: `{scope['ontology_build_id']}`",
-        "- interpretation: ontology matches explain the explicit semantic component, not LightFM's internal causal reason",
-        "",
-        "## Cohorts",
-        "",
     ]
+    for profile_type, count in scope["profile_type_counts"].items():
+        lines.append(f"- {profile_type}: `{count}`")
+    lines.extend(
+        (
+            f"- recommendations: `{scope['audited_recommendation_count']}` (top {scope['recommendations_per_user']} per user)",
+            f"- ontology build: `{scope['ontology_build_id']}`",
+            "- interpretation: ontology matches explain the explicit semantic component, not LightFM's internal causal reason",
+            "",
+            "## Cohorts",
+            "",
+        )
+    )
     for profile_type, cohorts in scope["cohorts_by_profile_type"].items():
         lines.append(f"- `{profile_type}`: " + "; ".join(cohorts))
     lines.extend(

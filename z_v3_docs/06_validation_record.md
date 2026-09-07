@@ -66,7 +66,7 @@ Phase A-F 응답 시간 검증 artifact:
 | subscribed only | 24 | 2.155초 | 2.665초 | 0 |
 | onboarding mutation | 6 | 2.657초 | 3.331초 | 0 |
 
-- V3 단위 테스트 `122개`, 공용 추천 executor 테스트 `2개` 통과
+- V3 단위 테스트 `130개`, 공용 추천 executor 테스트 `2개` 통과
 - 128명 candidate materialization 성공
 - top-150 `19,200건`, materialization `3.53초`, 사용자당 `0.027초`
 - 제외 위반과 최종 중복 `0건`
@@ -93,6 +93,18 @@ post-model 행동을 포함한 현재 품질 artifact는 다음과 같다.
 - model health 통과, artifact reload exact match 통과
 
 행동별 연속 half-life, 독립 장기 ontology 후보, model/ontology 의미 일치 기반 `45~65%` model 비중 제한을 적용했다. stable top-5 현재 장르 일치는 `30/30`, drift는 `22/30`이었고 제외 위반과 중복은 0건이었다. LightFM 장기 top-20 고유 영화는 45편으로 남았으나 최종 고유 영화는 Phase G의 108편에서 160편으로 증가했다. 상세 결과는 [Phase H 품질 결과](diagnostics/v3_quality_snapshot_20260828T050041Z.md)와 [Phase H 이상치 감사](diagnostics/v3_ontology_outlier_audit_20260828T110011Z.md)에 있다.
+
+### Phase I 협업 과집중 보정
+
+- model: `hybrid-f98c2b108d40-1bb16d4f94a8-e2a5a2a2e0ca-fd3fb08817a5-bd6b02e4c74e-7b869d3b`
+- candidate snapshot: `cand-84861554e2eed221384722f3`
+- bundle: `bundle-212aeed091eac0283b15b5cb`
+- 사용자 `120명`, positive pair `3,239개`, 후보 `18,000건`, 실패 `0건`
+- materialization `3.35초`, 사용자당 `0.0276초`
+
+시드의 영화 독점 코호트와 사용자별 회전, 인기 영화·과다 행동 사용자 학습 기여 상한, user identity/semantic 비율 완화, 동적 협업 신뢰도를 적용했다. 원본 모델의 대표 24명 LightFM top-20 Jaccard는 `9.8%`, 고유 영화는 168편이며 stable 장르 overlap은 `85.8%`였다. 강화된 8명 model health 표본도 top-20 Jaccard `12.2%`, 고유 비율 `63.8%`, 한 영화 최대 사용자 노출률 `62.5%`로 통과했다. 협업 신뢰도를 user-identity 성분에만 적용한 새 top-150은 120명 모두 성공했고 `3.36초`, 사용자당 `0.0280초`가 걸렸다. 대표 24명의 저장 후보 top-20은 고유 영화 151편, Jaccard `13.59%`였다. 실제 추천에서 model base/effective weight가 모든 유형에서 같아 LightFM 전체 lane이 줄지 않음을 확인했다.
+
+corrected bundle의 최종 24명 검증은 480칸 중 고유 310편, top-5 120칸 중 고유 90편이었다. stable·drift-current·negative-heavy top-5는 각각 `30/30`, mixed는 `29/30`이 현재 목표 장르와 일치했다. 제외 위반, 사용자 내부 중복, 반복 영화의 현재 장르 불일치는 모두 0건이었다. top-10 저투표 후보는 6건이고 과다 장르 metadata 후보는 전체 480칸에서 11건이었다. 상세 결과는 [Phase I LightFM 결과](diagnostics/v3_lightfm_ablation_20260907T102400Z.md), [최종 품질 결과](diagnostics/v3_quality_snapshot_20260907T115937Z.md), [이상치 감사](diagnostics/v3_ontology_outlier_audit_20260907T120631Z.md)에 있다.
 
 ## 병렬 처리 비교
 

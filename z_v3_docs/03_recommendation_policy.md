@@ -253,7 +253,7 @@ candidate_selection_score
   + drift_weight * normalized_short_term_score
 ```
 
-model/ontology 상위 50개 일치율에 따라 model weight는 0.45~0.65, 장기 ontology weight는 0.55~0.35를 사용한다. 장기 ontology 후보는 상세 분석 전 100개 중 최소 20%가 생존하도록 보호한다. 한 source에 없는 후보의 해당 source 점수는 `0`이다. 강한 단기 변화에서는 short-term 후보가 장기 후보에 모두 밀리지 않도록 contextual source floor를 적용한다.
+model/ontology 상위 50개 일치율에 따라 model weight는 0.45~0.65로 계산한다. 협업 신뢰도는 이 source 비율을 줄이는 값이 아니다. LightFM 후보를 만들기 전에 전체 사용자 수·학습 입력 집중도·model 후보 집중도로 만든 population confidence와 사용자 positive 근거량으로 만든 user confidence 중 작은 값을 user-identity 성분에만 적용한다. LightFM semantic 성분과 model/ontology 비율은 유지한다. 장기 ontology 후보는 상세 분석 전 100개 중 최소 20%가 생존하도록 보호한다. 한 source에 없는 후보의 해당 source 점수는 `0`이다. 강한 단기 변화에서는 short-term 후보가 장기 후보에 모두 밀리지 않도록 contextual source floor를 적용한다.
 
 최종 단계:
 

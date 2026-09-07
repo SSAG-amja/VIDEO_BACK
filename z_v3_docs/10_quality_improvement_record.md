@@ -263,3 +263,58 @@ Phase G에서 확인한 두 문제를 분리해 수정했다.
 판정은 부분 개선이다. 장기 ontology 후보가 LightFM 풀 밖에서 실제로 들어왔고 최종 취향 일치와 사용자 간 다양성이 개선됐다. 그러나 LightFM 자체 top-20 집중은 45편으로 그대로이며, ontology/short lane이 저투표·과도한 장르 metadata 영화를 끌어올리는 새 문제가 커졌다. 따라서 다음 단계는 ontology 비중을 다시 임의 조정하는 것이 아니라 source별 catalog trust를 먼저 보완하고, 실제 사용자 규모에서 협업 과집중을 재검증하는 것이다.
 
 원본은 [Phase H 품질 결과](diagnostics/v3_quality_snapshot_20260828T050041Z.md)와 [Phase H 이상치 감사](diagnostics/v3_ontology_outlier_audit_20260828T110011Z.md)다. 이 결과는 정답 기반 relevance 평가가 아니라 stable 6명·drift 6명의 방향성 감사다.
+
+## Phase I. 협업 과집중 보정과 동적 신뢰도
+
+Phase H의 LightFM top-20이 12명에서 45편에 불과했던 원인을 학습 입력과 모델 증폭으로 분리했다. 기존 시드는 장르 하나만 일치해도 코호트 풀에 넣고 투표수·인기도 상위 영화를 모든 사용자에게 반복 배정했다. 그 결과 데드풀은 120명 중 80명, 아바타는 64명, 어벤져스와 인피니티 워는 각각 60명의 positive였다.
+
+적용 내용:
+
+1. 시드 영화는 장르 일치도가 가장 높은 코호트 하나에만 소유시키고 같은 코호트 안에서도 사용자별 슬롯을 결정적으로 회전한다.
+2. 영화별 사용자 지지도의 역제곱근을 sample weight에 적용하되 희소 영화를 추가 가산하지 않고 인기 영화만 최대 `0.25`까지 낮춘다.
+3. 사용자별 최종 sample weight 총합이 활성 사용자 중앙값을 넘으면 중앙값까지 낮춰 행동이 많은 한 사용자가 학습을 지배하지 못하게 한다.
+4. user identity/semantic block을 `4.0/0.25`에서 `2.0/0.5`로 바꿔 identity 대 semantic 비율을 `16:1`에서 `4:1`로 낮췄다.
+5. 전체 사용자 수, 최대 영화 지지도, 모델 후보 Jaccard로 model population confidence를 계산하고, 사용자 positive pair 수의 confidence와 작은 값을 실제 협업 신뢰도로 사용한다.
+6. known-user LightFM 표현을 semantic과 user identity로 분리하고 협업 신뢰도로 identity 성분만 감쇠한다. model/ontology 일치로 계산한 기존 `45~65%` model lane은 유지한다.
+7. model health gate에 top-20 Jaccard, 고유 영화 비율, 단일 영화 최대 사용자 노출률을 추가했다.
+
+새 학습 입력:
+
+| 항목 | 기존 | Phase I |
+| --- | ---: | ---: |
+| 사용자 | 128 | 120 |
+| positive pair | 3,445 | 3,239 |
+| 고유 positive 영화 | 확인 전 | 385 |
+| 최대 영화 사용자 지지도 | 80/120 (66.7%) | 16/120 (13.3%) |
+| 다른 코호트 입력 Jaccard | 8.8% | 1.4% |
+| 표본 전체 입력 Jaccard | - | 4.2% |
+
+새 LightFM과 대표 24명 비교:
+
+| 항목 | Phase B/H 모델 | Phase I 모델 |
+| --- | ---: | ---: |
+| 대표 top-20 고유 영화 | 135 | 168 |
+| 대표 top-20 Jaccard | 21.2% | 9.8% |
+| 대표 top-100 고유 영화 | 433 | 585 |
+| 대표 top-100 Jaccard | 33.8% | 16.2% |
+| stable top-20 장르 overlap | 85.8% | 85.8% |
+
+모델 health 8명 표본은 top-20 Jaccard `12.2%`, top-20 고유 비율 `63.8%`, top-100 Jaccard `17.0%`로 통과했다. 현재 학습 사용자가 120명이라 population confidence는 `0.1556`이다. 이 값은 model/ontology source 비율이 아니라 user-identity 성분에만 적용한다.
+
+identity-only 감쇠로 다시 생성한 대표 24명의 저장 후보 top-20은 480칸 중 151편, 사용자 간 Jaccard `13.59%`였다. 실제 추천에서 model base/effective weight는 모든 유형에서 같았다. 즉 LightFM 전체 source 비율은 줄지 않았다. 이전에 전체 LightFM lane을 줄여 얻은 321편·저투표 37.5% 결과는 잘못된 구조의 산출물이므로 폐기했다.
+
+corrected bundle의 최종 결과는 480칸 중 고유 310편, top-5 120칸 중 고유 90편이었다. top-5 현재 장르 일치는 stable `30/30`, drift `30/30`, negative-heavy `30/30`, mixed `29/30`이었다. 제외 위반과 사용자 내부 중복은 0건이며, 3명 이상에게 반복된 top-5 영화도 모두 각 사용자의 현재 장르와 일치했다. 따라서 남은 반복은 서로 다른 취향으로 무관하게 퍼지는 전역 협업 과집중으로 판단하지 않는다.
+
+잔여 이상치는 top-10 저투표 6건, 장르 8개 이상 metadata 11건, 높은 부정 근거 충돌 9건이다. 저투표는 mixed와 drift의 ontology·short 후보에 집중되어 다음 catalog trust 작업의 근거로 삼는다. 부정 근거는 대부분 최종 negative 장르 share가 낮아 즉시 hard filter로 바꾸지 않고 catalog trust 다음에 별도로 검토한다.
+
+활성 artifact:
+
+- model: `hybrid-f98c2b108d40-1bb16d4f94a8-e2a5a2a2e0ca-fd3fb08817a5-bd6b02e4c74e-7b869d3b`
+- candidate: `cand-84861554e2eed221384722f3`
+- bundle: `bundle-212aeed091eac0283b15b5cb`
+- materialization: 120명 x 150개, 실패 0, 3.36초
+- LightFM 원본: [Phase I ablation](diagnostics/v3_lightfm_ablation_20260907T102400Z.md)
+- 최종 품질: [Phase I corrected snapshot](diagnostics/v3_quality_snapshot_20260907T115937Z.md)
+- 이상치 근거: [Phase I corrected audit](diagnostics/v3_ontology_outlier_audit_20260907T120631Z.md)
+
+판정은 합성 기준의 품질 개선이다. 협업 신호로 인한 후보 과집중을 줄였고, 협업 신뢰도가 LightFM identity 부분에만 작용하며 최종 취향 방향과 결과 다양성을 유지함을 확인했다. 실제 사용자 relevance와 실제 초기 사용자 분포에서의 협업 효과는 아직 확정하지 않는다.

@@ -154,6 +154,9 @@ def load_representative_users(db: Session) -> list[dict]:
             # Stage-2 intentionally mutates onboarding for users 1-6 after model training.
             continue
         cohort_id = 1 + ((user_number - 1) % 6)
+        recent_cohort_id = (
+            COHORT_OPPOSITES[cohort_id] if profile_type == "drift" else cohort_id
+        )
         selected.setdefault(
             (profile_type, cohort_id),
             {
@@ -163,6 +166,8 @@ def load_representative_users(db: Session) -> list[dict]:
                 "profile_type": profile_type,
                 "cohort_id": cohort_id,
                 "cohort_name": COHORT_NAMES[cohort_id],
+                "recent_cohort_id": recent_cohort_id,
+                "recent_cohort_name": COHORT_NAMES[recent_cohort_id],
             },
         )
     expected = {
@@ -470,12 +475,33 @@ def analyze_user(
                 "model_ontology_agreement": float(
                     merge_diagnostics.get("model_ontology_agreement", 0.0)
                 ),
+                "base_model_weight": float(
+                    merge_diagnostics.get("base_model_weight", 0.0)
+                ),
                 "effective_model_weight": float(
                     merge_diagnostics.get("effective_model_weight", 0.0)
                 ),
                 "effective_long_term_ontology_weight": float(
                     merge_diagnostics.get(
                         "effective_long_term_ontology_weight",
+                        0.0,
+                    )
+                ),
+                "collaborative_population_confidence": float(
+                    merge_diagnostics.get(
+                        "collaborative_population_confidence",
+                        0.0,
+                    )
+                ),
+                "collaborative_user_evidence_confidence": float(
+                    merge_diagnostics.get(
+                        "collaborative_user_evidence_confidence",
+                        0.0,
+                    )
+                ),
+                "collaborative_effective_confidence": float(
+                    merge_diagnostics.get(
+                        "collaborative_effective_confidence",
                         0.0,
                     )
                 ),
@@ -836,8 +862,12 @@ def summarize(rows: list[dict], *, profile_types: tuple[str, ...]) -> dict:
                     "merged_long_term_ontology_count",
                     "merged_long_term_ontology_only_count",
                     "model_ontology_agreement",
+                    "base_model_weight",
                     "effective_model_weight",
                     "effective_long_term_ontology_weight",
+                    "collaborative_population_confidence",
+                    "collaborative_user_evidence_confidence",
+                    "collaborative_effective_confidence",
                     "raw_short_term_count",
                     "merged_short_source_count",
                     "merged_short_only_count",

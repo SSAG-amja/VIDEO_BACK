@@ -215,9 +215,9 @@ identity-only trainer의 기존 시작값과 현재 활성 Phase B hybrid 채택
 
 - 큰 값은 WARP가 어려운 negative를 더 찾게 하지만 학습 시간이 증가한다.
 
-### Phase B feature와 score calibration
+### Phase B feature와 score calibration (과거 기준)
 
-현재 활성 hybrid 표현은 다음과 같다.
+당시 선택한 hybrid 표현은 다음과 같다.
 
 | 항목 | 값 | 의미 |
 | --- | ---: | --- |
@@ -231,6 +231,34 @@ identity-only trainer의 기존 시작값과 현재 활성 Phase B hybrid 채택
 semantic block은 행별 L1 정규화 후 지정한 총량을 곱한다. feature-only serving row도 artifact manifest의 같은 정규화와 weight를 사용한다. known-user centering은 학습 사용자의 평균 LightFM 점수를 영화별로 제거하며 feature-only 콜드 사용자에게는 적용하지 않는다.
 
 item-frequency 역제곱근 sample 보정과 item bias 제거는 집중도를 개선하지 못해 사용하지 않는다. 자세한 수치와 제한은 `10_quality_improvement_record.md`의 Phase B 결과를 따른다.
+
+### Phase I 협업 과집중 보정 (현재 기준)
+
+시드 입력 편향을 제거한 뒤 다음 설정으로 다시 검증했다.
+
+| 항목 | 현재 값 | 의미 |
+| --- | ---: | --- |
+| user identity / semantic | `2.0 / 0.5` | identity 대 semantic 비율을 `16:1 → 4:1`로 완화 |
+| item identity / semantic | `1.0 / 1.0` | 기존 유지 |
+| item frequency | `inverse_sqrt` | 중앙 지지도보다 흔한 영화만 감점, multiplier `0.25~1.0` |
+| user activity | `cap_at_median` | 사용자 sample weight 총합을 활성 사용자 중앙값으로 상한 처리 |
+| known-user centering | `0.9` | 기존 유지 |
+
+전체 협업 신뢰도는 사용자 수, 한 영화의 최대 사용자 지지도, model top-100 사용자 간 Jaccard 중 가장 약한 항목으로 결정한다. 사용자별로는 positive pair `3~20개`를 `0~1`로 환산하고 전체 신뢰도와 사용자 신뢰도 중 작은 값을 사용한다. 이 값은 LightFM 전체 점수나 model 후보 lane을 줄이는 값이 아니라 known-user의 user-identity 성분만 조절한다.
+
+```text
+collaborative_confidence
+  = min(population_confidence, user_evidence_confidence)
+
+lightfm_full
+  = lightfm_semantic + lightfm_user_identity
+
+lightfm_adjusted
+  = centered(lightfm_semantic)
+  + collaborative_confidence * centered(lightfm_user_identity)
+```
+
+`collaborative_confidence=1`이면 기존 centered known-user LightFM 점수와 같고, `0`이면 semantic LightFM 점수만 남는다. feature-only 사용자는 identity 성분이 없으므로 이 감쇠 대상이 아니다. 현재 120명 합성 모델의 population confidence는 `0.1556`이다.
 
 ## 7. Loss 선택
 
@@ -323,7 +351,7 @@ candidate_selection_score
   + drift_weight * normalized_short_term_score
 ```
 
-현재 model weight는 model/장기 ontology 상위 50개 일치율에 따라 `0.45~0.65`, ontology weight는 `0.55~0.35`다. 장기 ontology 후보는 상세 분석 전 100개에 최소 20%를 보장한다. Phase H에서 최종 고유 영화와 장르 방향은 개선됐지만 저투표 ontology/short 후보가 증가했으므로 다음 조정은 `08`의 source별 catalog trust를 먼저 따른다.
+model/장기 ontology 상위 50개 일치율로 model weight `0.45~0.65`를 구한다. Phase I의 협업 신뢰도는 이 비율에 적용하지 않고, 앞 단계에서 LightFM user-identity 성분만 감쇠한다. 장기 ontology 후보는 상세 분석 전 100개에 최소 20%를 보장한다. 저투표 ontology/short 후보 문제는 `08`의 source별 catalog trust에서 별도로 다룬다.
 
 초기 drift 범위:
 

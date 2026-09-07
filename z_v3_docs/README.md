@@ -28,17 +28,18 @@ README -> 01 -> 07 -> 08
 
 ## 현재 기준점
 
-- 기준일: `2026-08-28`
+- 기준일: `2026-09-07`
 - ontology build: `22`
-- model: `hybrid-02e666e23f10-d8dd44e869db-e2a5a2a2e0ca-45932f2c79ee-9e3651b419af-7b869d3b`
-- candidate snapshot: `cand-dd6dd505d38733bfb53d2aa8`
+- model: `hybrid-f98c2b108d40-1bb16d4f94a8-e2a5a2a2e0ca-fd3fb08817a5-bd6b02e4c74e-7b869d3b`
+- candidate snapshot: `cand-84861554e2eed221384722f3`
 - policy: `v3-policy-quality-v1`
-- serving bundle: `bundle-ff3d35e49ba03cc72adc9eed`
-- V3 단위 테스트: `122개` 통과
+- serving bundle: `bundle-212aeed091eac0283b15b5cb`
+- V3 단위 테스트: `130개` 통과
 - 공용 추천 executor 테스트: `2개` 통과
 - 직전 응답 시간 기준선: [v3_online_baseline_20260827T230722Z.json](diagnostics/v3_online_baseline_20260827T230722Z.json)
-- 현재 품질 기준선: [v3_quality_snapshot_20260828T050041Z.md](diagnostics/v3_quality_snapshot_20260828T050041Z.md)
-- 현재 이상치 감사: [v3_ontology_outlier_audit_20260828T110011Z.md](diagnostics/v3_ontology_outlier_audit_20260828T110011Z.md)
+- 현재 LightFM 기준선: [v3_lightfm_ablation_20260907T102400Z.md](diagnostics/v3_lightfm_ablation_20260907T102400Z.md)
+- 현재 최종 품질 기준선: [v3_quality_snapshot_20260907T115937Z.md](diagnostics/v3_quality_snapshot_20260907T115937Z.md)
+- 현재 이상치 감사: [v3_ontology_outlier_audit_20260907T120631Z.md](diagnostics/v3_ontology_outlier_audit_20260907T120631Z.md)
 
 Phase A~F와 통합 bundle 검증은 완료됐다. 주요 반영 내용은 다음과 같다.
 
@@ -51,19 +52,28 @@ Phase A~F와 통합 bundle 검증은 완료됐다. 주요 반영 내용은 다�
 - exact passed/recent negative exclusion과 bounded semantic negative 유지
 - top-150 저장 후 hard filter 탈락분만 예비 50개에서 보충, 상세 처리는 최대 100개
 - 행동별 연속 half-life 감쇠와 장기 ontology 독립 후보
-- model/ontology 상위 후보 일치율에 따른 LightFM 비중 `45~65%` 제한
+- 인기 영화·과다 행동 사용자 학습 기여 상한과 user identity/semantic 비율 완화
+- 사용자 집단·입력·후보 다양성과 사용자별 근거량에 따른 동적 협업 신뢰도
+- 협업 신뢰도에 따른 LightFM 내부 user-identity 성분 감쇠
+- model/ontology 상위 후보 일치율에 따른 LightFM 후보 비중 `45~65%` 유지
 
-직전 응답 시간 기준선은 known 평균 `2.973초`, p95 `3.430초`다. 성능 검증은 보류했으므로 현재 Phase G bundle 전체에 대한 latency baseline은 다시 실행하지 않았다.
+직전 응답 시간 기준선은 known 평균 `2.973초`, p95 `3.430초`다. 성능 검증은 보류했으므로 현재 Phase I bundle 전체에 대한 latency baseline은 다시 실행하지 않았다.
 
 ## 해석 제한
 
 현재 결과는 합성 사용자 중심의 기능·방향성 기준선이다. 실사용자 relevance나 협업 필터링 품질을 확정하지 않는다.
 
-- 품질 감사 표본은 stable 6명, drift 6명이다.
+- 현재 품질 감사 표본은 stable, mixed, drift, negative-heavy 각 6명으로 총 24명이다.
 - post-model 행동 72건을 포함한 재학습과 연속 시간 감쇠 재학습은 완료됐다.
-- LightFM 장기 top-20 고유 영화는 여전히 `45편`이지만 독립 ontology 병합 후 최종 고유 영화는 `108 → 160편`으로 늘었다.
-- drift top-5 현재 장르 일치는 `16/30 → 22/30`, 반복 규칙은 `25 → 13건`으로 개선됐다.
-- 저투표 top-10 이상치는 `1 → 8건`으로 늘어 source별 catalog trust가 다음 품질 문제다.
+- 대표 24명의 LightFM top-20 사용자 간 Jaccard는 `21.2% → 9.8%`, 고유 영화는 `135 → 168편`으로 개선됐다.
+- Phase I 원본 모델의 대표 24명 top-20은 480칸 중 168편, 사용자 간 Jaccard `9.8%`였다.
+- identity-only 협업 감쇠를 반영한 대표 24명 저장 후보 top-20은 480칸 중 151편, 사용자 간 Jaccard `13.59%`였다.
+- 120명 합성 집단의 협업 신뢰도 `0.1556`은 LightFM 전체 비중이 아니라 user-identity 성분에만 적용된다.
+- 실제 추천 smoke test에서 model base/effective weight는 모두 `0.474`였고 최종 후보 100개를 정상 생성했다.
+- 최종 480칸은 고유 310편, top-5 120칸은 고유 90편이었다.
+- top-5 현재 취향 장르 일치는 stable `30/30`, drift `30/30`, negative-heavy `30/30`, mixed `29/30`이었다.
+- 제외 위반과 사용자 내부 중복은 0건이고, 반복 top-5 영화가 현재 취향 장르 밖으로 퍼진 사례도 0건이었다.
+- top-10 저투표 후보는 240칸 중 6건이며 mixed/drift의 ontology·short source에 집중됐다.
 - 작은 합성 학습 집단에서 나타난 사용자 간 영화 반복은 실사용자 규모에서 다시 검증한다.
 - NDCG와 Recall은 사용자가 명시적으로 현재 범위에서 제외했다.
 
@@ -71,7 +81,7 @@ Phase A~F와 통합 bundle 검증은 완료됐다. 주요 반영 내용은 다�
 
 즉시 점수 상수를 다시 조정하지 않는다. 후속 작업의 우선순위와 완료 조건은 [08 후속 작업](08_additional_work_backlog.md)에만 기록한다.
 
-요청·후보 계산의 병렬 비교와 Phase H 품질 검증은 완료됐다. 운영·성능·부가 정책은 보류하고, 다음 작업은 저신뢰 ontology/short 후보의 catalog trust와 남은 LightFM 과집중을 분리해 개선하는 것이다.
+요청·후보 계산의 병렬 비교와 Phase I 협업 과집중 보정·통합 재검증은 완료됐다. 다음 품질 작업은 저신뢰 ontology/short 후보의 catalog trust이며, 그다음 bounded negative 충돌을 검토한다. 실제 사용자 규모의 협업 신뢰도 calibration은 별도 검증으로 남는다.
 
 ## 문서 규칙
 

@@ -22,6 +22,9 @@
 | `v3_ontology_outlier_audit_20260828T042637Z.{json,md}` | Phase G의 장기 후보 과집중과 과거 취향 잔존 감사 |
 | `v3_quality_snapshot_20260828T050041Z.{json,md}` | 연속 감쇠·장기 ontology 독립 후보·의미 일치 제한을 적용한 Phase H 기준선 |
 | `v3_ontology_outlier_audit_20260828T110011Z.{json,md}` | Phase H의 잔여 협업 과집중, 저투표 후보와 의미 근거 감사 |
+| `v3_lightfm_ablation_20260907T102400Z.{json,md}` | Phase I 시드·학습 기여 보정 후, identity 감쇠 전 원본 모델의 대표 24명 LightFM 집중도 기준선 |
+| `v3_quality_snapshot_20260907T115937Z.{json,md}` | identity-only 협업 감쇠를 적용한 Phase I 대표 24명 최종 품질 기준선 |
+| `v3_ontology_outlier_audit_20260907T120631Z.{json,md}` | Phase I 최종 결과의 반복·저투표·metadata·negative 충돌 근거 감사 |
 
 ## 보존 규칙
 

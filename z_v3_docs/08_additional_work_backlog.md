@@ -21,7 +21,7 @@
 - short-term 24시간 누적, threshold, debounce, lease, cache format 3 완료
 - stable/drift 판정과 drift short-only lane 완료
 - LightFM 수치 health gate, score centering, ontology ablation, catalog/negative 정책 검증 완료
-- 최종 V3 단위 테스트 `122개`, 공용 추천 executor 테스트 `2개` 통과
+- 최종 V3 단위 테스트 `130개`, 공용 추천 executor 테스트 `2개` 통과
 - 요청 bounded executor와 후보 user-block 동적 큐 비교·적용 완료
 
 현재 artifact와 응답 시간은 [README](README.md)를 기준으로 한다.
@@ -114,18 +114,27 @@
 
 ### P2-02. 실제 사용자 규모의 협업 효과
 
-- 상태: `보류`
-- 배경: 현재 모델은 합성 사용자 128명과 positive pair 3,445개를 사용한다. 반복 노출 영화와 공통 인기 방향은 작은 표본의 영향을 크게 받을 수 있다.
-- 실행: 실제 사용자 cutoff와 random seed를 고정하고 identity/feature/collaborative ablation을 비교한다.
-- 주의: 현재 12명 감사 결과만으로 인기 영화 hard filter나 추가 감점을 넣지 않는다.
+- 상태: `합성 기준선 보정 완료, 실사용자 검증 대기`
+- 완료: 코호트 독점·사용자별 회전 시드, 인기 영화 sample 감점, 사용자 총기여 상한, identity/semantic `2.0/0.5`, identity-only 동적 협업 신뢰도, 강화된 집중도 health gate를 적용했다.
+- 결과: 원본 모델의 대표 24명 LightFM top-20 Jaccard `21.2% → 9.8%`, 고유 영화 `135 → 168`, stable 장르 overlap `85.8%` 유지. identity-only 감쇠 저장 후보는 고유 영화 151편, Jaccard `13.59%`였다. 현재 120명 population confidence는 `0.1556`이다.
+- 남은 작업: 실제 사용자 cutoff와 random seed를 고정하고 사용자 규모·취향 분포별 confidence calibration을 다시 검증한다. 특히 초기에 한 취향이 몰린 경우에도 population confidence가 낮게 유지되는지 관측한다.
+- 주의: 합성 결과만으로 협업 신뢰도 임계값을 확정하지 않는다.
 
-### P2-02A. 장기 ontology 후보의 catalog trust
+### P2-02A. Corrected bundle 통합 품질 재검증
+
+- 상태: `완료, 2026-09-07`
+- 이유: 전체 LightFM lane을 협업 신뢰도로 줄인 이전 Phase I 최종 보고서는 잘못된 구조를 측정했으므로 폐기했다.
+- 결과: model base/effective weight가 모든 유형에서 같았고 최종 480칸 중 고유 310편, top-5 120칸 중 고유 90편이었다. stable·drift-current·negative-heavy top-5는 `30/30`, mixed는 `29/30`이 현재 목표 장르와 일치했다.
+- 불변식: 제외 위반, 사용자 내부 중복, 반복 top-5 영화의 현재 장르 불일치는 모두 0건이었다.
+- 남은 문제: top-10 저투표 6건, 과다 장르 metadata 11건, 높은 부정 근거 충돌 9건이 남았다.
+
+### P2-02B. Ontology·short 후보의 catalog trust
 
 - 상태: `다음 품질 작업`
-- 확인 결과: Phase H에서 최종 고유 영화와 drift 방향은 개선됐지만 top-10 저투표 이상치가 `1 → 8건`으로 늘었다.
-- 문제: ontology와 short-term lane의 강한 의미 점수가 vote-count soft 감점보다 커 저신뢰 영화가 상위에 남는다. 장르 8개 이상 metadata도 일치를 과대 생성한다.
-- 작업: 후보 source별 vote 분포를 고정 표본에서 비교하고, zero-vote 제외·신뢰도 곱·source별 calibration을 ablation한다. 무조건적인 인기 영화 우대나 전체 long-tail 제거로 해결하지 않는다.
-- 완료 조건: 현재 장르 일치와 최종 고유 영화 개선을 유지하면서 top-10 저투표·과도 장르 이상치를 Phase G 이하로 낮춘다.
+- 확인 결과: corrected 결과의 top-10 저투표 후보는 240칸 중 6건이며 mixed/drift의 ontology·short source에 집중됐다. 전체 top-20 기준 저투표 비율은 stable `1.7%`, mixed `19.2%`, drift `12.5%`, negative-heavy `2.5%`다.
+- 문제: 의미 일치가 강한 저투표 영화와 장르 8개 이상 metadata 영화가 catalog soft 감점 뒤에도 남는다. 일부는 drift short-only lane에서 강제 선택된다.
+- 작업: source별 vote 분포를 고정 표본에서 비교하고 zero-vote 제외, vote 신뢰도 곱, lane 진입 전 catalog gate를 ablation한다. 무조건적인 인기 영화 우대나 전체 long-tail 제거로 해결하지 않는다.
+- 완료 조건: stable/drift top-5 방향과 현재 고유 영화 수준을 유지하면서 저투표·과다 장르 후보를 낮춘다.
 
 ### P2-03. Source별 calibration과 새 reranker
 
@@ -208,4 +217,4 @@
 
 ## 다음 재개점
 
-P3-00, P2-01과 Phase H 품질 검증은 완료됐다. 사용자의 현재 우선순위에 따라 운영·성능·부가 정책은 마지막으로 미룬다. 다음 작업은 P2-02A source별 catalog trust이며, 이후 실제 사용자 규모에서 남은 LightFM 과집중을 검증한다.
+P3-00, P2-01과 Phase I의 학습·후보 적용 경계 수정·통합 품질 재검증은 완료됐다. 사용자의 현재 우선순위에 따라 운영·성능·부가 정책은 마지막으로 미룬다. 다음 작업은 P2-02B ontology·short 후보의 catalog trust이며, 이후 bounded negative 충돌과 실제 사용자 규모의 협업 calibration을 판단한다.

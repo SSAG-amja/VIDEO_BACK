@@ -132,7 +132,7 @@ Cache는 build/user/format signature를 포함한 format 3이며 저장 후 6시
 4. 저장된 LightFM top-150 조회
 5. 장기 profile 기반 ontology 후보 최대 100개 조회
 6. 단기 candidate cache 조회, 필요 시 bounded DB fallback
-7. source별 percentile 정규화와 후보 병합
+7. LightFM user-identity 협업 성분 감쇠 후 source별 percentile 정규화와 model/ontology 의미 일치 기반 후보 병합
 8. hard filter 적용, 탈락 수만큼 예비 50개 검사
 9. 최대 100개 ontology 상세 분석
 10. personal/ontology 점수와 정책 효과 계산
@@ -142,6 +142,8 @@ Cache는 build/user/format signature를 포함한 format 3이며 저장 후 6시
 ```
 
 Personal/ontology 기본 비율은 `0.75/0.25`다. Quality, negative, OTT와 반복 정책은 bounded adjustment로 적용하며 상세 숫자는 [04 LightFM 조정 지점](04_lightfm_tuning.md)에 있다.
+
+장기 model과 장기 ontology가 함께 있을 때의 source 선택 비율은 위 최종 `personal/ontology` 점수 비율과 별개다. model/ontology 상위 50개 의미 일치율로 model weight `0.45~0.65`를 정한다. 초기 사용자 수가 적거나 취향 분포가 한쪽으로 몰리면 협업 신뢰도로 LightFM 내부 user-identity 성분만 줄인다. 장르·키워드 등 semantic LightFM 성분은 유지하며, model source 전체를 줄여 ontology source에 넘기지 않는다.
 
 ## Cold-start 요청
 
@@ -217,7 +219,7 @@ Vote count 20 미만은 최대 0.05 soft 감점을 받지만 일반 후보의 �
 - 영화 metadata 변경의 graph/model/bundle 자동 반영 없음
 - 소셜 행동 training eligibility 미연결
 - 상세 evidence path 없음
-- 실제 사용자 규모의 협업 품질 미검증
+- 실제 사용자 규모와 초기 취향 분포별 협업 신뢰도 calibration 미검증
 
 ## 주요 코드
 
