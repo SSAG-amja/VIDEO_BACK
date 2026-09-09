@@ -1,0 +1,4 @@
+/inputs/*
+/generated/*
+/outputs/*
+!.gitkeep
