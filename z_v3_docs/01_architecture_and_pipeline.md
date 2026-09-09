@@ -53,7 +53,8 @@ flowchart TD
     G --> H{수치 health gate}
     H -- 실패 --> X[게시 중단·이전 bundle 유지]
     H -- 통과 --> I[Immutable model artifact]
-    I --> J[Blockwise exact scoring<br/>기본 1 worker]
+    I --> IA[초기 카탈로그 자격 마스크<br/>정적 상태·장기 cold-item 신뢰]
+    IA --> J[Blockwise exact scoring<br/>기본 1 worker]
     J --> K[사용자별 top-150 snapshot]
     K --> L{후보·hash·DB 게시 검증}
     L -- 실패 --> X
@@ -80,16 +81,17 @@ flowchart TD
     B --> C[DB 최신 행동·온보딩·OTT 조회]
     C --> D[장기·단기·negative profile 생성]
     D --> E{Model에 user identity 존재?}
-    E -- 예 --> F[저장된 LightFM top-150]
-    E -- 아니오 --> G[Feature-only LightFM 후보]
-    G --> H[Cold ontology 규칙 후보]
+    E -- 예 --> F[초기 자격을 통과한<br/>저장 LightFM top-150]
+    E -- 아니오 --> G[Feature-only LightFM 원본 후보]
+    G --> GA[초기 카탈로그 자격 필터]
+    GA --> H[Cold ontology 규칙 후보]
     H --> I[Cold 후보 병합]
     F --> J[Redis 단기 후보 조회]
     J --> K[Cache miss면 bounded DB fallback]
     K --> L[장기·단기 source 정규화와 병합<br/>의미 일치 기반 source 비율 적용]
-    I --> M[Hard filter]
+    I --> M[요청 최종 필터]
     L --> M
-    M --> N[예비 50개에서 탈락분만 보충]
+    M --> N[예비 50개에서 요청 조건 탈락분만 보충]
     N --> O[최대 100개 ontology 상세 분석]
     O --> P[Personal + Ontology + Policy score]
     P --> Q{Drift 상태?}
@@ -103,24 +105,24 @@ flowchart TD
 
 추천 계산은 API event loop에서 직접 실행하지 않는다. 공용 thread executor가 최대 2건을 동시에 처리하고 대기 요청은 bounded worker 수 뒤에서 순서대로 실행된다. 각 작업은 자기 `SessionLocal`을 열며 model artifact만 메모리에서 공유한다.
 
-협업 신뢰도는 후보 source 병합 비율이 아니라 LightFM 점수 내부에 적용한다. known-user LightFM 표현을 semantic 성분과 user-identity 성분으로 분리하고, population confidence와 사용자 positive 근거량 중 작은 값으로 user-identity 성분만 감쇠한다. semantic 성분은 유지한다. 이후 model과 장기 ontology가 함께 있으면 상위 50개 의미 일치율로 model weight `0.45~0.65`를 정하며 협업 신뢰도 때문에 그 비율을 추가로 낮추거나 ontology에 넘기지 않는다.
+협업 신뢰도는 후보 source 병합 비율이 아니라 LightFM 점수 내부에 적용한다. known-user LightFM 표현을 semantic 성분과 user-identity 성분으로 분리하고, population confidence와 사용자 positive 근거량 중 작은 값으로 user-identity 성분만 감쇠한다. semantic 성분은 유지한다. 이후 model과 장기 ontology가 함께 있으면 상위 50개 영화 ID 일치율로 source 비율을 정한다. 일치가 없으면 model/ontology `0.65/0.35`, 일치가 높아질수록 최대 `0.55/0.45`까지 이동한다. 협업 신뢰도 때문에 이 source 비율을 추가로 낮추거나 ontology에 넘기지 않는다. 이 병합 점수는 후보 선택에만 사용하며 최종 personal 성분에는 장기 model과 단기 취향 점수만 들어간다.
 
 ## 후보 수 흐름
 
 ```text
-LightFM 저장 후보                    150개
+초기 카탈로그 자격을 통과한 LightFM 후보 150개
   = 기본 순위                        100개
-  + hard filter 보충용 예비           50개
+  + 요청 최종 필터 보충용 예비         50개
 
 장기 후보 + 단기 후보 + cold 후보
   -> source 정규화·병합
-  -> hard filter
+  -> 요청 최종 필터
   -> 탈락한 수만큼만 예비 후보 검사
   -> 상세 분석·최종 policy 입력       최대 100개
   -> API page                         보통 20개
 ```
 
-예비 50개는 추천 결과를 150개로 늘리는 용도가 아니다. 앞 100개에서 DB 미존재, watched, passed, OTT, 상태 조건으로 탈락한 자리만 채우고 남은 예비 후보는 버린다.
+예비 50개는 추천 결과를 150개로 늘리는 용도가 아니다. 초기 자격을 통과한 후보 중 앞 100개에서 watched, passed, blacklist, OTT처럼 요청 시점 조건으로 탈락한 자리만 채우고 남은 예비 후보는 버린다. DB 미존재·성인·제목 없음·차단 상태 같은 정적 조건은 후보 생성 전에 제거하며, 요청 단계에서는 metadata 변경과 오래된 snapshot을 막기 위해 같은 조건을 방어적으로 재확인한다.
 
 ## 행동 갱신 흐름
 
@@ -180,11 +182,11 @@ Ontology 근거는 후보와 사용자 사이의 의미 관계를 설명한다. 
 | 항목 | 값 |
 | --- | --- |
 | ontology | build `22`, node `3,756,594`, edge `12,640,874`, evidence `2,078,395` |
-| item feature | `1,176,540 x 1,502,427`, `nnz=10,505,033` |
-| model | `hybrid-f98c2b108d40-1bb16d4f94a8-e2a5a2a2e0ca-fd3fb08817a5-bd6b02e4c74e-7b869d3b` |
-| candidates | `cand-84861554e2eed221384722f3`, 120명 x 150개 |
+| item feature | `1,176,540 x 1,502,427`, `nnz=9,338,751` |
+| model | `hybrid-0088e46c78e6-8ee76ae0cc79-51c5cf5ab1c1-32da0f11b507-16fe5319a5c2-7b869d3b` |
+| candidates | `cand-72e516bd88d5e91a4a67ae1a`, 620명 x 150개 |
 | policy | `v3-policy-quality-v1` |
-| bundle | `bundle-212aeed091eac0283b15b5cb` |
+| bundle | `bundle-c43cac19fbffc33c399f75b9` |
 
 전체 graph build `22`는 498.3초, full item feature export는 77.8초가 걸렸다. 모델 학습과 candidate materialization의 최신 품질 결과는 [10 품질 개선 기록](10_quality_improvement_record.md)을 따른다.
 

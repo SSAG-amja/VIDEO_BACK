@@ -66,7 +66,7 @@ Phase A-F 응답 시간 검증 artifact:
 | subscribed only | 24 | 2.155초 | 2.665초 | 0 |
 | onboarding mutation | 6 | 2.657초 | 3.331초 | 0 |
 
-- V3 단위 테스트 `130개`, 공용 추천 executor 테스트 `2개` 통과
+- V3 단위 테스트 `142개`, 공용 추천 executor 테스트 `2개` 통과
 - 128명 candidate materialization 성공
 - top-150 `19,200건`, materialization `3.53초`, 사용자당 `0.027초`
 - 제외 위반과 최종 중복 `0건`
@@ -147,3 +147,16 @@ Phase A~F는 12명의 post-model 사용자로 방향성을 확인했다.
 - 정리 시 `v3seed-*` 사용자와 관련 Redis key만 제거한다.
 - 영화, ontology build `22`, 실사용자 데이터는 제거하지 않는다.
 - 같은 실험의 중간 진단은 최종 보고서가 확정되면 삭제한다.
+
+## 2026-09-10 장기 취향 정책 운영 반영
+
+- 학습 데이터: V3 기준 시드 120명과 MovieLens 장기 평가 사용자 500명, 총 620명
+- model: `hybrid-0088e46c78e6-8ee76ae0cc79-51c5cf5ab1c1-32da0f11b507-16fe5319a5c2-7b869d3b`
+- candidate: `cand-72e516bd88d5e91a4a67ae1a`, 620명 x 150개, 실패 0명
+- bundle: `bundle-c43cac19fbffc33c399f75b9`
+- ontology: build `22`
+- 정책: known-user centering `0.5`, saved/pinned 반감기 `365일`
+- 고정 100명 평가: NDCG@20 `0.522051`, NDCG@30 `0.587833`
+- 활성화 후 새 프로세스에서 bundle과 현재 policy hash 일치를 확인했다.
+- 학습 당시 온보딩 전용 서명을 artifact에 저장해 장기 행동 feature가 온보딩 변경으로 오인되던 문제를 수정했다.
+- 실제 known-user 요청은 `v3_model` 경로로 20편을 반환했으며 단일 smoke 응답 시간은 `3.003초`였다.

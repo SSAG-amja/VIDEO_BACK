@@ -130,7 +130,7 @@ sample_weight = min(sample_weight, global_max_sample_weight)
 
 | 행동 | half-life | timestamp 없음 |
 | --- | ---: | ---: |
-| saved/pinned | 60일 | `0.25` |
+| saved/pinned | 365일 | `0.25` |
 | watched | 180일 | `0.25` |
 | passed | 90일 | `0.25` |
 | onboarding favorite | 감쇠 없음 | `1.0` |
@@ -242,7 +242,7 @@ item-frequency 역제곱근 sample 보정과 item bias 제거는 집중도를 �
 | item identity / semantic | `1.0 / 1.0` | 기존 유지 |
 | item frequency | `inverse_sqrt` | 중앙 지지도보다 흔한 영화만 감점, multiplier `0.25~1.0` |
 | user activity | `cap_at_median` | 사용자 sample weight 총합을 활성 사용자 중앙값으로 상한 처리 |
-| known-user centering | `0.9` | 기존 유지 |
+| known-user centering | `0.5` | 장기 취향 NDCG grid에서 선택한 현재값 |
 
 전체 협업 신뢰도는 사용자 수, 한 영화의 최대 사용자 지지도, model top-100 사용자 간 Jaccard 중 가장 약한 항목으로 결정한다. 사용자별로는 positive pair `3~20개`를 `0~1`로 환산하고 전체 신뢰도와 사용자 신뢰도 중 작은 값을 사용한다. 이 값은 LightFM 전체 점수나 model 후보 lane을 줄이는 값이 아니라 known-user의 user-identity 성분만 조절한다.
 
@@ -259,6 +259,19 @@ lightfm_adjusted
 ```
 
 `collaborative_confidence=1`이면 기존 centered known-user LightFM 점수와 같고, `0`이면 semantic LightFM 점수만 남는다. feature-only 사용자는 identity 성분이 없으므로 이 감쇠 대상이 아니다. 현재 120명 합성 모델의 population confidence는 `0.1556`이다.
+
+### 장기 취향 NDCG 조정 (현재 기준)
+
+500명 학습 사용자와 고정 100명 평가 사용자의 시간순 70/30 holdout에서 다음 값을 비교했다.
+
+- 협업 신뢰도를 유지한 centering `0/0.1/0.25/0.5/0.75/0.9` 비교에서 `0.5`가 NDCG@20 `0.509625`, NDCG@30 `0.580062`로 가장 높았다.
+- 초기 집중형 평가 사용자에서는 centering `0.5`를 고정한 saved/pinned 반감기 `60/120/180/365/730일/없음` 비교에서 `730일`이 NDCG@20 `0.524424`, NDCG@30 `0.596696`으로 가장 높았다.
+- WARP, item-frequency `inverse_sqrt`, user-activity `cap_at_median`, ontology item/user feature와 협업 identity confidence는 유지했다.
+- 최종 비활성 shadow 모델은 동일 평가의 순수 LightFM 기준선 NDCG@20 `0.513805`, NDCG@30 `0.578975`를 각각 `+0.010619`, `+0.017721` 넘었다.
+
+집중·안정형, 다취향·안정형, 취향변화형 각 100명을 함께 학습한 후속 비교에서는 전체 `NDCG@20 + NDCG@30`이 `365일`에서 가장 높았다. 유형별 최고값은 각각 `365일`, 감쇠 없음, `730일`로 달랐으므로 `730일`을 전역 최적값으로 보지 않고 공통 절충값 `365일`을 현재 기본값으로 사용한다. 전체 기준 `365일`과 감쇠 없음의 차이는 매우 작으므로 실제 사용자 및 반복 seed 검증 전까지 잠정값이다.
+
+이 결과는 주어진 holdout 영화의 선호 순위 판별만 검증한다. 전체 카탈로그 후보 검색 품질이나 실제 사용자 만족도를 증명하지 않으며, 여러 사용자 규모와 반복 seed 검증 전에는 1단계 전체 완료로 간주하지 않는다.
 
 ## 7. Loss 선택
 
@@ -351,7 +364,7 @@ candidate_selection_score
   + drift_weight * normalized_short_term_score
 ```
 
-model/장기 ontology 상위 50개 일치율로 model weight `0.45~0.65`를 구한다. Phase I의 협업 신뢰도는 이 비율에 적용하지 않고, 앞 단계에서 LightFM user-identity 성분만 감쇠한다. 장기 ontology 후보는 상세 분석 전 100개에 최소 20%를 보장한다. 저투표 ontology/short 후보 문제는 `08`의 source별 catalog trust에서 별도로 다룬다.
+model/장기 ontology 상위 50개 영화 ID 일치율로 model weight `0.55~0.65`를 구한다. 일치가 없으면 model/ontology `0.65/0.35`, 일치율이 높아질수록 최대 `0.55/0.45`까지 이동한다. Phase I의 협업 신뢰도는 이 비율에 적용하지 않고, 앞 단계에서 LightFM user-identity 성분만 감쇠한다. 장기 ontology 후보는 상세 분석 전 100개에 최소 20%를 보장한다. 저투표 ontology/short 후보 문제는 source별 catalog trust와 field-budgeted ontology 점수로 별도 처리한다.
 
 초기 drift 범위:
 
@@ -405,7 +418,7 @@ repetition penalty              최대 0.06
 cold-start feature-only 비중    0.65
 ```
 
-품질 원점수는 `vote_count / (vote_count + 100)` 신뢰도를 rating과 bounded popularity 결합값에 먼저 곱한다. 따라서 popularity가 높아도 vote count가 1이면 품질 bonus는 작다. Phase F부터 일반 후보에는 vote 20 미만일 때 `0.05 * (20 - vote_count) / 20`의 soft 감점을 적용한다. 최소 vote count hard filter는 사용하지 않으며, 장르만 있는 cold-start의 기존 최소 1표 필터는 별도 규칙으로 유지한다.
+품질 원점수는 `vote_count / (vote_count + 100)` 신뢰도를 rating과 bounded popularity 결합값에 먼저 곱한다. 따라서 popularity가 높아도 vote count가 1이면 품질 bonus는 작다. Phase F부터 일반 후보에는 vote 20 미만일 때 `0.05 * (20 - vote_count) / 20`의 soft 감점을 적용한다. 모든 영화에 일괄적인 최소 vote hard filter는 사용하지 않는다. 다만 학습 행동 지지가 없고 개봉 180일 이내 신작도 아닌 장기 cold item은 초기 후보 자격에서 `vote_count >= 20`을 요구한다. 장르만 있는 cold-start의 기존 최소 1표 필터는 별도 규칙으로 유지한다.
 
 negative feature 초기 상대값은 genre `0.15`, actor `0.30`, keyword `0.35`, mood `0.35`, director/theme `0.45`다. 최근 negative ontology score에는 `1.25` multiplier를 사용한다. 이는 V2 절대값 계승이 아니라 비교를 위한 초기값이다.
 

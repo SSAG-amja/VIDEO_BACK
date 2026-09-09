@@ -144,7 +144,7 @@ identity interaction이 없는 신규 사용자는 기존 feature vocabulary로 
 - 과거 cutoff build에서는 발생 시점을 증명할 수 없는 게시글 좋아요를 제외한다.
 - 현재 상태 snapshot에서 사라진 unsaved/unpinned/unliked 이력은 추정하지 않는다.
 - source별 pair 수, 사용자 coverage, missing timestamp, cap 도달 수, playlist 투영 수와 제외 수를 artifact diagnostics에 저장한다.
-- 직접 행동은 행동별 연속 half-life를 사용한다. saved/pinned 60일, watched 180일, passed 90일이며 favorite은 감쇠하지 않는다. 오래된 timestamp 행동은 0.05까지 낮아질 수 있고 영구 40% floor는 사용하지 않는다.
+- 직접 행동은 행동별 연속 half-life를 사용한다. 사용자 유형별 장기 취향 NDCG 비교로 조정한 saved/pinned은 365일, watched는 180일, passed는 90일이며 favorite은 감쇠하지 않는다. 오래된 timestamp 행동은 0.05까지 낮아질 수 있고 영구 40% floor는 사용하지 않는다.
 
 ### 4.5 점수 해석
 
@@ -158,18 +158,19 @@ identity interaction이 없는 신규 사용자는 기존 feature vocabulary로 
 ## 5. 전체 추천 흐름
 
 ```text
-1. LightFM 장기 후보 생성
-2. 장기 profile 기반 ontology 후보 독립 생성
-3. 최근 행동 기반 short-term ontology 후보 생성
-4. 신규/희소 영화 ontology 후보 보충
-5. source별 점수 정규화와 순위 후보 최대 150개 병합
-6. metadata·watched/passed·상태·OTT hard filter를 먼저 적용
-7. 통과 순서대로 활성 후보 최대 100개 확정
-8. 활성 후보에 대한 ontology evidence 계산
-9. 상세 분석 이후에도 같은 hard filter를 방어적으로 재확인
-10. 개인 정책 가감점 적용
-11. 반복 감점과 결정적 MMR 재정렬
-12. 최종 영화, 점수 구성, 추천 이유 저장
+1. 정적 상태와 장기 cold-item 신뢰로 초기 카탈로그 자격 결정
+2. 초기 자격 영화 안에서 LightFM 장기 후보 생성
+3. 장기 profile 기반 ontology 원본 후보를 넓게 계산하고 초기 자격 통과분으로 독립 후보 확정
+4. 최근 행동 기반 short-term ontology 후보 생성
+5. 신규/희소 영화 ontology 후보 보충
+6. source별 점수 정규화와 순위 후보 최대 150개 병합
+7. watched/passed·blacklist·세션·OTT 요청 최종 필터 적용
+8. 통과 순서대로 활성 후보 최대 100개 확정
+9. 활성 후보에 대한 ontology evidence 계산
+10. 상세 분석 이후 정적 상태와 요청 조건을 방어적으로 재확인
+11. 개인 정책 가감점 적용
+12. 반복 감점과 결정적 MMR 재정렬
+13. 최종 영화, 점수 구성, 추천 이유 저장
 ```
 
 단기 취향은 LightFM 후보에 가점만 주는 방식으로 제한하지 않는다. 범죄 취향 사용자가 최근 로맨스 행동을 보이면 로맨스 관련 후보가 별도 source에서 들어올 수 있어야 한다.
@@ -206,21 +207,28 @@ V3 1차에서 제외:
 
 exploration은 정확도 기준선이 안정된 뒤 별도 source로 추가한다.
 
-## 7. Hard filter
+## 7. 초기 자격 필터와 요청 최종 필터
 
-점수 계산으로 복구할 수 없는 탈락 조건이다.
+초기 자격 필터는 후보 순위를 만들기 전에 적용한다.
 
 - `adult = true`
+- 제목 또는 DB 영화가 없음
+- 서비스에서 명시적으로 차단한 상태
+- 활성 model에서 학습 행동 지지가 없고, 개봉 후 180일이 지났거나 개봉일을 신뢰할 수 없으며, `vote_count < 20`인 장기 cold item
+
+학습 행동 지지가 있는 영화와 개봉 후 180일 이내 신작은 낮은 투표 수만으로 초기 제외하지 않는다. metadata field 개수는 자격 조건으로 사용하지 않는다. LightFM 사전 계산은 전체 catalog 자격 mask를 점수 Top-K 전에 적용하고, 요청 시 재계산과 장기 ontology는 넓은 원본 순위에서 자격 통과분을 채운다.
+
+요청 최종 필터는 사용자와 요청 시점에 따라 바뀌는 조건을 처리한다.
+
 - 사용자가 watched한 동일 영화
 - 사용자가 passed한 동일 영화
 - 같은 페이지/session에서 이미 반환한 영화
-- 서비스 필수 데이터가 없는 영화
-- 서비스에서 명시적으로 차단한 상태
+- blacklist 또는 요청별 차단 영화
 - `subscribed_only`에서 사용자의 구독 OTT로 streaming할 수 없는 영화
 
 `subscribed_only` 후보가 부족해도 전체 catalog로 fallback하지 않는다.
 
-최소 vote count는 희소·신규 영화를 영구 제거할 수 있으므로 기본 hard filter로 고정하지 않는다.
+예비 50개는 요청 최종 필터의 탈락분만 보충한다. 초기 자격 조건은 오래된 snapshot이나 metadata 변경을 방어하기 위해 마지막 단계에서도 재확인하지만, 후보 수를 채우는 주된 필터 위치는 아니다. 모든 영화에 고정 최소 투표 수를 적용하지 않는다.
 
 ## 8. 점수 계층
 
@@ -253,13 +261,17 @@ candidate_selection_score
   + drift_weight * normalized_short_term_score
 ```
 
-model/ontology 상위 50개 일치율에 따라 model weight는 0.45~0.65로 계산한다. 협업 신뢰도는 이 source 비율을 줄이는 값이 아니다. LightFM 후보를 만들기 전에 전체 사용자 수·학습 입력 집중도·model 후보 집중도로 만든 population confidence와 사용자 positive 근거량으로 만든 user confidence 중 작은 값을 user-identity 성분에만 적용한다. LightFM semantic 성분과 model/ontology 비율은 유지한다. 장기 ontology 후보는 상세 분석 전 100개 중 최소 20%가 생존하도록 보호한다. 한 source에 없는 후보의 해당 source 점수는 `0`이다. 강한 단기 변화에서는 short-term 후보가 장기 후보에 모두 밀리지 않도록 contextual source floor를 적용한다.
+model/ontology 상위 50개 영화 ID 일치율이 `0`이면 model/ontology weight는 `0.65/0.35`다. 일치율이 높아질수록 최대 `0.55/0.45`까지 이동한다. 후보가 서로 다르다는 이유만으로 ontology를 더 강하게 만들지 않는다. 협업 신뢰도는 이 source 비율을 줄이는 값이 아니다. LightFM 후보를 만들기 전에 전체 사용자 수·학습 입력 집중도·model 후보 집중도로 만든 population confidence와 사용자 positive 근거량으로 만든 user confidence 중 작은 값을 user-identity 성분에만 적용한다. LightFM semantic 성분과 model/ontology 비율은 유지한다. 장기 ontology 후보는 상세 분석 전 100개 중 최소 20%가 생존하도록 보호한다. 한 source에 없는 후보의 해당 source 점수는 `0`이다. 강한 단기 변화에서는 short-term 후보가 장기 후보에 모두 밀리지 않도록 contextual source floor를 적용한다.
 
 최종 단계:
 
 ```text
+personal_basis
+  = (1 - drift_weight) * normalized_long_term_score
+  + drift_weight * normalized_short_term_score
+
 base_score
-  = personal_component
+  = 0.75 * personal_basis
   + ontology_component
 
 final_score
@@ -270,6 +282,8 @@ final_score
   - negative_preference_penalty
   - repetition_penalty
 ```
+
+일반 장기 사용자의 `personal_basis`에는 후보 선택용 long-term ontology 점수를 다시 넣지 않는다. 상세 분석에서 계산한 field-budgeted ontology 점수만 `ontology_component`로 한 번 반영한다. 콜드스타트는 별도 학습 사용자 점수가 없으므로 기존 feature-only model/rule 병합 점수를 personal basis로 유지한다.
 
 각 정책 adjustment는 총 영향 상한을 가진다.
 

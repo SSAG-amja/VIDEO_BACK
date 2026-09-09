@@ -11,6 +11,8 @@
 | 학습·사전 계산 | 사용자 요청 전에 dataset, model, 장기 후보를 만드는 작업 |
 | 요청 시 계산 | 사용자가 추천을 요청한 순간 profile, 후보 병합, filter와 순위를 계산하는 작업 |
 | LightFM 장기 후보 | 현재 활성 LightFM model로 사용자별 미리 저장한 top-150 |
+| 초기 자격 필터 | 후보 생성 전에 정적 catalog 상태와 장기 cold-item 신뢰를 확인하는 단계 |
+| 요청 최종 필터 | watched/passed, blacklist, 세션 노출, OTT처럼 현재 요청에 따라 바뀌는 조건을 확인하는 단계 |
 | 장기 ontology 후보 | 요청 시 장기 profile의 의미 feature로 독립 조회한 최대 100개 |
 | 단기 후보 | 최근 positive 행동에서 ontology 관계로 독립 생성한 후보 |
 | 활성 후보 | top-150의 앞 100개 |
@@ -30,7 +32,8 @@
 DB 행동 snapshot
   -> ontology item/user feature
   -> hybrid LightFM 학습
-  -> 사용자별 장기 top-150
+  -> 초기 카탈로그 자격 mask
+  -> 자격을 통과한 사용자별 장기 top-150
   -> model + graph + candidate + policy bundle 활성화
 
 [최근 행동 갱신]
@@ -43,8 +46,9 @@ DB positive 행동
 DB 최신 profile·제외·OTT
   + 장기 top-150 또는 cold 후보
   + 단기 ontology 후보
+  -> source별 초기 자격 확인
   -> source 정규화·병합
-  -> hard filter와 예비 보충
+  -> 요청 최종 필터와 예비 보충
   -> 최대 100개 ontology 상세 분석
   -> policy, drift lane, 반복 감점, MMR
   -> offset/limit 응답
@@ -76,7 +80,7 @@ Ontology feature는 모델 입력이지만, 추천 근거가 LightFM 점수의 �
 
 ### 장기 후보
 
-전체 user-by-movie dense matrix를 만들지 않고 blockwise exact top-K를 계산한다. 사용자별 150개를 저장하며 앞 100개는 활성, 뒤 50개는 hard filter 예비 후보다.
+전체 user-by-movie dense matrix를 만들지 않고 blockwise exact top-K를 계산한다. 초기 catalog 자격 mask를 각 item block 점수에 먼저 적용한 뒤 사용자별 150개를 저장한다. 앞 100개는 활성, 뒤 50개는 요청 최종 필터 예비 후보다.
 
 장기 후보는 model artifact가 바뀌지 않는 한 단기 worker를 반복 실행해도 달라지지 않는다.
 
@@ -129,11 +133,11 @@ Cache는 build/user/format signature를 포함한 format 3이며 저장 후 6시
 1. 활성 bundle 확인과 model memory cache 조회
 2. DB에서 현재 행동·온보딩·OTT·제외 정보 조회
 3. 장기·단기 runtime profile 생성
-4. 저장된 LightFM top-150 조회
-5. 장기 profile 기반 ontology 후보 최대 100개 조회
+4. 초기 자격을 통과해 저장된 LightFM top-150 조회
+5. 장기 profile 기반 ontology 원본 후보를 넓게 계산하고 초기 자격 통과 후보 최대 100개 확정
 6. 단기 candidate cache 조회, 필요 시 bounded DB fallback
 7. LightFM user-identity 협업 성분 감쇠 후 source별 percentile 정규화와 model/ontology 의미 일치 기반 후보 병합
-8. hard filter 적용, 탈락 수만큼 예비 50개 검사
+8. watched/passed·blacklist·세션·OTT 요청 최종 필터 적용, 탈락 수만큼 예비 50개 검사
 9. 최대 100개 ontology 상세 분석
 10. personal/ontology 점수와 정책 효과 계산
 11. drift인 경우 short-only lane 적용
@@ -143,7 +147,7 @@ Cache는 build/user/format signature를 포함한 format 3이며 저장 후 6시
 
 Personal/ontology 기본 비율은 `0.75/0.25`다. Quality, negative, OTT와 반복 정책은 bounded adjustment로 적용하며 상세 숫자는 [04 LightFM 조정 지점](04_lightfm_tuning.md)에 있다.
 
-장기 model과 장기 ontology가 함께 있을 때의 source 선택 비율은 위 최종 `personal/ontology` 점수 비율과 별개다. model/ontology 상위 50개 의미 일치율로 model weight `0.45~0.65`를 정한다. 초기 사용자 수가 적거나 취향 분포가 한쪽으로 몰리면 협업 신뢰도로 LightFM 내부 user-identity 성분만 줄인다. 장르·키워드 등 semantic LightFM 성분은 유지하며, model source 전체를 줄여 ontology source에 넘기지 않는다.
+장기 model과 장기 ontology가 함께 있을 때의 source 선택 비율은 위 최종 `personal/ontology` 점수 비율과 별개다. model/ontology 상위 50개 영화 ID 일치율이 없으면 model/ontology `0.65/0.35`, 높아질수록 최대 `0.55/0.45`까지 이동한다. 초기 사용자 수가 적거나 취향 분포가 한쪽으로 몰리면 협업 신뢰도로 LightFM 내부 user-identity 성분만 줄인다. 장르·키워드 등 semantic LightFM 성분은 유지하며, model source 전체를 줄여 ontology source에 넘기지 않는다. 후보 선택 점수는 Top 150 선정에만 쓰고 최종 personal 점수에는 재사용하지 않는다.
 
 ## Cold-start 요청
 
@@ -160,16 +164,16 @@ Model identity가 없는 사용자는 온보딩 장르와 선호 영화로 featu
 
 ## 최종 정책 순서
 
-1. DB 존재, 상태, adult/title 조건
+1. 초기 자격에서 확인한 DB 존재, 상태, adult/title 조건을 방어적으로 재확인
 2. watched, passed, blacklist와 요청에 전달된 session exclusion. 현재 session 입력 연결은 미구현이다.
-3. OTT mode filter
+3. OTT mode 최종 필터
 4. personal score와 ontology score 결합
 5. catalog 신뢰도, recency, OTT bonus와 semantic negative
 6. drift short-only lane
 7. genre/actor/director/theme/mood 반복 감점
 8. 결정적 MMR과 최종 tie-break
 
-Vote count 20 미만은 최대 0.05 soft 감점을 받지만 일반 후보의 최소 투표 수 hard filter는 없다. 장르-only cold 방어 경로의 최소 1표 조건은 별도다.
+Vote count 20 미만은 최대 0.05 soft 감점을 받는다. 모든 영화에 대한 최소 투표 수 hard filter는 없지만, 학습 행동 지지가 없고 신작 보호 기간 180일도 지난 장기 cold item은 초기 자격에서 `vote_count >= 20`을 요구한다. 장르-only cold-start 방어 경로의 최소 1표 조건은 별도다.
 
 ## 사용자 행동별 반영
 

@@ -28,13 +28,13 @@ README -> 01 -> 07 -> 08
 
 ## 현재 기준점
 
-- 기준일: `2026-09-07`
+- 기준일: `2026-09-10`
 - ontology build: `22`
-- model: `hybrid-f98c2b108d40-1bb16d4f94a8-e2a5a2a2e0ca-fd3fb08817a5-bd6b02e4c74e-7b869d3b`
-- candidate snapshot: `cand-84861554e2eed221384722f3`
+- model: `hybrid-0088e46c78e6-8ee76ae0cc79-51c5cf5ab1c1-32da0f11b507-16fe5319a5c2-7b869d3b`
+- candidate snapshot: `cand-72e516bd88d5e91a4a67ae1a`
 - policy: `v3-policy-quality-v1`
-- serving bundle: `bundle-212aeed091eac0283b15b5cb`
-- V3 단위 테스트: `130개` 통과
+- serving bundle: `bundle-c43cac19fbffc33c399f75b9`
+- V3 단위 테스트: `143개` 통과
 - 공용 추천 executor 테스트: `2개` 통과
 - 직전 응답 시간 기준선: [v3_online_baseline_20260827T230722Z.json](diagnostics/v3_online_baseline_20260827T230722Z.json)
 - 현재 LightFM 기준선: [v3_lightfm_ablation_20260907T102400Z.md](diagnostics/v3_lightfm_ablation_20260907T102400Z.md)
@@ -44,7 +44,7 @@ README -> 01 -> 07 -> 08
 Phase A~F와 통합 bundle 검증은 완료됐다. 주요 반영 내용은 다음과 같다.
 
 - LightFM feature block 정규화와 수치 health gate
-- known-user 공통 인기 점수 90% centering
+- known-user 공통 인기 점수 50% centering
 - `inactive`, `recent_interest`, `stable`, `drift` 단기 상태 분리
 - drift 사용자에게만 15~40% short-only lane 적용
 - ontology 25% 기여 유지와 LightFM 인과 설명 분리
@@ -55,9 +55,11 @@ Phase A~F와 통합 bundle 검증은 완료됐다. 주요 반영 내용은 다�
 - 인기 영화·과다 행동 사용자 학습 기여 상한과 user identity/semantic 비율 완화
 - 사용자 집단·입력·후보 다양성과 사용자별 근거량에 따른 동적 협업 신뢰도
 - 협업 신뢰도에 따른 LightFM 내부 user-identity 성분 감쇠
-- model/ontology 상위 후보 일치율에 따른 LightFM 후보 비중 `45~65%` 유지
+- model/ontology 상위 후보 불일치 시 `65/35`, 일치율 상승 시 최대 `55/45`로 후보 선택
+- 후보 선택용 ontology 점수와 최종 상세 ontology 점수를 분리해 최종 점수에는 한 번만 반영
+- saved/pinned 공통 반감기 365일과 학습 당시 온보딩 전용 서명 기반 known-user 변경 감지
 
-직전 응답 시간 기준선은 known 평균 `2.973초`, p95 `3.430초`다. 성능 검증은 보류했으므로 현재 Phase I bundle 전체에 대한 latency baseline은 다시 실행하지 않았다.
+직전 다건 응답 시간 기준선은 known 평균 `2.973초`, p95 `3.430초`다. 현재 bundle 활성화 smoke test의 known-user 단일 요청은 `3.003초`였으며, 별도 부하 latency baseline은 다시 실행하지 않았다.
 
 ## 해석 제한
 

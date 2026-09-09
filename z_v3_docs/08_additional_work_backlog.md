@@ -21,7 +21,7 @@
 - short-term 24시간 누적, threshold, debounce, lease, cache format 3 완료
 - stable/drift 판정과 drift short-only lane 완료
 - LightFM 수치 health gate, score centering, ontology ablation, catalog/negative 정책 검증 완료
-- 최종 V3 단위 테스트 `130개`, 공용 추천 executor 테스트 `2개` 통과
+- 최종 V3 단위 테스트 `142개`, 공용 추천 executor 테스트 `2개` 통과
 - 요청 bounded executor와 후보 user-block 동적 큐 비교·적용 완료
 
 현재 artifact와 응답 시간은 [README](README.md)를 기준으로 한다.
@@ -128,12 +128,15 @@
 - 불변식: 제외 위반, 사용자 내부 중복, 반복 top-5 영화의 현재 장르 불일치는 모두 0건이었다.
 - 남은 문제: top-10 저투표 6건, 과다 장르 metadata 11건, 높은 부정 근거 충돌 9건이 남았다.
 
-### P2-02B. Ontology·short 후보의 catalog trust
+### P2-02B. 장기 후보의 catalog trust와 필터 역할 분리
 
-- 상태: `다음 품질 작업`
+- 상태: `장기 4개 사용자 유형 완료, short-term 검증 대기`
 - 확인 결과: corrected 결과의 top-10 저투표 후보는 240칸 중 6건이며 mixed/drift의 ontology·short source에 집중됐다. 전체 top-20 기준 저투표 비율은 stable `1.7%`, mixed `19.2%`, drift `12.5%`, negative-heavy `2.5%`다.
 - 문제: 의미 일치가 강한 저투표 영화와 장르 8개 이상 metadata 영화가 catalog soft 감점 뒤에도 남는다. 일부는 drift short-only lane에서 강제 선택된다.
-- 작업: source별 vote 분포를 고정 표본에서 비교하고 zero-vote 제외, vote 신뢰도 곱, lane 진입 전 catalog gate를 ablation한다. 무조건적인 인기 영화 우대나 전체 long-tail 제거로 해결하지 않는다.
+- 적용: field별 상한과 keyword IDF가 들어간 artifact 행렬을 장기 ontology 후보 생성과 상세 분석에서 공통 사용한다. 후보 목록 불일치 시 model/ontology 비율을 `0.65/0.35`로 두고, 후보 선택 ontology 점수를 최종 personal 성분에서 제거했다. 초기 catalog 자격 필터는 DB/제목/adult/차단 상태와 장기 mature cold-item 신뢰를 후보 Top-K 전에 처리한다. 요청 최종 필터는 watched/passed, blacklist, 세션과 OTT를 처리하고 예비 50개로 보충한다.
+- 장기 교차 검증: `dense_focused`, `dense_diverse`, `light_focused`, `light_diverse` 각 1명에서 최종 후보 100개와 holdout positive 오차단 0건을 확인했다. Recall@100은 모두 유지됐고 NDCG@100 변화는 `0`, `-0.0021`, `0`, `+0.0011`이었다. 기존 17개만 남았던 `light_focused` 사용자도 100개로 복구됐다.
+- 실제 사전 계산 검증: 비활성 모델 전체 catalog 1,176,540편 중 초기 자격 54,789편을 남겼다. 사용자 240명 모두 top-150을 채워 총 36,000개를 생성했고 실패는 0명, 후보 점수 계산은 7.27초였다. 검증 snapshot `cand-60190ab9647bf37f38ed2177`은 게시하거나 활성화하지 않았다.
+- 남은 작업: short-term 후보에도 같은 신뢰도 원칙이 필요한지 별도로 확인한다. source별 vote 분포를 고정 표본에서 비교하되 무조건적인 인기 영화 우대나 전체 long-tail 제거로 해결하지 않는다.
 - 완료 조건: stable/drift top-5 방향과 현재 고유 영화 수준을 유지하면서 저투표·과다 장르 후보를 낮춘다.
 
 ### P2-03. Source별 calibration과 새 reranker
@@ -182,8 +185,9 @@
 
 ### P3-01. 장기 ontology 후보 cache 또는 사전 계산
 
-- 상태: `성능 단계로 보류`
+- 상태: `field-budgeted artifact 경로 개선, cache·사전 계산은 보류`
 - 문제: Phase H의 장기 ontology 후보는 bounded set query지만 known 요청마다 실행한다. 12명 순차 품질 진단에서 기존 경로보다 유의미한 추가 지연이 확인됐다.
+- 현재: field-budgeted artifact에서는 graph 전체 통계를 요청마다 계산하지 않고 sparse item feature 행렬을 blockwise 조회한다. 사용자 `44652`의 장기 ontology 후보 100개는 `0.298초`였다. 구형 artifact의 DB fallback과 profile 변경 cache 정책은 그대로 남아 있다.
 - 원칙: 품질 source를 제거하지 않고 장기 profile signature와 ontology build에 묶인 cache 또는 행동 변경 기반 사전 계산으로 옮긴다. DB fallback과 source별 score trace는 유지한다.
 - 검증: cache hit/miss 결과 순서가 같아야 하며, profile 변경 후 stale 후보 사용 범위와 TTL을 명시한다. 현재 bundle의 정확한 단일 요청 latency는 성능 작업 재개 시 다시 측정한다.
 
