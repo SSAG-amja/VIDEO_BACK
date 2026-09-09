@@ -16,6 +16,7 @@ from evaluation.provenance import collect_runtime_provenance, sha256_file
 
 
 SEOUL = timezone(timedelta(hours=9), name="Asia/Seoul")
+METRIC_PROTOCOL_VERSION = "fixed-holdout-ranking-v2"
 COHORTS_PATH = Path(__file__).with_name("cohorts.json")
 CASES_PATH = Path(__file__).with_name("data") / "fixed_cases.jsonl.gz"
 MANIFEST_PATH = Path(__file__).with_name("data") / "fixed_cases_manifest.json"
@@ -119,56 +120,134 @@ def run_benchmark(
     cohort_results: dict[str, dict] = {}
     engine_metadata: dict | None = None
 
-    for cohort_name, user_ids in cohorts.items():
-        engine = engine_factory()
-        try:
-            cohort_cases = [cases[user_id] for user_id in user_ids]
-            engine.prepare([case.input_data for case in cohort_cases])
-            current_metadata = {
-                "name": str(engine.name),
-                "version": str(engine.version),
-            }
-            metadata_provider = getattr(engine, "metadata", None)
-            if callable(metadata_provider):
-                current_metadata.update(metadata_provider())
-            if engine_metadata is None:
-                engine_metadata = current_metadata
-            elif engine_metadata != current_metadata:
-                raise ValueError("engine name/version changed between cohorts")
-            cohort_clock = time.perf_counter()
-            print(f"[{cohort_name}] evaluating {len(user_ids)} users", flush=True)
-            per_user = []
-            progress_interval = max(1, len(cohort_cases) // 10)
-            def evaluate_case(case: EvaluationCase) -> dict:
-                ranking = engine.rank(case.input_data)
-                return {
-                    "user_id": case.input_data.user_id,
-                    **evaluate_ranking(ranking, case.ground_truth),
-                }
+    def close_engine(engine) -> None:
+        close = getattr(engine, "close", None)
+        if callable(close):
+            close()
 
-            with ThreadPoolExecutor(max_workers=4, thread_name_prefix="evaluation") as executor:
-                futures = [executor.submit(evaluate_case, case) for case in cohort_cases]
-                for index, future in enumerate(as_completed(futures), start=1):
-                    per_user.append(future.result())
-                    if index == 1 or index == len(cohort_cases) or index % progress_interval == 0:
-                        elapsed = time.perf_counter() - cohort_clock
-                        rate = index / elapsed if elapsed > 0 else 0.0
-                        remaining = (len(cohort_cases) - index) / rate if rate > 0 else 0.0
-                        print(
-                            f"[{cohort_name}] {index}/{len(cohort_cases)} "
-                            f"elapsed={elapsed:.1f}s eta={remaining:.1f}s",
-                            flush=True,
-                        )
-            per_user.sort(key=lambda row: row["user_id"])
-            cohort_results[cohort_name] = {
-                "user_ids": user_ids,
-                "summary": summarize(per_user),
-                "per_user": per_user,
+    def evaluate_prepared_engine(cohort_name: str, user_ids: list[str], engine) -> None:
+        nonlocal engine_metadata
+        cohort_cases = [cases[user_id] for user_id in user_ids]
+        current_metadata = {
+            "name": str(engine.name),
+            "version": str(engine.version),
+        }
+        metadata_provider = getattr(engine, "metadata", None)
+        if callable(metadata_provider):
+            current_metadata.update(metadata_provider())
+        if engine_metadata is None:
+            engine_metadata = current_metadata
+        elif engine_metadata != current_metadata:
+            raise ValueError("engine name/version changed between cohorts")
+        cohort_clock = time.perf_counter()
+        print(f"[{cohort_name}] evaluating {len(user_ids)} users", flush=True)
+        per_user = []
+        progress_interval = max(1, len(cohort_cases) // 10)
+
+        def evaluate_case(case: EvaluationCase) -> dict:
+            ranking = engine.rank(case.input_data)
+            return {
+                "user_id": case.input_data.user_id,
+                **evaluate_ranking(ranking, case.ground_truth),
             }
+
+        batch_ranker = getattr(engine, "rank_many", None)
+        if callable(batch_ranker):
+            truth_by_user = {
+                case.input_data.user_id: case.ground_truth for case in cohort_cases
+            }
+            ranked_results = batch_ranker([case.input_data for case in cohort_cases])
+            result_stream = (
+                {
+                    "user_id": user_id,
+                    **evaluate_ranking(ranking, truth_by_user[user_id]),
+                }
+                for user_id, ranking in ranked_results
+            )
+        else:
+            executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="evaluation")
+            futures = [executor.submit(evaluate_case, case) for case in cohort_cases]
+            result_stream = (future.result() for future in as_completed(futures))
+        try:
+            for index, result in enumerate(result_stream, start=1):
+                per_user.append(result)
+                if index == 1 or index == len(cohort_cases) or index % progress_interval == 0:
+                    elapsed = time.perf_counter() - cohort_clock
+                    rate = index / elapsed if elapsed > 0 else 0.0
+                    remaining = (len(cohort_cases) - index) / rate if rate > 0 else 0.0
+                    print(
+                        f"[{cohort_name}] {index}/{len(cohort_cases)} "
+                        f"elapsed={elapsed:.1f}s eta={remaining:.1f}s",
+                        flush=True,
+                    )
         finally:
-            close = getattr(engine, "close", None)
-            if callable(close):
-                close()
+            if not callable(batch_ranker):
+                executor.shutdown(wait=True)
+        per_user.sort(key=lambda row: row["user_id"])
+        cohort_results[cohort_name] = {
+            "user_ids": user_ids,
+            "summary": summarize(per_user),
+            "per_user": per_user,
+        }
+
+    first_engine = engine_factory()
+    cohort_workers = max(1, int(getattr(first_engine, "parallel_cohort_workers", 1)))
+    if cohort_workers == 1:
+        for cohort_index, (cohort_name, user_ids) in enumerate(cohorts.items()):
+            engine = first_engine if cohort_index == 0 else engine_factory()
+            try:
+                cohort_cases = [cases[user_id] for user_id in user_ids]
+                engine.prepare([case.input_data for case in cohort_cases])
+                evaluate_prepared_engine(cohort_name, user_ids, engine)
+            finally:
+                close_engine(engine)
+    else:
+        # Pair adjacent workloads in descending order. With two resident models this
+        # minimizes the sum of each batch's longest training time.
+        ordered_cohorts = sorted(cohorts.items(), key=lambda item: int(item[0]), reverse=True)
+        run_namespace = started_at.strftime("%m%d%H%M%S%f")
+        unused_first_engine = first_engine
+        for offset in range(0, len(ordered_cohorts), cohort_workers):
+            batch = []
+            closed_engine_ids: set[int] = set()
+            try:
+                for cohort_name, user_ids in ordered_cohorts[offset:offset + cohort_workers]:
+                    engine = unused_first_engine or engine_factory()
+                    unused_first_engine = None
+                    batch.append((cohort_name, user_ids, engine))
+                    configure = getattr(engine, "configure_cohort_execution", None)
+                    if callable(configure):
+                        configure(namespace=f"{run_namespace}-{cohort_name}")
+                with ThreadPoolExecutor(
+                    max_workers=len(batch),
+                    thread_name_prefix="evaluation-training",
+                ) as executor:
+                    preparations = [
+                        executor.submit(
+                            engine.prepare,
+                            [cases[user_id].input_data for user_id in user_ids],
+                        )
+                        for _, user_ids, engine in batch
+                    ]
+                    for preparation in preparations:
+                        preparation.result()
+
+                # Inference already uses four processes, so run it serially to avoid
+                # nested CPU oversubscription and release the smaller model first.
+                for cohort_name, user_ids, engine in reversed(batch):
+                    try:
+                        evaluate_prepared_engine(cohort_name, user_ids, engine)
+                    finally:
+                        close_engine(engine)
+                        closed_engine_ids.add(id(engine))
+            finally:
+                for _, _, engine in batch:
+                    if id(engine) not in closed_engine_ids:
+                        close_engine(engine)
+
+        cohort_results = {
+            cohort_name: cohort_results[cohort_name] for cohort_name in cohorts
+        }
 
     finished_at = datetime.now(SEOUL)
     payload = {
@@ -177,6 +256,12 @@ def run_benchmark(
         "finished_at": finished_at.isoformat(timespec="seconds"),
         "elapsed_seconds": round(time.perf_counter() - started_clock, 6),
         "engine": engine_metadata,
+        "metric_protocol": {
+            "version": METRIC_PROTOCOL_VERSION,
+            "cutoff": "ceil(holdout_count * 0.20)",
+            "tie_aware_precision": "rating >= rating_at_cutoff; denominator = cutoff",
+            "final_score": "0.8 * ndcg_at_20_percent + 0.2 * tie_aware_precision_at_20_percent",
+        },
         "dataset": dataset_metadata,
         "runtime": runtime_provenance,
         "cohorts": cohort_results,
@@ -194,7 +279,12 @@ def summary_path_for(output_path: Path) -> Path:
 
 
 def write_summary_csv(output_path: Path, payload: dict) -> None:
-    metric_names = ("coverage", "ndcg_at_20_percent", "recall_at_20_percent", "final_score")
+    metric_names = (
+        "coverage",
+        "ndcg_at_20_percent",
+        "tie_aware_precision_at_20_percent",
+        "final_score",
+    )
     fieldnames = [
         "test_name", "engine", "engine_version", "started_at", "finished_at",
         "elapsed_seconds", "cohort", "users", *(f"{name}_mean" for name in metric_names),
@@ -227,15 +317,15 @@ def evaluate_ranking(ranking: Sequence[int], truth: dict[int, float]) -> dict[st
             seen.add(movie_id)
     k = max(1, math.ceil(len(truth) * 0.20))
     ndcg_value = _ndcg(ranked, truth, k)
-    recall_value = _recall(ranked, truth, k)
+    tie_aware_precision_value = _tie_aware_precision(ranked, truth, k)
     return {
         "candidate_count": len(truth),
         "returned_candidate_count": len(seen),
         "coverage": len(seen) / len(truth) if truth else 0.0,
         "k_at_20_percent": k,
         "ndcg_at_20_percent": ndcg_value,
-        "recall_at_20_percent": recall_value,
-        "final_score": 0.8 * ndcg_value + 0.2 * recall_value,
+        "tie_aware_precision_at_20_percent": tie_aware_precision_value,
+        "final_score": 0.8 * ndcg_value + 0.2 * tie_aware_precision_value,
     }
 
 
@@ -243,7 +333,7 @@ def summarize(rows: Sequence[dict]) -> dict:
     metric_names = (
         "coverage",
         "ndcg_at_20_percent",
-        "recall_at_20_percent",
+        "tie_aware_precision_at_20_percent",
         "final_score",
     )
     result = {"users": len(rows), "metrics": {}}
@@ -264,9 +354,12 @@ def _ndcg(ranked: Sequence[int], truth: dict[int, float], k: int) -> float:
     return _dcg(actual) / ideal_dcg if ideal_dcg else 0.0
 
 
-def _recall(ranked: Sequence[int], truth: dict[int, float], k: int) -> float:
-    relevant = {movie_id for movie_id, rating in truth.items() if rating >= 3.5}
-    return sum(movie_id in relevant for movie_id in ranked[:k]) / len(relevant) if relevant else 0.0
+def _tie_aware_precision(ranked: Sequence[int], truth: dict[int, float], k: int) -> float:
+    cutoff_rating = sorted(truth.values(), reverse=True)[min(k, len(truth)) - 1]
+    accepted = {
+        movie_id for movie_id, rating in truth.items() if rating >= cutoff_rating
+    }
+    return sum(movie_id in accepted for movie_id in ranked[:k]) / k
 
 
 def _relevance(rating: float) -> int:
