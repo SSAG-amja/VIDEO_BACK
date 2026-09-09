@@ -3,7 +3,11 @@ from __future__ import annotations
 import math
 import unittest
 from dataclasses import replace
+from types import SimpleNamespace
 from unittest.mock import patch
+
+import numpy as np
+from scipy.sparse import csr_matrix
 
 from app.services.recsys.v3.domain.behavior import SnapshotAction
 from app.services.recsys.v3.retrieval.candidate_merger import merge_candidates
@@ -23,10 +27,32 @@ from app.services.recsys.v3.retrieval.retrieval_schemas import (
 from app.services.recsys.v3.retrieval.long_term_ontology_retriever import (
     retrieve_long_term_ontology_candidates,
 )
+from app.services.recsys.v3.retrieval.ontology_feature_retriever import (
+    build_budgeted_candidate_aggregate_rows,
+    retrieve_budgeted_ontology_rows,
+)
 from app.services.recsys.v3.retrieval.score_normalizer import percentile_normalize
 from app.services.recsys.v3.retrieval.short_term_retriever import build_short_term_feature_rows
-from app.services.recsys.v3.domain.schemas import OttFilterMode
+from app.services.recsys.v3.domain.schemas import (
+    FeatureDirection,
+    OttFilterMode,
+    ProfileFeatureSignal,
+)
 from tests.test_v3_profile_builder import AS_OF, edge, signal
+
+
+def catalog_movie(movie_id: int) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=movie_id,
+        adult=False,
+        title=f"movie-{movie_id}",
+        title_ko=None,
+        status=None,
+        popularity=1.0,
+        vote_average=7.0,
+        vote_count=100,
+        release_date=None,
+    )
 
 
 def retrieval_profile():
@@ -185,10 +211,10 @@ class CandidateMergerTest(unittest.TestCase):
         )
         self.assertGreaterEqual(ontology_count, 20)
         self.assertEqual(result.diagnostics.long_term_ontology_floor_count, 20)
-        self.assertEqual(result.diagnostics.effective_model_weight, 0.45)
+        self.assertEqual(result.diagnostics.effective_model_weight, 0.65)
         self.assertEqual(
             result.diagnostics.effective_long_term_ontology_weight,
-            0.55,
+            0.35,
         )
 
     def test_model_and_long_term_ontology_scores_remain_separate(self) -> None:
@@ -210,7 +236,8 @@ class CandidateMergerTest(unittest.TestCase):
         self.assertEqual(candidate.normalized_long_term_score, 0.5)
         self.assertEqual(candidate.normalized_long_term_ontology_score, 0.5)
         self.assertEqual(result.diagnostics.model_ontology_agreement, 1.0)
-        self.assertEqual(result.diagnostics.effective_model_weight, 0.65)
+        self.assertEqual(result.diagnostics.effective_model_weight, 0.55)
+        self.assertEqual(result.diagnostics.effective_long_term_ontology_weight, 0.45)
 
     def test_collaborative_confidence_does_not_reduce_model_lane_weight(self) -> None:
         result = merge_candidates(
@@ -227,11 +254,11 @@ class CandidateMergerTest(unittest.TestCase):
             limit=3,
         )
 
-        self.assertEqual(result.diagnostics.base_model_weight, 0.55)
-        self.assertAlmostEqual(result.diagnostics.effective_model_weight, 0.55)
+        self.assertEqual(result.diagnostics.base_model_weight, 0.60)
+        self.assertAlmostEqual(result.diagnostics.effective_model_weight, 0.60)
         self.assertAlmostEqual(
             result.diagnostics.effective_long_term_ontology_weight,
-            0.45,
+            0.40,
         )
         self.assertEqual(result.diagnostics.collaborative_effective_confidence, 0.25)
 
@@ -333,11 +360,15 @@ class LongTermOntologyRetrieverTest(unittest.TestCase):
     ) -> None:
         profile = retrieval_profile()
 
-        result = retrieve_long_term_ontology_candidates(
-            object(),
-            ontology_build_id=22,
-            profile=profile,
-        )
+        with patch(
+            "app.services.recsys.v3.retrieval.initial_candidate_filter.load_movies_by_ids",
+            return_value=[catalog_movie(700), catalog_movie(800)],
+        ):
+            result = retrieve_long_term_ontology_candidates(
+                object(),
+                ontology_build_id=22,
+                profile=profile,
+            )
 
         validate_build.assert_called_once_with(unittest.mock.ANY, 22)
         feature_rows = load_rows.call_args.kwargs["feature_rows"]
@@ -345,6 +376,113 @@ class LongTermOntologyRetrieverTest(unittest.TestCase):
         self.assertEqual([item.movie_id for item in result.candidates], [700, 800])
         self.assertEqual(result.candidates[0].ontology_raw_score, 2.5)
         self.assertEqual(result.diagnostics.profile_feature_count, len(feature_rows))
+
+    @patch(
+        "app.services.recsys.v3.retrieval.long_term_ontology_retriever."
+        "load_short_term_candidate_rows"
+    )
+    @patch(
+        "app.services.recsys.v3.retrieval.long_term_ontology_retriever."
+        "validate_profile_build"
+    )
+    def test_budgeted_artifact_avoids_runtime_graph_candidate_query(
+        self,
+        validate_build,
+        load_rows,
+    ) -> None:
+        profile = retrieval_profile()
+        artifact = budgeted_artifact()
+
+        with patch(
+            "app.services.recsys.v3.retrieval.initial_candidate_filter.load_movies_by_ids",
+            return_value=[catalog_movie(10)],
+        ):
+            result = retrieve_long_term_ontology_candidates(
+                object(),
+                ontology_build_id=22,
+                profile=profile,
+                artifact=artifact,
+                limit=3,
+            )
+
+        validate_build.assert_called_once_with(unittest.mock.ANY, 22)
+        load_rows.assert_not_called()
+        self.assertEqual(result.diagnostics.query_count, 2)
+        self.assertEqual([item.movie_id for item in result.candidates], [10])
+
+
+class OntologyFeatureRetrieverTest(unittest.TestCase):
+    def test_missing_fields_do_not_transfer_their_budget_to_one_keyword(self) -> None:
+        artifact = budgeted_artifact()
+        features = (
+            ProfileFeatureSignal(
+                feature=FeatureName.GENRE,
+                ref_id="10749",
+                direction=FeatureDirection.POSITIVE,
+                score=1.0,
+            ),
+            ProfileFeatureSignal(
+                feature=FeatureName.KEYWORD,
+                ref_id="818",
+                direction=FeatureDirection.POSITIVE,
+                score=1.0,
+            ),
+        )
+
+        rows = retrieve_budgeted_ontology_rows(
+            artifact,
+            features=features,
+            excluded_movie_ids=(),
+            limit=3,
+        )
+
+        self.assertEqual([movie_id for movie_id, _score in rows], [20, 10, 30])
+        self.assertAlmostEqual(dict(rows)[30], 0.02, places=6)
+        self.assertLess(dict(rows)[30], dict(rows)[20])
+
+    def test_detailed_aggregate_uses_same_bounded_feature_values(self) -> None:
+        artifact = budgeted_artifact()
+        rows = build_budgeted_candidate_aggregate_rows(
+            artifact,
+            candidate_movie_ids=(20, 30),
+            profile_rows=(
+                ("has_genre", "genre", "genre", "10749", "long_term", "positive", 1.0),
+                ("has_keyword", "keyword", "keyword", "818", "long_term", "positive", 1.0),
+            ),
+        )
+
+        by_movie_feature = {(row[0], row[1]): row[4] for row in rows}
+        self.assertAlmostEqual(by_movie_feature[(20, "genre")], 0.25, places=6)
+        self.assertAlmostEqual(by_movie_feature[(20, "keyword")], 0.02, places=6)
+        self.assertAlmostEqual(by_movie_feature[(30, "keyword")], 0.02, places=6)
+
+
+def budgeted_artifact() -> SimpleNamespace:
+    movie_ids = np.asarray([10, 20, 30], dtype=np.int64)
+    item_features = csr_matrix(
+        np.asarray(
+            [
+                [0.0, 0.0, 0.0, 0.125, 0.0],
+                [0.0, 0.0, 0.0, 0.25, 0.02],
+                [0.0, 0.0, 0.0, 0.0, 0.02],
+            ],
+            dtype=np.float32,
+        )
+    )
+    return SimpleNamespace(
+        ontology_build_id=22,
+        movie_ids=movie_ids,
+        item_features=item_features,
+        item_semantic_feature_index={"genre:10749": 3, "keyword:818": 4},
+        movie_index=lambda movie_id: {10: 0, 20: 1, 30: 2}.get(movie_id),
+        manifest={
+            "feature_exports": {
+                "item_representation_policy": "supported_identity_field_budgeted",
+                "item_semantic_field_budgets": {"genre": 0.25, "keyword": 0.20},
+                "item_keyword_weighting_policy": "normalized_idf",
+            }
+        },
+    )
 
 
 if __name__ == "__main__":

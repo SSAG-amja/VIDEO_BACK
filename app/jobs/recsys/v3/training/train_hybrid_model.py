@@ -21,7 +21,9 @@ from app.services.recsys.v3.config import (
     LIGHTFM_HYBRID_EPOCHS,
     LIGHTFM_HYBRID_FEATURE_REPRESENTATION,
     LIGHTFM_HYBRID_ITEM_ALPHA,
+    LIGHTFM_HYBRID_ITEM_FIELD_BUDGETS,
     LIGHTFM_HYBRID_ITEM_IDENTITY_WEIGHT,
+    LIGHTFM_HYBRID_ITEM_KEYWORD_WEIGHTING,
     LIGHTFM_HYBRID_ITEM_SEMANTIC_WEIGHT,
     LIGHTFM_HYBRID_KNOWN_USER_SCORE_CENTERING_WEIGHT,
     LIGHTFM_HYBRID_LEARNING_RATE,
@@ -127,11 +129,22 @@ def main() -> None:
             supported_movie_ids=supported_movie_ids,
             identity_weight=args.item_identity_weight,
             semantic_weight=args.item_semantic_weight,
+            field_budgets=(
+                LIGHTFM_HYBRID_ITEM_FIELD_BUDGETS
+                if args.feature_representation == "supported_identity_field_budgeted"
+                else None
+            ),
+            keyword_weighting=(
+                LIGHTFM_HYBRID_ITEM_KEYWORD_WEIGHTING
+                if args.feature_representation == "supported_identity_field_budgeted"
+                else "none"
+            ),
         )
         user_export = export_user_features(
             db,
             user_ids=dataset.user_ids,
             item_export=item_export,
+            positive_interactions=dataset.positives,
         )
         user_export = transform_user_feature_export(
             user_export,

@@ -21,6 +21,7 @@ from app.services.recsys.v3.config import (
     POLICY_RECENCY_BONUS_MAX,
     POLICY_RECENCY_WINDOW_DAYS,
     POLICY_REPETITION_PENALTY_MAX,
+    SHORT_TERM_DRIFT_MAX_WEIGHT,
     POLICY_SHORT_TERM_MAX_RATIO,
     POLICY_SHORT_TERM_MIN_RATIO,
 )
@@ -198,7 +199,10 @@ def _score_candidate(
     component_weights: PolicyComponentWeights,
     adjustment_settings: PolicyAdjustmentSettings,
 ) -> RankedPolicyCandidate:
-    personal_component = component_weights.personal * candidate.candidate_selection_score
+    personal_component = component_weights.personal * _personal_score_basis(
+        candidate,
+        profile=profile,
+    )
     ontology_raw = analysis.long_positive_total + (
         component_weights.ontology_short_term_multiplier * analysis.short_positive_total
     )
@@ -266,6 +270,27 @@ def _score_candidate(
         metadata=metadata,
         score=trace,
         reasons=_build_reasons(analysis, trace),
+    )
+
+
+def _personal_score_basis(
+    candidate: MergedCandidate,
+    *,
+    profile: UserProfileBundle,
+) -> float:
+    sources = set(candidate.sources)
+    if sources & {
+        CandidateSource.FEATURE_ONLY_MODEL,
+        CandidateSource.COLD_START,
+        CandidateSource.ONTOLOGY_COLD_ITEM,
+    }:
+        return candidate.candidate_selection_score
+
+    drift_weight = profile.short_term.drift_confidence * SHORT_TERM_DRIFT_MAX_WEIGHT
+    return round(
+        (1.0 - drift_weight) * candidate.normalized_long_term_score
+        + drift_weight * candidate.normalized_short_term_score,
+        8,
     )
 
 

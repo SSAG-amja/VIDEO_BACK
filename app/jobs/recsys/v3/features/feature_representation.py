@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-import hashlib
+from collections.abc import Mapping
 from dataclasses import replace
+import hashlib
+import math
 from typing import Literal
 
 import numpy as np
@@ -18,6 +20,7 @@ FeatureRepresentationPolicy = Literal[
     "full_identity_raw",
     "full_identity_normalized",
     "supported_identity_normalized",
+    "supported_identity_field_budgeted",
     "metadata_only_normalized",
 ]
 
@@ -25,8 +28,12 @@ FEATURE_REPRESENTATION_POLICIES: tuple[FeatureRepresentationPolicy, ...] = (
     "full_identity_raw",
     "full_identity_normalized",
     "supported_identity_normalized",
+    "supported_identity_field_budgeted",
     "metadata_only_normalized",
 )
+
+ITEM_SEMANTIC_FIELDS = ("genre", "keyword", "actor", "director", "theme", "mood")
+KeywordWeightingPolicy = Literal["none", "normalized_idf"]
 
 
 def transform_item_feature_export(
@@ -36,6 +43,8 @@ def transform_item_feature_export(
     supported_movie_ids: frozenset[int] = frozenset(),
     identity_weight: float = 1.0,
     semantic_weight: float = 1.0,
+    field_budgets: Mapping[str, float] | None = None,
+    keyword_weighting: KeywordWeightingPolicy = "none",
 ) -> ItemFeatureExport:
     _validate_policy(policy)
     if policy == "full_identity_raw":
@@ -44,10 +53,25 @@ def transform_item_feature_export(
 
     movie_count = len(item_export.movie_ids)
     source = item_export.item_features.tocsr(copy=False).astype(np.float32)
-    semantic = _l1_normalize_rows(source[:, movie_count:]) * semantic_weight
+    if policy == "supported_identity_field_budgeted":
+        budgets = _validate_field_budgets(field_budgets)
+        semantic = _field_budget_semantics(
+            source[:, movie_count:],
+            feature_tokens=item_export.feature_tokens[movie_count:],
+            field_budgets=budgets,
+            keyword_weighting=keyword_weighting,
+        ) * semantic_weight
+    else:
+        budgets = {}
+        if keyword_weighting != "none":
+            raise ValueError("keyword weighting requires field-budgeted representation")
+        semantic = _l1_normalize_rows(source[:, movie_count:]) * semantic_weight
     if policy == "full_identity_normalized":
         retained_rows = np.arange(movie_count, dtype=np.int32)
-    elif policy == "supported_identity_normalized":
+    elif policy in {
+        "supported_identity_normalized",
+        "supported_identity_field_budgeted",
+    }:
         retained_rows = np.asarray(
             [
                 row
@@ -77,12 +101,18 @@ def transform_item_feature_export(
     )
     manifest = replace(
         item_export.manifest,
-        exporter_version=f"{item_export.manifest.exporter_version}+representation-v1",
+        exporter_version=(
+            f"{item_export.manifest.exporter_version}+representation-v2"
+            if policy == "supported_identity_field_budgeted"
+            else f"{item_export.manifest.exporter_version}+representation-v1"
+        ),
         matrix_nnz=int(matrix.nnz),
         export_hash=export_hash,
         representation_policy=policy,
         identity_block_weight=(0.0 if policy == "metadata_only_normalized" else identity_weight),
         semantic_block_weight=semantic_weight,
+        semantic_field_budgets=dict(budgets),
+        keyword_weighting_policy=keyword_weighting,
     )
     return replace(item_export, item_features=matrix, manifest=manifest)
 
@@ -119,6 +149,10 @@ def transform_user_feature_export(
         feature_mapping_hash=user_export.manifest.feature_mapping_hash,
         item_feature_export_hash=user_export.manifest.item_feature_export_hash,
         matrix=matrix,
+        exporter_version=user_export.manifest.exporter_version.split("+", 1)[0],
+        onboarding_profile_signature_hash=(
+            user_export.manifest.onboarding_profile_signature_hash
+        ),
     )
     manifest = replace(
         user_export.manifest,
@@ -154,6 +188,86 @@ def _l1_normalize_rows(matrix: csr_matrix) -> csr_matrix:
     normalized.eliminate_zeros()
     normalized.sort_indices()
     return normalized
+
+
+def _field_budget_semantics(
+    matrix: csr_matrix,
+    *,
+    feature_tokens: tuple[str, ...],
+    field_budgets: Mapping[str, float],
+    keyword_weighting: KeywordWeightingPolicy,
+) -> csr_matrix:
+    if matrix.shape[1] != len(feature_tokens):
+        raise ValueError("semantic feature tokens do not match matrix columns")
+    if keyword_weighting not in {"none", "normalized_idf"}:
+        raise ValueError(f"unknown keyword weighting policy: {keyword_weighting}")
+
+    family_by_column = np.empty(len(feature_tokens), dtype=np.int8)
+    family_codes = {name: index for index, name in enumerate(ITEM_SEMANTIC_FIELDS)}
+    for column, token in enumerate(feature_tokens):
+        family = token.split(":", 1)[0]
+        try:
+            family_by_column[column] = family_codes[family]
+        except KeyError as exc:
+            raise ValueError(f"unsupported item semantic feature family: {family}") from exc
+
+    weighted = matrix.tocoo(copy=True).astype(np.float32)
+    keyword_code = family_codes["keyword"]
+    keyword_idf = (
+        _normalized_idf(weighted, column_count=matrix.shape[1])
+        if keyword_weighting == "normalized_idf"
+        else np.ones(matrix.shape[1], dtype=np.float32)
+    )
+    for family, code in family_codes.items():
+        selected = family_by_column[weighted.col] == code
+        if not np.any(selected):
+            continue
+        rows = weighted.row[selected]
+        counts = np.bincount(rows, minlength=matrix.shape[0]).astype(np.float32)
+        multipliers = np.full(rows.size, float(field_budgets[family]), dtype=np.float32)
+        multipliers /= counts[rows]
+        if code == keyword_code:
+            multipliers *= keyword_idf[weighted.col[selected]]
+        weighted.data[selected] *= multipliers
+
+    result = weighted.tocsr()
+    result.eliminate_zeros()
+    result.sum_duplicates()
+    result.sort_indices()
+    return result
+
+
+def _normalized_idf(matrix, *, column_count: int) -> np.ndarray:
+    movie_count = matrix.shape[0]
+    if movie_count <= 1:
+        return np.ones(column_count, dtype=np.float32)
+    document_frequency = np.bincount(matrix.col, minlength=column_count).astype(np.float64)
+    denominator = math.log((movie_count + 1.0) / 2.0)
+    idf = np.zeros(column_count, dtype=np.float64)
+    present = document_frequency > 0.0
+    idf[present] = np.log(
+        (movie_count + 1.0) / (document_frequency[present] + 1.0)
+    ) / denominator
+    return np.clip(idf, 0.0, 1.0).astype(np.float32)
+
+
+def _validate_field_budgets(
+    field_budgets: Mapping[str, float] | None,
+) -> dict[str, float]:
+    if field_budgets is None:
+        raise ValueError("field-budgeted representation requires semantic field budgets")
+    unknown = set(field_budgets) - set(ITEM_SEMANTIC_FIELDS)
+    missing = set(ITEM_SEMANTIC_FIELDS) - set(field_budgets)
+    if unknown or missing:
+        raise ValueError(
+            f"semantic field budgets mismatch missing={sorted(missing)} unknown={sorted(unknown)}"
+        )
+    budgets = {name: float(field_budgets[name]) for name in ITEM_SEMANTIC_FIELDS}
+    if any(not math.isfinite(value) or value < 0.0 for value in budgets.values()):
+        raise ValueError("semantic field budgets must be finite and non-negative")
+    if not math.isclose(sum(budgets.values()), 1.0, rel_tol=0.0, abs_tol=1e-6):
+        raise ValueError("semantic field budgets must sum to 1")
+    return budgets
 
 
 def _hash_transformed_export(

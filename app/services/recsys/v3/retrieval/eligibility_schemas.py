@@ -16,6 +16,7 @@ class HardFilterReason(StrEnum):
     BLOCKED_STATUS = "blocked_status"
     NOT_ON_SUBSCRIBED_OTT = "not_on_subscribed_ott"
     COLD_START_NO_VOTES = "cold_start_no_votes"
+    UNTRUSTED_MATURE_COLD_ITEM = "untrusted_mature_cold_item"
 
 
 @dataclass(frozen=True, slots=True)

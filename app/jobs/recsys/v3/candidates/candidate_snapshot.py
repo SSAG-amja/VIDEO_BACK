@@ -23,6 +23,7 @@ from app.services.recsys.v3.config import (
     CANDIDATE_SNAPSHOT_FORMAT_VERSION,
     ENGINE_NAME,
     ENGINE_VERSION,
+    INITIAL_CANDIDATE_FILTER_POLICY_VERSION,
     LIGHTFM_CANDIDATE_SCORE_POLICY_VERSION,
 )
 
@@ -33,12 +34,17 @@ def materialize_candidate_snapshot(
     exclusions_by_user_id: Mapping[int, set[int] | frozenset[int]] | None = None,
     collaborative_confidence_by_user_id: Mapping[int, float] | None = None,
     eligible_user_ids: Sequence[int] | None = None,
+    initial_eligible_item_mask: np.ndarray | None = None,
     config: CandidateMaterializationConfig | None = None,
     output_root: str | Path = "assets/ml_models/v3/candidate_snapshots",
 ) -> LoadedCandidateSnapshot:
     materialization_config = config or CandidateMaterializationConfig()
     exclusions = exclusions_by_user_id or {}
     collaborative_confidences = collaborative_confidence_by_user_id or {}
+    eligible_item_mask = _normalize_initial_eligible_item_mask(
+        initial_eligible_item_mask,
+        movie_count=len(artifact.movie_ids),
+    )
     user_indices = _resolve_user_indices(artifact, eligible_user_ids)
     if user_indices.size == 0:
         raise ValueError("candidate materialization requires at least one eligible artifact user")
@@ -49,6 +55,7 @@ def materialize_candidate_snapshot(
         collaborative_confidences,
         artifact.user_ids[user_indices],
     )
+    initial_eligibility_hash = hash_initial_eligible_item_mask(eligible_item_mask)
     input_payload = {
         "snapshot_format_version": CANDIDATE_SNAPSHOT_FORMAT_VERSION,
         "model_build_id": model_build_id,
@@ -57,6 +64,8 @@ def materialize_candidate_snapshot(
         "config_hash": materialization_config.config_hash,
         "exclusion_hash": exclusion_hash,
         "lightfm_score_policy_version": LIGHTFM_CANDIDATE_SCORE_POLICY_VERSION,
+        "initial_candidate_filter_policy_version": INITIAL_CANDIDATE_FILTER_POLICY_VERSION,
+        "initial_eligibility_hash": initial_eligibility_hash,
         "collaborative_confidence_hash": collaborative_confidence_hash,
         "eligible_user_ids_hash": hash_eligible_user_ids(artifact.user_ids[user_indices]),
         "eligible_user_count": int(user_indices.size),
@@ -105,6 +114,7 @@ def materialize_candidate_snapshot(
                 user_indices[start:end],
                 exclusions_by_user_id=exclusions,
                 collaborative_confidence_by_user_id=collaborative_confidences,
+                initial_eligible_item_mask=eligible_item_mask,
                 config=materialization_config,
             )
             _write_batch_atomic(npz_path, metadata_path, batch)
@@ -129,6 +139,9 @@ def materialize_candidate_snapshot(
             "config_hash": materialization_config.config_hash,
             "exclusion_hash": exclusion_hash,
             "lightfm_score_policy_version": LIGHTFM_CANDIDATE_SCORE_POLICY_VERSION,
+            "initial_candidate_filter_policy_version": INITIAL_CANDIDATE_FILTER_POLICY_VERSION,
+            "initial_eligibility_hash": initial_eligibility_hash,
+            "initial_eligible_movie_count": int(np.count_nonzero(eligible_item_mask)),
             "collaborative_confidence_hash": collaborative_confidence_hash,
             "collaborative_confidence": _confidence_summary(
                 collaborative_confidences,
@@ -227,6 +240,27 @@ def hash_collaborative_confidences(
             raise ValueError("candidate collaborative confidence must be in [0, 1]")
         digest.update(f"{int(user_id)}:{confidence:.8f};".encode())
     return digest.hexdigest()
+
+
+def hash_initial_eligible_item_mask(mask: np.ndarray) -> str:
+    normalized = np.asarray(mask, dtype=np.bool_)
+    digest = hashlib.sha256(b"v3-initial-candidate-eligibility-v1\0")
+    digest.update(np.packbits(normalized, bitorder="little").tobytes(order="C"))
+    digest.update(str(normalized.size).encode())
+    return digest.hexdigest()
+
+
+def _normalize_initial_eligible_item_mask(
+    mask: np.ndarray | None,
+    *,
+    movie_count: int,
+) -> np.ndarray:
+    if mask is None:
+        raise ValueError("candidate snapshot requires an initial eligible item mask")
+    normalized = np.asarray(mask, dtype=np.bool_)
+    if normalized.shape != (movie_count,):
+        raise ValueError("initial eligible item mask must align with artifact movies")
+    return normalized
 
 
 def _confidence_summary(

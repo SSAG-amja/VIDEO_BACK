@@ -25,6 +25,7 @@ def materialize_candidate_batch(
     *,
     exclusions_by_user_id: Mapping[int, set[int] | frozenset[int]] | None = None,
     collaborative_confidence_by_user_id: Mapping[int, float] | None = None,
+    initial_eligible_item_mask: np.ndarray | None = None,
     config: CandidateMaterializationConfig | None = None,
 ) -> CandidateBatch:
     materialization_config = config or CandidateMaterializationConfig()
@@ -33,6 +34,10 @@ def materialize_candidate_batch(
     _validate_user_indices(indices, len(artifact.user_ids))
     exclusions = exclusions_by_user_id or {}
     collaborative_confidences = collaborative_confidence_by_user_id or {}
+    eligible_item_mask = _validated_eligible_item_mask(
+        initial_eligible_item_mask,
+        movie_count=len(artifact.movie_ids),
+    )
     centering_weight = artifact.config.known_user_score_centering_weight
     component_means = (
         mean_user_representation_components(
@@ -66,6 +71,7 @@ def materialize_candidate_batch(
                     centering_weight=centering_weight,
                     component_means=component_means,
                     collaborative_confidence_by_user_id=collaborative_confidences,
+                    initial_eligible_item_mask=eligible_item_mask,
                 ),
             )
             for ordinal, block_indices in blocks
@@ -80,6 +86,7 @@ def materialize_candidate_batch(
             centering_weight=centering_weight,
             component_means=component_means,
             collaborative_confidence_by_user_id=collaborative_confidences,
+            initial_eligible_item_mask=eligible_item_mask,
         )
         active_workers = min(materialization_config.worker_count, len(blocks))
 
@@ -113,6 +120,7 @@ def _score_dynamic_blocks(
     centering_weight: float,
     component_means,
     collaborative_confidence_by_user_id: Mapping[int, float],
+    initial_eligible_item_mask: np.ndarray,
 ) -> list[tuple[int, list[CandidateBatch]]]:
     work_queue: queue.Queue[tuple[int, np.ndarray]] = queue.Queue()
     for block in blocks:
@@ -139,6 +147,7 @@ def _score_dynamic_blocks(
                             collaborative_confidence_by_user_id=(
                                 collaborative_confidence_by_user_id
                             ),
+                            initial_eligible_item_mask=initial_eligible_item_mask,
                         ),
                     )
                 )
@@ -164,6 +173,7 @@ def _score_block_with_fallback(
     centering_weight: float,
     component_means,
     collaborative_confidence_by_user_id: Mapping[int, float],
+    initial_eligible_item_mask: np.ndarray,
 ) -> list[CandidateBatch]:
     try:
         return [
@@ -177,6 +187,7 @@ def _score_block_with_fallback(
                 collaborative_confidence_by_user_id=(
                     collaborative_confidence_by_user_id
                 ),
+                initial_eligible_item_mask=initial_eligible_item_mask,
             )
         ]
     except Exception as block_error:
@@ -194,6 +205,7 @@ def _score_block_with_fallback(
                         collaborative_confidence_by_user_id=(
                             collaborative_confidence_by_user_id
                         ),
+                        initial_eligible_item_mask=initial_eligible_item_mask,
                     )
                 )
             except Exception as user_error:
@@ -231,6 +243,7 @@ def _score_user_block(
     centering_weight: float,
     component_means,
     collaborative_confidence_by_user_id: Mapping[int, float],
+    initial_eligible_item_mask: np.ndarray,
 ) -> CandidateBatch:
     started = time.perf_counter()
     user_features = artifact.user_features[user_indices]
@@ -277,6 +290,9 @@ def _score_user_block(
         scores = user_embeddings @ item_embeddings.T
         scores += user_biases[:, np.newaxis]
         scores += (1.0 - centering_weight) * item_biases[np.newaxis, :]
+        block_eligible = initial_eligible_item_mask[item_start:item_end]
+        if not np.all(block_eligible):
+            scores[:, ~block_eligible] = -np.inf
         peak_score_block_bytes = max(peak_score_block_bytes, int(scores.nbytes))
         block_movie_ids = np.asarray(artifact.movie_ids[item_start:item_end], dtype=np.int64)
 
@@ -360,6 +376,19 @@ def _map_exclusions_to_item_indices(
         positions = positions[movie_ids[positions] == excluded_ids]
         result.append(np.unique(positions))
     return result
+
+
+def _validated_eligible_item_mask(
+    mask: np.ndarray | None,
+    *,
+    movie_count: int,
+) -> np.ndarray:
+    if mask is None:
+        return np.ones(movie_count, dtype=np.bool_)
+    normalized = np.asarray(mask, dtype=np.bool_)
+    if normalized.shape != (movie_count,):
+        raise ValueError("initial eligible item mask must align with artifact movies")
+    return normalized
 
 
 def _merge_batches(

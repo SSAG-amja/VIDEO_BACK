@@ -1,19 +1,21 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Collection
+from datetime import datetime
 
 import numpy as np
 from scipy.sparse import csr_matrix
+from sqlalchemy.orm import Session
 
 from app.services.recsys.v3.config import (
     CANDIDATE_ITEM_BLOCK_SIZE,
     CANDIDATE_STORAGE_SIZE,
+    INITIAL_CANDIDATE_SCAN_SIZE,
     USER_FEATURE_EXPLICIT_GENRE_WEIGHT,
     USER_FEATURE_FAVORITE_DERIVED_WEIGHT,
 )
 from app.services.recsys.v3.domain.feature_registry import FeatureName, get_feature_definition
+from app.services.recsys.v3.domain.onboarding import onboarding_feature_signature
 from app.services.recsys.v3.serving.model_store import RuntimeHybridArtifact
 from app.services.recsys.v3.retrieval.retrieval_schemas import LongTermCandidate
 from app.services.recsys.v3.retrieval.score_calibration import (
@@ -23,6 +25,40 @@ from app.services.recsys.v3.retrieval.collaborative_confidence import (
     assess_user_collaborative_confidence,
 )
 from app.services.recsys.v3.domain.schemas import UserProfileBundle
+from app.services.recsys.v3.retrieval.initial_candidate_filter import (
+    select_initial_candidates,
+)
+
+
+def retrieve_initially_eligible_lightfm_candidates(
+    db: Session,
+    artifact: RuntimeHybridArtifact,
+    *,
+    profile: UserProfileBundle,
+    excluded_movie_ids: Collection[int],
+    as_of: datetime,
+    limit: int = CANDIDATE_STORAGE_SIZE,
+    force_feature_only: bool = False,
+) -> tuple[LongTermCandidate, ...]:
+    if limit <= 0 or limit > CANDIDATE_STORAGE_SIZE:
+        raise ValueError(
+            f"qualified LightFM retrieval limit must be between 1 and {CANDIDATE_STORAGE_SIZE}"
+        )
+    raw_candidates = retrieve_lightfm_candidates(
+        artifact,
+        profile=profile,
+        excluded_movie_ids=excluded_movie_ids,
+        limit=INITIAL_CANDIDATE_SCAN_SIZE,
+        force_feature_only=force_feature_only,
+    )
+    selection = select_initial_candidates(
+        db,
+        candidates=raw_candidates,
+        as_of=as_of,
+        movie_identity_supported=artifact.movie_identity_supported,
+        limit=limit,
+    )
+    return tuple(selection.candidates)
 
 
 def retrieve_lightfm_candidates(
@@ -33,8 +69,10 @@ def retrieve_lightfm_candidates(
     limit: int = CANDIDATE_STORAGE_SIZE,
     force_feature_only: bool = False,
 ) -> tuple[LongTermCandidate, ...]:
-    if limit <= 0 or limit > CANDIDATE_STORAGE_SIZE:
-        raise ValueError(f"LightFM retrieval limit must be between 1 and {CANDIDATE_STORAGE_SIZE}")
+    if limit <= 0 or limit > INITIAL_CANDIDATE_SCAN_SIZE:
+        raise ValueError(
+            f"LightFM retrieval limit must be between 1 and {INITIAL_CANDIDATE_SCAN_SIZE}"
+        )
     user_index = artifact.user_index(profile.user_id)
     known_user_path = user_index is not None and not force_feature_only
     if known_user_path:
@@ -162,12 +200,10 @@ def build_feature_only_user_row(
 
 
 def onboarding_profile_signature(profile: UserProfileBundle) -> str:
-    payload = {
-        "favorite_movie_ids": sorted(profile.onboarding.favorite_movie_ids),
-        "genre_ids": sorted(profile.onboarding.genre_ids),
-    }
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(encoded.encode()).hexdigest()
+    return onboarding_feature_signature(
+        genre_ids=profile.onboarding.genre_ids,
+        favorite_movie_ids=profile.onboarding.favorite_movie_ids,
+    )
 
 
 def onboarding_features_changed(
@@ -177,6 +213,11 @@ def onboarding_features_changed(
     user_index = artifact.user_index(profile.user_id)
     if user_index is None:
         return True
+    if artifact.onboarding_profile_signatures is not None:
+        return (
+            artifact.onboarding_profile_signatures[user_index]
+            != onboarding_profile_signature(profile)
+        )
     current = build_feature_only_user_row(artifact, profile)
     stored = artifact.user_features[user_index]
     identity_prefix = f"{get_feature_definition(FeatureName.USER_IDENTITY).namespace}:"

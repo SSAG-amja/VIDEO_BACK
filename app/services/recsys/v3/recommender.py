@@ -24,11 +24,12 @@ from app.services.recsys.v3.config import (
     CANDIDATE_STORAGE_SIZE,
     ENGINE_NAME,
     ENGINE_VERSION,
+    INITIAL_CANDIDATE_FILTER_POLICY_VERSION,
 )
 from app.services.recsys.v3.retrieval.lightfm_retriever import (
     onboarding_features_changed,
     onboarding_profile_signature,
-    retrieve_lightfm_candidates,
+    retrieve_initially_eligible_lightfm_candidates,
 )
 from app.services.recsys.v3.serving.model_store import MovieIdIndex
 from app.services.recsys.v3.policy.policy_config import policy_config_snapshot
@@ -92,10 +93,12 @@ def get_recommendations(
                 and not profile.onboarding.favorite_movie_ids
             ),
         )
-        feature_only = published_candidates or retrieve_lightfm_candidates(
+        feature_only = published_candidates or retrieve_initially_eligible_lightfm_candidates(
+            db,
             bundle.model,
             profile=profile,
             excluded_movie_ids=excluded,
+            as_of=context.as_of,
             force_feature_only=True,
         )
         if feature_only and not published_candidates:
@@ -111,6 +114,7 @@ def get_recommendations(
             ontology_build_id=bundle.ontology_build_id,
             profile=profile,
             context=context,
+            artifact=bundle.model,
             feature_only_model_candidates=feature_only,
             model_known_movie_ids=MovieIdIndex(bundle.model.movie_ids),
         )
@@ -130,10 +134,12 @@ def get_recommendations(
         }
     else:
         context = _policy_context(redis, user_id, profile)
-        long_term = published_candidates or retrieve_lightfm_candidates(
+        long_term = published_candidates or retrieve_initially_eligible_lightfm_candidates(
+            db,
             bundle.model,
             profile=profile,
             excluded_movie_ids=excluded,
+            as_of=context.as_of,
         )
         retrieval = build_retrieval_candidates(
             db,
@@ -141,6 +147,7 @@ def get_recommendations(
             profile=profile,
             long_term_candidates=long_term,
             context=context,
+            artifact=bundle.model,
             redis=redis,
             collaborative_population_confidence=(
                 bundle.model.collaborative_population_confidence
@@ -213,10 +220,12 @@ def refresh_cold_start(db: Session, *, user_id: int) -> None:
         model_user_known=bundle.model.user_index(user_id) is not None,
         ott_mode=OttFilterMode.ALL,
     ).bundle
-    candidates = retrieve_lightfm_candidates(
+    candidates = retrieve_initially_eligible_lightfm_candidates(
+        db,
         bundle.model,
         profile=profile,
         excluded_movie_ids=profile.long_term.excluded_movie_ids,
+        as_of=profile.serving_context.availability_as_of,
         force_feature_only=True,
     )
     if not candidates:
@@ -253,6 +262,9 @@ def _persist_feature_only_candidates(
                 "model_build_id": bundle.model.model_build_id,
                 "serving_bundle_id": bundle.bundle_id,
                 "onboarding_profile_signature": signature,
+                "initial_candidate_filter_policy_version": (
+                    INITIAL_CANDIDATE_FILTER_POLICY_VERSION
+                ),
             },
         )
         for item in candidates
@@ -286,6 +298,11 @@ def _load_published_candidates(
     for row in rows:
         scores = row.source_scores or {}
         if scores.get("model_build_id") != bundle.model.model_build_id:
+            continue
+        if (
+            scores.get("initial_candidate_filter_policy_version")
+            != INITIAL_CANDIDATE_FILTER_POLICY_VERSION
+        ):
             continue
         if row.source == "lightfm_v3":
             if scores.get("candidate_snapshot_id") != bundle.candidate_snapshot_id:

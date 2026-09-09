@@ -179,3 +179,4 @@ class LoadedHybridArtifact:
     item_feature_tokens: tuple[str, ...]
     manifest: dict[str, Any]
     diagnostics: dict[str, Any]
+    onboarding_profile_signatures: tuple[str, ...] | None = None

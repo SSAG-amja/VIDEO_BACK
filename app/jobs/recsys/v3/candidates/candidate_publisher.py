@@ -15,6 +15,7 @@ from app.jobs.recsys.v3.candidates.candidate_snapshot import (
     hash_exclusions,
     iter_candidate_snapshot_batches,
 )
+from app.services.recsys.v3.config import INITIAL_CANDIDATE_FILTER_POLICY_VERSION
 
 
 def publish_candidate_snapshot(
@@ -23,6 +24,11 @@ def publish_candidate_snapshot(
     *,
     statement_chunk_size: int = 5_000,
 ) -> dict[str, int]:
+    if (
+        snapshot.manifest.get("initial_candidate_filter_policy_version")
+        != INITIAL_CANDIDATE_FILTER_POLICY_VERSION
+    ):
+        raise ValueError("candidate snapshot initial filter policy is outdated")
     replaced_users = 0
     inserted_candidates = 0
     seen_users: set[int] = set()
@@ -56,6 +62,9 @@ def publish_candidate_snapshot(
                     "candidate_snapshot_id": snapshot.snapshot_id,
                     "collaborative_confidence": confidence_by_user_id[int(user_id)],
                     "collaborative_adjustment_scope": "user_identity",
+                    "initial_candidate_filter_policy_version": (
+                        INITIAL_CANDIDATE_FILTER_POLICY_VERSION
+                    ),
                 },
             }
             for user_id, movie_id, score, rank in zip(

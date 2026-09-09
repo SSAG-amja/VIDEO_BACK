@@ -26,6 +26,7 @@ from app.services.recsys.v3.domain.schemas import UserProfileBundle
 from app.services.recsys.v3.retrieval.short_term_candidate_cache import (
     retrieve_cached_short_term_candidates,
 )
+from app.services.recsys.v3.serving.model_store import RuntimeHybridArtifact
 
 
 def build_retrieval_candidates(
@@ -35,6 +36,7 @@ def build_retrieval_candidates(
     profile: UserProfileBundle,
     long_term_candidates: Sequence[LongTermCandidate],
     context: PolicyRequestContext,
+    artifact: RuntimeHybridArtifact | None = None,
     redis: Redis | None = None,
     collaborative_population_confidence: float = 1.0,
     limit: int = CANDIDATE_POOL_SIZE,
@@ -51,6 +53,7 @@ def build_retrieval_candidates(
         db,
         ontology_build_id=ontology_build_id,
         profile=profile,
+        artifact=artifact,
         limit=limit,
     )
     collaborative = assess_user_collaborative_confidence(
@@ -72,6 +75,9 @@ def build_retrieval_candidates(
         candidates=merged.candidates,
         profile=profile,
         context=context,
+        movie_identity_supported=(
+            artifact.movie_identity_supported if artifact is not None else None
+        ),
         limit=limit,
     )
     selected_merged = CandidateMergeResult(
@@ -83,6 +89,7 @@ def build_retrieval_candidates(
         ontology_build_id=ontology_build_id,
         candidate_movie_ids=[item.movie_id for item in eligibility.candidates],
         profile=profile,
+        artifact=artifact,
     )
     return RetrievalPipelineResult(
         short_term=short_term,

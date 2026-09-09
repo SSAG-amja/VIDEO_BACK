@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import math
 from typing import Any
 
@@ -63,6 +63,8 @@ class ItemFeatureManifest:
     representation_policy: str = "full_identity_raw"
     identity_block_weight: float = 1.0
     semantic_block_weight: float = 1.0
+    semantic_field_budgets: dict[str, float] = field(default_factory=dict)
+    keyword_weighting_policy: str = "none"
 
     def __post_init__(self) -> None:
         if not self.exporter_version.strip() or not self.ontology_source_hash.strip():
@@ -81,6 +83,15 @@ class ItemFeatureManifest:
                 raise ValueError(f"item feature {name} must be finite and non-negative")
         if self.semantic_block_weight == 0:
             raise ValueError("item semantic block weight must be positive")
+        if not self.keyword_weighting_policy.strip():
+            raise ValueError("item keyword weighting policy is required")
+        if any(
+            not name.strip() or not math.isfinite(value) or value < 0.0
+            for name, value in self.semantic_field_budgets.items()
+        ):
+            raise ValueError("item semantic field budgets must be finite and non-negative")
+        if sum(self.semantic_field_budgets.values()) > 1.0 + 1e-6:
+            raise ValueError("item semantic field budgets cannot exceed 1")
         if self.movie_count <= 0 or self.feature_count <= 0 or self.matrix_nnz <= 0:
             raise ValueError("item feature manifest counts must be positive")
         if self.matrix_shape != (self.movie_count, self.feature_count):
@@ -139,6 +150,13 @@ class UserFeatureManifest:
     representation_policy: str = "full_identity_raw"
     identity_block_weight: float = 1.0
     semantic_block_weight: float = 1.0
+    long_term_positive_pair_count: int = 0
+    long_term_derived_feature_count: int = 0
+    long_term_covered_user_count: int = 0
+    missing_long_term_movie_count: int = 0
+    long_term_derived_weight: float = 1.0
+    long_term_feature_top_k: dict[str, int] = field(default_factory=dict)
+    onboarding_profile_signature_hash: str = ""
 
     def __post_init__(self) -> None:
         if not self.exporter_version.strip() or not self.ontology_source_hash.strip():
@@ -155,19 +173,35 @@ class UserFeatureManifest:
             ("favorite_derived_pair_count", self.favorite_derived_pair_count),
             ("covered_user_count", self.covered_user_count),
             ("missing_favorite_movie_count", self.missing_favorite_movie_count),
+            ("long_term_positive_pair_count", self.long_term_positive_pair_count),
+            ("long_term_derived_feature_count", self.long_term_derived_feature_count),
+            ("long_term_covered_user_count", self.long_term_covered_user_count),
+            ("missing_long_term_movie_count", self.missing_long_term_movie_count),
         ):
             if value < 0:
                 raise ValueError(f"{name} cannot be negative")
         if self.covered_user_count > self.user_count:
             raise ValueError("user feature coverage cannot exceed user count")
+        if self.long_term_covered_user_count > self.user_count:
+            raise ValueError("long-term user feature coverage cannot exceed user count")
         for name, value in (
             ("explicit_genre_weight", self.explicit_genre_weight),
             ("favorite_derived_weight", self.favorite_derived_weight),
+            ("long_term_derived_weight", self.long_term_derived_weight),
         ):
             if not 0.0 < value <= 1.0:
                 raise ValueError(f"{name} must be in (0, 1]")
+        if any(
+            not name.strip() or value <= 0
+            for name, value in self.long_term_feature_top_k.items()
+        ):
+            raise ValueError("long-term feature top-K values must be positive")
         if not self.vocabulary_policy.strip():
             raise ValueError("user feature vocabulary policy is required")
+        if self.onboarding_profile_signature_hash and len(
+            self.onboarding_profile_signature_hash
+        ) != 64:
+            raise ValueError("onboarding profile signature hash must be SHA-256")
         if not self.representation_policy.strip():
             raise ValueError("user feature representation policy is required")
         for name, value in (
@@ -194,12 +228,17 @@ class UserFeatureExport:
     feature_token_map: dict[str, int]
     user_features: Any
     manifest: UserFeatureManifest
+    onboarding_profile_signatures: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if len(self.user_ids) != len(self.user_id_map):
             raise ValueError("user ID mapping is incomplete")
         if len(self.feature_tokens) != len(self.feature_token_map):
             raise ValueError("user feature token mapping is incomplete")
+        if self.onboarding_profile_signatures and len(
+            self.onboarding_profile_signatures
+        ) != len(self.user_ids):
+            raise ValueError("user onboarding signatures must align with user IDs")
         if self.user_features.shape != self.manifest.matrix_shape:
             raise ValueError("user feature matrix shape does not match manifest")
         if int(self.user_features.nnz) != self.manifest.matrix_nnz:

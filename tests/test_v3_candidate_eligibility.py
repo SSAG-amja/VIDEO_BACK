@@ -2,11 +2,20 @@ from __future__ import annotations
 
 import unittest
 from dataclasses import replace
+from datetime import timedelta
 from unittest.mock import patch
 
 from app.services.recsys.v3.retrieval.candidate_eligibility import select_eligible_candidates
+from app.services.recsys.v3.retrieval.initial_candidate_filter import (
+    build_initial_catalog_mask,
+    select_initial_candidates,
+)
 from app.services.recsys.v3.policy.policy_schemas import HardFilterReason, PolicyRequestContext
-from app.services.recsys.v3.retrieval.retrieval_schemas import CandidateSource, MergedCandidate
+from app.services.recsys.v3.retrieval.retrieval_schemas import (
+    CandidateSource,
+    LongTermCandidate,
+    MergedCandidate,
+)
 from app.services.recsys.v3.domain.schemas import OttFilterMode
 from tests.test_v3_policy_engine import movie
 from tests.test_v3_profile_builder import AS_OF
@@ -45,6 +54,162 @@ def clean_profile():
 
 
 class CandidateEligibilityTest(unittest.TestCase):
+    def test_catalog_mask_separates_static_trust_from_request_filters(self) -> None:
+        movies = [movie(movie_id) for movie_id in range(1, 5)]
+        for item in movies:
+            item.release_date = AS_OF.date() - timedelta(days=1_000)
+            item.vote_count = 0
+        movies[2].release_date = AS_OF.date() - timedelta(days=30)
+        movies[3].adult = True
+
+        with patch(
+            "app.services.recsys.v3.retrieval.initial_candidate_filter.load_movies_by_ids",
+            return_value=movies,
+        ):
+            result = build_initial_catalog_mask(
+                object(),
+                movie_ids=(1, 2, 3, 4),
+                identity_supported_movie_ids=frozenset({1}),
+                as_of=AS_OF,
+                chunk_size=10,
+            )
+
+        self.assertEqual(result.eligible_item_mask.tolist(), [True, False, True, False])
+        self.assertEqual(
+            dict(result.rejection_counts),
+            {
+                HardFilterReason.ADULT.value: 1,
+                HardFilterReason.UNTRUSTED_MATURE_COLD_ITEM.value: 2,
+            },
+        )
+
+    def test_initial_filter_fills_limit_before_request_filtering(self) -> None:
+        candidates = tuple(
+            LongTermCandidate(
+                movie_id=movie_id,
+                model_raw_score=float(5 - movie_id),
+                source_rank=movie_id,
+            )
+            for movie_id in range(1, 5)
+        )
+        movies = [movie(movie_id) for movie_id in range(1, 5)]
+        movies[0].release_date = AS_OF.date() - timedelta(days=1_000)
+        movies[0].vote_count = 0
+
+        with patch(
+            "app.services.recsys.v3.retrieval.initial_candidate_filter.load_movies_by_ids",
+            return_value=movies,
+        ):
+            result = select_initial_candidates(
+                object(),
+                candidates=candidates,
+                as_of=AS_OF,
+                movie_identity_supported=lambda movie_id: movie_id != 1,
+                limit=3,
+            )
+
+        self.assertEqual([item.movie_id for item in result.candidates], [2, 3, 4])
+        self.assertEqual([item.source_rank for item in result.candidates], [1, 2, 3])
+        self.assertEqual(result.inspected_candidate_count, 4)
+        self.assertEqual(
+            result.rejections[0].reasons,
+            (HardFilterReason.UNTRUSTED_MATURE_COLD_ITEM,),
+        )
+
+    def test_long_term_cold_item_uses_release_age_and_vote_trust(self) -> None:
+        profile = clean_profile()
+        candidates = tuple(candidate(movie_id, movie_id) for movie_id in range(1, 7))
+        movies = [movie(movie_id) for movie_id in range(1, 7)]
+        movies[0].release_date = AS_OF.date() - timedelta(days=1_000)
+        movies[0].vote_count = 19
+        movies[1].release_date = AS_OF.date() - timedelta(days=1_000)
+        movies[1].vote_count = 20
+        movies[2].release_date = AS_OF.date() - timedelta(days=180)
+        movies[2].vote_count = 0
+        movies[3].release_date = AS_OF.date() - timedelta(days=181)
+        movies[3].vote_count = 0
+        movies[4].release_date = None
+        movies[4].vote_count = 19
+        movies[5].release_date = AS_OF.date() - timedelta(days=1_000)
+        movies[5].vote_count = 0
+
+        with patch(
+            "app.services.recsys.v3.retrieval.candidate_eligibility.load_movies_by_ids",
+            return_value=movies,
+        ):
+            result = select_eligible_candidates(
+                object(),
+                candidates=candidates,
+                profile=profile,
+                context=PolicyRequestContext(as_of=AS_OF, limit=100),
+                movie_identity_supported=lambda movie_id: movie_id == 6,
+                limit=100,
+            )
+
+        self.assertEqual([item.movie_id for item in result.candidates], [2, 3, 6])
+        self.assertEqual(
+            dict(result.diagnostics.rejection_counts),
+            {HardFilterReason.UNTRUSTED_MATURE_COLD_ITEM.value: 3},
+        )
+
+    def test_long_term_ontology_candidate_cannot_bypass_cold_item_trust(self) -> None:
+        profile = clean_profile()
+        ontology_candidate = MergedCandidate(
+            movie_id=1,
+            sources=(CandidateSource.LONG_TERM_ONTOLOGY,),
+            selection_rank=1,
+            candidate_selection_score=1.0,
+            long_term_ontology_raw_score=1.0,
+            normalized_long_term_ontology_score=1.0,
+            long_term_ontology_source_rank=1,
+        )
+        old_movie = movie(1)
+        old_movie.release_date = AS_OF.date() - timedelta(days=1_000)
+        old_movie.vote_count = 0
+
+        with patch(
+            "app.services.recsys.v3.retrieval.candidate_eligibility.load_movies_by_ids",
+            return_value=[old_movie],
+        ):
+            result = select_eligible_candidates(
+                object(),
+                candidates=(ontology_candidate,),
+                profile=profile,
+                context=PolicyRequestContext(as_of=AS_OF, limit=100),
+                movie_identity_supported=lambda _movie_id: False,
+                limit=100,
+            )
+
+        self.assertEqual(result.candidates, ())
+        self.assertEqual(
+            result.rejections[0].reasons,
+            (HardFilterReason.UNTRUSTED_MATURE_COLD_ITEM,),
+        )
+
+    def test_cold_item_rejection_is_filled_from_reserve(self) -> None:
+        profile = clean_profile()
+        candidates = tuple(candidate(movie_id, movie_id) for movie_id in range(1, 102))
+        movies = [movie(movie_id) for movie_id in range(1, 102)]
+        movies[0].release_date = AS_OF.date() - timedelta(days=1_000)
+        movies[0].vote_count = 0
+
+        with patch(
+            "app.services.recsys.v3.retrieval.candidate_eligibility.load_movies_by_ids",
+            return_value=movies,
+        ):
+            result = select_eligible_candidates(
+                object(),
+                candidates=candidates,
+                profile=profile,
+                context=PolicyRequestContext(as_of=AS_OF, limit=100),
+                movie_identity_supported=lambda movie_id: movie_id != 1,
+                limit=100,
+            )
+
+        self.assertEqual(len(result.candidates), 100)
+        self.assertEqual(result.candidates[-1].movie_id, 101)
+        self.assertEqual(result.diagnostics.reserve_selected_count, 1)
+
     def test_rejected_active_candidates_are_filled_from_the_next_50(self) -> None:
         profile = clean_profile()
         candidates = tuple(candidate(movie_id, movie_id) for movie_id in range(1, 151))

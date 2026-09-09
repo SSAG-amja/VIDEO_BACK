@@ -8,6 +8,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import numpy as np
+
+from app.jobs.recsys.v3.datasets.dataset_schemas import PositiveInteraction
+from app.jobs.recsys.v3.features.user_feature_builder import build_user_feature_export
 from app.jobs.recsys.v3.training.artifact_publisher import publish_hybrid_artifact
 from app.jobs.recsys.v3.features.feature_representation import (
     transform_item_feature_export,
@@ -21,6 +25,7 @@ from app.jobs.recsys.v3.training.trainer import train_hybrid_model
 from app.jobs.recsys.v3.diagnostics.online_baseline import validate_response
 from app.schemas.recsys import RecommendationMode
 from app.services.recsys.v3.errors import V3NotReadyError
+from app.services.recsys.v3.domain.behavior import SnapshotAction
 from app.services.recsys.v3.retrieval.eligibility_schemas import CandidateEligibilityDiagnostics
 from app.services.recsys.v3.retrieval.lightfm_retriever import (
     build_feature_only_user_row,
@@ -72,10 +77,26 @@ class ServingBundleTest(unittest.TestCase):
         cls.temporary = tempfile.TemporaryDirectory(prefix="v3-serving-")
         cls.root = Path(cls.temporary.name)
         item_export = synthetic_item_export()
+        user_export = build_user_feature_export(
+            user_ids=(101, 202, 303),
+            explicit_genre_rows=((101, 1), (202, 2)),
+            favorite_rows=((101, 10), (303, 40), (303, 999)),
+            item_export=item_export,
+            positive_interactions=(
+                PositiveInteraction(
+                    user_id=101,
+                    movie_id=40,
+                    actions=(SnapshotAction.SAVED,),
+                    representative_action=SnapshotAction.SAVED,
+                    sample_weight=2.0,
+                    latest_at=None,
+                ),
+            ),
+        )
         result = train_hybrid_model(
             synthetic_dataset(),
             item_export=item_export,
-            user_export=synthetic_user_export(item_export),
+            user_export=user_export,
             config=LightFMTrainingConfig(
                 stage="hybrid_ontology",
                 no_components=4,
@@ -89,6 +110,9 @@ class ServingBundleTest(unittest.TestCase):
         artifact = load_hybrid_artifact(cls.model_path)
         cls.snapshot = materialize_candidate_snapshot(
             artifact,
+            initial_eligible_item_mask=np.ones(
+                len(artifact.movie_ids), dtype=np.bool_
+            ),
             config=CandidateMaterializationConfig(
                 top_k=3,
                 user_block_size=2,
@@ -142,6 +166,8 @@ class ServingBundleTest(unittest.TestCase):
         self.assertEqual(first.ontology_build_id, 22)
         self.assertGreaterEqual(first.model.collaborative_population_confidence, 0.0)
         self.assertLessEqual(first.model.collaborative_population_confidence, 1.0)
+        self.assertTrue(first.model.movie_identity_supported(10))
+        self.assertFalse(first.model.movie_identity_supported(999_999))
         self.assertTrue(self.activation_session.committed)
 
     def test_invalid_reload_keeps_previous_valid_bundle(self) -> None:
@@ -201,13 +227,22 @@ class ServingBundleTest(unittest.TestCase):
     def test_feature_only_row_uses_artifact_semantic_normalization(self) -> None:
         item_export = transform_item_feature_export(
             synthetic_item_export(),
-            policy="supported_identity_normalized",
+            policy="supported_identity_field_budgeted",
             supported_movie_ids=frozenset({10, 20, 30, 40}),
+            field_budgets={
+                "genre": 0.25,
+                "keyword": 0.20,
+                "actor": 0.15,
+                "director": 0.15,
+                "theme": 0.15,
+                "mood": 0.10,
+            },
+            keyword_weighting="normalized_idf",
         )
         user_export = synthetic_user_export(item_export)
         user_export = transform_user_feature_export(
             user_export,
-            policy="supported_identity_normalized",
+            policy="supported_identity_field_budgeted",
             identity_weight=4.0,
             semantic_weight=0.25,
         )
@@ -238,8 +273,11 @@ class ServingBundleTest(unittest.TestCase):
             )
             feature_only = build_feature_only_user_row(runtime, profile)
             shared = slice(len(runtime.user_ids), runtime.user_features.shape[1])
-            difference = runtime.user_features[0, shared] - feature_only[:, shared]
-            self.assertFalse(difference.nnz)
+            np.testing.assert_allclose(
+                runtime.user_features[0, shared].toarray(),
+                feature_only[:, shared].toarray(),
+                atol=1e-7,
+            )
             self.assertAlmostEqual(float(feature_only.sum()), 0.25, places=6)
 
     def test_recommender_preserves_response_pagination_contract(self) -> None:
@@ -342,7 +380,8 @@ class ServingBundleTest(unittest.TestCase):
                 return_value=True,
             ),
             patch(
-                "app.services.recsys.v3.recommender.retrieve_lightfm_candidates",
+                "app.services.recsys.v3.recommender."
+                "retrieve_initially_eligible_lightfm_candidates",
                 return_value=feature_only,
             ),
             patch(

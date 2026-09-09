@@ -17,6 +17,7 @@ from app.services.recsys.v3.domain.feature_registry import FeatureName
 from app.services.recsys.v3.policy.policy_engine import (
     _catalog_trust_penalty,
     _negative_penalty,
+    _personal_score_basis,
     _quality_adjustment,
     evaluate_policy_candidates,
 )
@@ -505,6 +506,39 @@ class ColdStartTest(unittest.TestCase):
 
 
 class PolicyScoreTest(unittest.TestCase):
+    def test_known_user_personal_score_excludes_candidate_ontology_blend(self) -> None:
+        candidate = MergedCandidate(
+            movie_id=1,
+            sources=(CandidateSource.MODEL, CandidateSource.LONG_TERM_ONTOLOGY),
+            selection_rank=1,
+            candidate_selection_score=1.0,
+            model_raw_score=2.0,
+            normalized_long_term_score=0.4,
+            model_source_rank=1,
+            long_term_ontology_raw_score=3.0,
+            normalized_long_term_ontology_score=1.0,
+            long_term_ontology_source_rank=1,
+        )
+
+        score = _personal_score_basis(candidate, profile=retrieval_profile())
+
+        self.assertEqual(score, 0.4)
+
+    def test_cold_start_personal_score_keeps_merged_rule_score(self) -> None:
+        candidate = MergedCandidate(
+            movie_id=1,
+            sources=(CandidateSource.COLD_START,),
+            selection_rank=1,
+            candidate_selection_score=0.8,
+            cold_start_raw_score=2.0,
+            normalized_cold_start_score=0.8,
+            cold_start_source_rank=1,
+        )
+
+        score = _personal_score_basis(candidate, profile=retrieval_profile())
+
+        self.assertEqual(score, 0.8)
+
     def test_component_ablation_can_disable_ontology_without_changing_candidates(self) -> None:
         profile = retrieval_profile()
         ontology = replace(analysis(1), long_positive_total=2.0)

@@ -22,6 +22,7 @@ from app.services.recsys.v3.retrieval.retrieval_schemas import (
     LongTermCandidate,
 )
 from app.services.recsys.v3.domain.schemas import UserProfileBundle
+from app.services.recsys.v3.serving.model_store import RuntimeHybridArtifact
 
 
 def run_cold_start_pipeline(
@@ -30,6 +31,7 @@ def run_cold_start_pipeline(
     ontology_build_id: int,
     profile: UserProfileBundle,
     context: PolicyRequestContext,
+    artifact: RuntimeHybridArtifact | None = None,
     feature_only_model_candidates: Sequence[LongTermCandidate] = (),
     model_known_movie_ids: Container[int] = frozenset(),
     limit: int = CANDIDATE_POOL_SIZE,
@@ -71,6 +73,7 @@ def run_cold_start_pipeline(
         candidate_movie_ids=[item.movie_id for item in eligibility.candidates],
         profile=profile,
         include_onboarding=True,
+        artifact=artifact,
     )
     return ColdStartPipelineResult(
         retrieval=retrieval,

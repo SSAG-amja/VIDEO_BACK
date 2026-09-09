@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import hashlib
-from collections import Counter
+import math
+from collections import Counter, defaultdict
 from collections.abc import Iterable
 
 import numpy as np
@@ -9,6 +10,7 @@ from scipy.sparse import coo_matrix, csr_matrix
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.jobs.recsys.v3.datasets.dataset_schemas import PositiveInteraction
 from app.jobs.recsys.v3.features.feature_schemas import (
     ItemFeatureExport,
     UserFeatureExport,
@@ -18,11 +20,14 @@ from app.models.mapping import user_favorite_movies, user_genres
 from app.models.movie import Movie
 from app.services.recsys.v3.domain.catalog import eligible_catalog_movie_clause
 from app.services.recsys.v3.config import (
+    PROFILE_FEATURE_TOP_K,
     USER_FEATURE_EXPLICIT_GENRE_WEIGHT,
     USER_FEATURE_EXPORTER_VERSION,
     USER_FEATURE_FAVORITE_DERIVED_WEIGHT,
+    USER_FEATURE_LONG_TERM_DERIVED_WEIGHT,
 )
 from app.services.recsys.v3.domain.feature_registry import FeatureName, get_feature_definition
+from app.services.recsys.v3.domain.onboarding import onboarding_feature_signature
 
 
 def export_user_features(
@@ -30,6 +35,7 @@ def export_user_features(
     *,
     user_ids: tuple[int, ...],
     item_export: ItemFeatureExport,
+    positive_interactions: Iterable[PositiveInteraction] = (),
 ) -> UserFeatureExport:
     validate_ordered_ids(user_ids, "user")
     if not user_ids:
@@ -62,6 +68,7 @@ def export_user_features(
         explicit_genre_rows=explicit_genre_rows,
         favorite_rows=favorite_rows,
         item_export=item_export,
+        positive_interactions=positive_interactions,
     )
 
 
@@ -71,6 +78,7 @@ def build_user_feature_export(
     explicit_genre_rows: Iterable[tuple[int, int]],
     favorite_rows: Iterable[tuple[int, int]],
     item_export: ItemFeatureExport,
+    positive_interactions: Iterable[PositiveInteraction] = (),
 ) -> UserFeatureExport:
     validate_ordered_ids(user_ids, "user")
     if not user_ids:
@@ -79,10 +87,47 @@ def build_user_feature_export(
     user_id_map = {user_id: index for index, user_id in enumerate(user_ids)}
     explicit_rows = tuple(sorted(set(explicit_genre_rows)))
     favorite_pairs = tuple(sorted(set(favorite_rows)))
-    if any(user_id not in user_id_map or genre_id <= 0 for user_id, genre_id in explicit_rows):
+    long_term_positives = tuple(
+        sorted(positive_interactions, key=lambda item: (item.user_id, item.movie_id))
+    )
+    if any(
+        user_id not in user_id_map or genre_id <= 0
+        for user_id, genre_id in explicit_rows
+    ):
         raise ValueError("explicit genre rows contain an invalid user or genre")
     if any(user_id not in user_id_map or movie_id <= 0 for user_id, movie_id in favorite_pairs):
         raise ValueError("favorite rows contain an invalid user or movie")
+    if any(
+        interaction.user_id not in user_id_map
+        or interaction.movie_id <= 0
+        or not math.isfinite(interaction.sample_weight)
+        or interaction.sample_weight <= 0
+        for interaction in long_term_positives
+    ):
+        raise ValueError("long-term positives contain an invalid user, movie, or weight")
+    if len({(item.user_id, item.movie_id) for item in long_term_positives}) != len(
+        long_term_positives
+    ):
+        raise ValueError("long-term positives contain duplicate user/movie pairs")
+
+    genres_by_user: dict[int, set[int]] = defaultdict(set)
+    for user_id, genre_id in explicit_rows:
+        genres_by_user[user_id].add(genre_id)
+    favorites_by_user: dict[int, set[int]] = defaultdict(set)
+    for user_id, movie_id in favorite_pairs:
+        if movie_id in item_export.movie_id_map:
+            favorites_by_user[user_id].add(movie_id)
+    onboarding_signatures = tuple(
+        onboarding_feature_signature(
+            genre_ids=genres_by_user[user_id],
+            favorite_movie_ids=favorites_by_user[user_id],
+        )
+        for user_id in user_ids
+    )
+    onboarding_signature_hash = hash_ordered_values(
+        "onboarding_profile_signature",
+        onboarding_signatures,
+    )
 
     movie_identity_count = len(item_export.movie_ids)
     item_tokens = item_export.feature_tokens
@@ -118,6 +163,21 @@ def build_user_feature_export(
             key = (user_id, token)
             values_by_user_token[key] = max(values_by_user_token.get(key, 0.0), value)
             favorite_derived_pair_count += 1
+
+    (
+        long_term_values,
+        long_term_covered_users,
+        missing_long_term_movie_count,
+    ) = build_long_term_behavior_values(
+        positive_interactions=long_term_positives,
+        item_export=item_export,
+    )
+    for key, value in long_term_values.items():
+        weighted_value = USER_FEATURE_LONG_TERM_DERIVED_WEIGHT * value
+        values_by_user_token[key] = max(
+            values_by_user_token.get(key, 0.0),
+            weighted_value,
+        )
 
     identity_tokens = tuple(
         get_feature_definition(FeatureName.USER_IDENTITY).token(user_id)
@@ -170,6 +230,7 @@ def build_user_feature_export(
         feature_mapping_hash=feature_mapping_hash,
         item_feature_export_hash=item_export.manifest.export_hash,
         matrix=matrix,
+        onboarding_profile_signature_hash=onboarding_signature_hash,
     )
     family_counts = Counter(token.split(":", 1)[0] for token in selected_shared_tokens)
     manifest = UserFeatureManifest(
@@ -192,7 +253,14 @@ def build_user_feature_export(
         feature_family_counts=dict(sorted(family_counts.items())),
         explicit_genre_weight=USER_FEATURE_EXPLICIT_GENRE_WEIGHT,
         favorite_derived_weight=USER_FEATURE_FAVORITE_DERIVED_WEIGHT,
-        vocabulary_policy="identity_all_genres_observed_favorite_features",
+        vocabulary_policy="identity_all_genres_observed_onboarding_and_long_term_features",
+        long_term_positive_pair_count=len(long_term_positives),
+        long_term_derived_feature_count=len(long_term_values),
+        long_term_covered_user_count=len(long_term_covered_users),
+        missing_long_term_movie_count=missing_long_term_movie_count,
+        long_term_derived_weight=USER_FEATURE_LONG_TERM_DERIVED_WEIGHT,
+        long_term_feature_top_k=dict(PROFILE_FEATURE_TOP_K),
+        onboarding_profile_signature_hash=onboarding_signature_hash,
     )
     return UserFeatureExport(
         user_ids=user_ids,
@@ -201,7 +269,60 @@ def build_user_feature_export(
         feature_token_map=feature_token_map,
         user_features=matrix,
         manifest=manifest,
+        onboarding_profile_signatures=onboarding_signatures,
     )
+
+
+def build_long_term_behavior_values(
+    *,
+    positive_interactions: tuple[PositiveInteraction, ...],
+    item_export: ItemFeatureExport,
+) -> tuple[dict[tuple[int, str], float], set[int], int]:
+    movie_identity_count = len(item_export.movie_ids)
+    item_matrix = item_export.item_features.tocsr(copy=False)
+    weighted_values: dict[tuple[int, str], float] = defaultdict(float)
+    total_weight_by_user: dict[int, float] = defaultdict(float)
+    missing_movie_count = 0
+
+    for interaction in positive_interactions:
+        movie_index = item_export.movie_id_map.get(interaction.movie_id)
+        if movie_index is None:
+            missing_movie_count += 1
+            continue
+        weight = float(interaction.sample_weight)
+        total_weight_by_user[interaction.user_id] += weight
+        start = int(item_matrix.indptr[movie_index])
+        end = int(item_matrix.indptr[movie_index + 1])
+        for feature_index, item_value in zip(
+            item_matrix.indices[start:end],
+            item_matrix.data[start:end],
+            strict=True,
+        ):
+            if feature_index < movie_identity_count:
+                continue
+            token = item_export.feature_tokens[int(feature_index)]
+            weighted_values[(interaction.user_id, token)] += weight * float(item_value)
+
+    averaged_by_family: dict[tuple[int, str], list[tuple[str, float]]] = defaultdict(list)
+    for (user_id, token), weighted_value in weighted_values.items():
+        denominator = total_weight_by_user[user_id]
+        value = weighted_value / denominator
+        if value <= 0.0 or not math.isfinite(value):
+            continue
+        family = token.split(":", 1)[0]
+        if family not in PROFILE_FEATURE_TOP_K:
+            continue
+        averaged_by_family[(user_id, family)].append((token, value))
+
+    selected: dict[tuple[int, str], float] = {}
+    covered_users: set[int] = set()
+    for (user_id, family), values in sorted(averaged_by_family.items()):
+        for token, value in sorted(values, key=lambda item: (-item[1], item[0]))[
+            : PROFILE_FEATURE_TOP_K[family]
+        ]:
+            selected[(user_id, token)] = value
+            covered_users.add(user_id)
+    return selected, covered_users, missing_movie_count
 
 
 def validate_item_identity_columns(item_export: ItemFeatureExport) -> None:
@@ -235,12 +356,18 @@ def hash_user_feature_export(
     feature_mapping_hash: str,
     item_feature_export_hash: str,
     matrix: csr_matrix,
+    exporter_version: str = USER_FEATURE_EXPORTER_VERSION,
+    onboarding_profile_signature_hash: str = "",
 ) -> str:
     digest = hashlib.sha256()
-    digest.update(f"exporter:{USER_FEATURE_EXPORTER_VERSION}\n".encode())
+    digest.update(f"exporter:{exporter_version}\n".encode())
     digest.update(f"users:{user_mapping_hash}\n".encode())
     digest.update(f"features:{feature_mapping_hash}\n".encode())
     digest.update(f"item_export:{item_feature_export_hash}\n".encode())
+    if onboarding_profile_signature_hash:
+        digest.update(
+            f"onboarding:{onboarding_profile_signature_hash}\n".encode()
+        )
     digest.update(np.asarray(matrix.indptr, dtype="<i8").tobytes())
     digest.update(np.asarray(matrix.indices, dtype="<i8").tobytes())
     digest.update(np.asarray(matrix.data, dtype="<f4").tobytes())

@@ -139,6 +139,26 @@ class CandidateMaterializerTest(unittest.TestCase):
         )
         self.assertEqual(batch.movie_ids.tolist(), [10, 20, 30])
 
+    def test_initial_catalog_mask_filters_before_top_k_selection(self) -> None:
+        artifact = replace(self.artifact, model=_ZeroRepresentationModel())
+        eligible_mask = np.ones(len(artifact.movie_ids), dtype=np.bool_)
+        eligible_mask[0] = False
+        batch = materialize_candidate_batch(
+            artifact,
+            [0],
+            initial_eligible_item_mask=eligible_mask,
+            config=CandidateMaterializationConfig(
+                top_k=3,
+                user_block_size=1,
+                item_block_size=2,
+                checkpoint_user_count=1,
+            ),
+        )
+
+        expected = [int(value) for value in artifact.movie_ids[1:4]]
+        self.assertEqual(batch.movie_ids.tolist(), expected)
+        self.assertEqual(batch.source_ranks.tolist(), list(range(1, len(expected) + 1)))
+
     def test_dynamic_worker_queue_matches_sequential_result(self) -> None:
         base_config = CandidateMaterializationConfig(
             top_k=3,
@@ -290,12 +310,18 @@ class CandidateMaterializerTest(unittest.TestCase):
             snapshot = materialize_candidate_snapshot(
                 self.artifact,
                 exclusions_by_user_id={101: {10}},
+                initial_eligible_item_mask=np.ones(
+                    len(self.artifact.movie_ids), dtype=np.bool_
+                ),
                 config=config,
                 output_root=temporary,
             )
             same_snapshot = materialize_candidate_snapshot(
                 self.artifact,
                 exclusions_by_user_id={101: {10}},
+                initial_eligible_item_mask=np.ones(
+                    len(self.artifact.movie_ids), dtype=np.bool_
+                ),
                 config=config,
                 output_root=temporary,
             )
@@ -339,6 +365,9 @@ class CandidateMaterializerTest(unittest.TestCase):
                 self.artifact,
                 eligible_user_ids=[user_id],
                 collaborative_confidence_by_user_id={user_id: 1.0},
+                initial_eligible_item_mask=np.ones(
+                    len(self.artifact.movie_ids), dtype=np.bool_
+                ),
                 config=CandidateMaterializationConfig(
                     top_k=3,
                     user_block_size=1,
@@ -351,6 +380,9 @@ class CandidateMaterializerTest(unittest.TestCase):
                 self.artifact,
                 eligible_user_ids=[user_id],
                 collaborative_confidence_by_user_id={user_id: 0.0},
+                initial_eligible_item_mask=np.ones(
+                    len(self.artifact.movie_ids), dtype=np.bool_
+                ),
                 config=CandidateMaterializationConfig(
                     top_k=3,
                     user_block_size=1,

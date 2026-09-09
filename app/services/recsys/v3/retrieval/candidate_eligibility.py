@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 from sqlalchemy.orm import Session
 
 from app.crud.recsys.movies import load_movies_by_ids, load_streaming_movie_ids
-from app.models.movie import Movie
-from app.services.recsys.v3.config import CANDIDATE_POOL_SIZE, COLD_START_GENRE_ONLY_MIN_VOTE_COUNT
+from app.services.recsys.v3.config import (
+    CANDIDATE_POOL_SIZE,
+    COLD_START_GENRE_ONLY_MIN_VOTE_COUNT,
+)
+from app.services.recsys.v3.retrieval.initial_candidate_filter import (
+    initial_filter_reasons,
+    to_policy_metadata,
+)
 from app.services.recsys.v3.retrieval.eligibility_schemas import (
     CandidateEligibilityDiagnostics,
     HardFilterReason,
@@ -32,6 +38,7 @@ def select_eligible_candidates(
     candidates: Sequence[MergedCandidate],
     profile: UserProfileBundle,
     context: PolicyRequestContext,
+    movie_identity_supported: Callable[[int], bool] | None = None,
     limit: int = CANDIDATE_POOL_SIZE,
 ) -> CandidateEligibilitySelection:
     if limit <= 0 or limit > CANDIDATE_POOL_SIZE:
@@ -62,6 +69,11 @@ def select_eligible_candidates(
             on_subscribed_ott=candidate.movie_id in subscribed_movie_ids,
             profile=profile,
             context=context,
+            model_identity_supported=(
+                movie_identity_supported(candidate.movie_id)
+                if movie_identity_supported is not None
+                else None
+            ),
         )
         if reasons:
             rejections.append(HardFilterRejection(movie_id=candidate.movie_id, reasons=reasons))
@@ -95,14 +107,35 @@ def hard_filter_reasons(
     on_subscribed_ott: bool,
     profile: UserProfileBundle,
     context: PolicyRequestContext,
+    model_identity_supported: bool | None = None,
+) -> tuple[HardFilterReason, ...]:
+    """Compatibility entry point combining initial defense and request filtering."""
+    initial_reasons = initial_filter_reasons(
+        metadata=metadata,
+        as_of=context.as_of.date(),
+        model_identity_supported=model_identity_supported,
+    )
+    request_reasons = request_filter_reasons(
+        movie_id,
+        metadata=metadata,
+        on_subscribed_ott=on_subscribed_ott,
+        profile=profile,
+        context=context,
+    )
+    return tuple(dict.fromkeys((*initial_reasons, *request_reasons)))
+
+
+def request_filter_reasons(
+    movie_id: int,
+    *,
+    metadata: MoviePolicyMetadata | None,
+    on_subscribed_ott: bool,
+    profile: UserProfileBundle,
+    context: PolicyRequestContext,
 ) -> tuple[HardFilterReason, ...]:
     reasons: list[HardFilterReason] = []
     if metadata is None:
         return (HardFilterReason.MISSING_MOVIE,)
-    if metadata.adult:
-        reasons.append(HardFilterReason.ADULT)
-    if not ((metadata.title_ko or "").strip() or (metadata.title or "").strip()):
-        reasons.append(HardFilterReason.MISSING_TITLE)
     if movie_id in profile.long_term.negative_movie_ids:
         reasons.append(HardFilterReason.PASSED)
     elif movie_id in profile.long_term.excluded_movie_ids:
@@ -122,18 +155,4 @@ def hard_filter_reasons(
         and not on_subscribed_ott
     ):
         reasons.append(HardFilterReason.NOT_ON_SUBSCRIBED_OTT)
-    return tuple(reasons)
-
-
-def to_policy_metadata(movie: Movie) -> MoviePolicyMetadata:
-    return MoviePolicyMetadata(
-        movie_id=int(movie.id),
-        adult=bool(movie.adult),
-        title=movie.title,
-        title_ko=movie.title_ko,
-        status=movie.status,
-        popularity=max(float(movie.popularity or 0.0), 0.0),
-        vote_average=max(float(movie.vote_average or 0.0), 0.0),
-        vote_count=max(int(movie.vote_count or 0), 0),
-        release_date=movie.release_date,
-    )
+    return tuple(dict.fromkeys(reasons))

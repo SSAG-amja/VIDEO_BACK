@@ -220,6 +220,9 @@ class LongTermOntologyRetrievalDiagnostics:
     candidate_count: int
     elapsed_seconds: float
     query_count: int
+    initial_inspected_candidate_count: int = 0
+    initial_rejected_candidate_count: int = 0
+    initial_rejection_counts: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

@@ -18,6 +18,7 @@ from app.models.ontology import OntologyBuild
 from app.services.recsys.v3.config import (
     ENGINE_NAME,
     ENGINE_VERSION,
+    INITIAL_CANDIDATE_FILTER_POLICY_VERSION,
     SERVING_BUNDLE_FORMAT_VERSION,
     SERVING_BUNDLE_ROOT,
 )
@@ -39,6 +40,11 @@ def activate_serving_bundle(
     snapshot_path = Path(candidate_snapshot_path).resolve()
     model = load_hybrid_artifact(model_path)
     snapshot = load_candidate_snapshot(snapshot_path)
+    if (
+        snapshot.manifest.get("initial_candidate_filter_policy_version")
+        != INITIAL_CANDIDATE_FILTER_POLICY_VERSION
+    ):
+        raise ValueError("serving bundle requires the current initial candidate filter")
     if snapshot.model_build_id != model.manifest["model_build_id"]:
         raise ValueError("candidate snapshot and model artifact build IDs differ")
     ontology_manifest = model.manifest["ontology"]

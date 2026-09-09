@@ -200,14 +200,35 @@ POLICY_REGISTRY = (
         selected_source=PolicySource.V1,
         status=DecisionStatus.ADOPTED,
         selection_reason=(
-            "Retain V1 watched/passed and OTT eligibility, and add explicit session, adult, title, "
-            "movie block, and canceled-status boundaries without a minimum-vote hard filter."
+            "Retain V1 watched/passed and OTT request eligibility, and add explicit session and "
+            "movie-block boundaries. Static catalog conditions are only rechecked here as a "
+            "defense against stale candidate snapshots."
         ),
         references=(
             "app/services/recsys/v1/recommendation.py",
             "z_v3_docs/03_recommendation_policy.md",
         ),
         config_keys=("POLICY_BLOCKED_MOVIE_STATUSES",),
+    ),
+    PolicyDecision(
+        policy_id="initial_catalog_qualification",
+        selected_source=PolicySource.V3_NEW,
+        status=DecisionStatus.ADOPTED,
+        selection_reason=(
+            "Exclude invalid catalog rows before long-term Top-K selection. Preserve trained items "
+            "and releases within 180 days; otherwise require 20 votes for unsupported items. "
+            "Metadata field count is deliberately not an eligibility condition."
+        ),
+        references=(
+            "app/services/recsys/v3/retrieval/initial_candidate_filter.py",
+            "z_v3_docs/03_recommendation_policy.md",
+        ),
+        config_keys=(
+            "LONG_TERM_COLD_ITEM_GRACE_DAYS",
+            "LONG_TERM_MATURE_COLD_ITEM_MIN_VOTE_COUNT",
+            "INITIAL_CANDIDATE_FILTER_POLICY_VERSION",
+        ),
+        comparison_required=True,
     ),
     PolicyDecision(
         policy_id="serving_score_composition",
@@ -301,7 +322,8 @@ POLICY_REGISTRY = (
         status=DecisionStatus.PROVISIONAL,
         selection_reason=(
             "Replace V1 user-cosine retrieval and V2 graph-only retrieval with hybrid "
-            "LightFM top-150 storage: 100 active candidates plus 50 ordered reserves, "
+            "LightFM top-150 storage after initial catalog qualification: 100 active candidates "
+            "plus 50 ordered request-filter reserves, "
             "with at most 100 candidates entering detailed analysis."
         ),
         references=(

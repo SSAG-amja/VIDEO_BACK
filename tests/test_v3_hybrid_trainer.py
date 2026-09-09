@@ -5,8 +5,9 @@ import unittest
 from dataclasses import replace
 
 import numpy as np
-from scipy.sparse import csr_matrix, vstack
+from scipy.sparse import csr_matrix, hstack, vstack
 
+from app.jobs.recsys.v3.datasets.dataset_schemas import PositiveInteraction
 from app.jobs.recsys.v3.training.artifact_publisher import (
     load_hybrid_artifact,
     publish_hybrid_artifact,
@@ -29,6 +30,7 @@ from app.jobs.recsys.v3.features.user_feature_builder import (
     build_user_feature_export,
     hash_ordered_values,
 )
+from app.services.recsys.v3.domain.behavior import SnapshotAction
 from tests.test_v3_identity_trainer import synthetic_dataset
 
 
@@ -108,6 +110,63 @@ class UserFeatureBuilderTest(unittest.TestCase):
         self.assertEqual(export.user_features.shape[0], 3)
         self.assertTrue(np.all(export.user_features.data > 0))
 
+    def test_long_term_features_are_derived_from_training_positives(self) -> None:
+        item_export = synthetic_item_export()
+        positives = (
+            PositiveInteraction(
+                user_id=101,
+                movie_id=10,
+                actions=(SnapshotAction.SAVED,),
+                representative_action=SnapshotAction.SAVED,
+                sample_weight=2.0,
+                latest_at=None,
+            ),
+            PositiveInteraction(
+                user_id=101,
+                movie_id=40,
+                actions=(SnapshotAction.WATCHED,),
+                representative_action=SnapshotAction.WATCHED,
+                sample_weight=1.0,
+                latest_at=None,
+            ),
+            PositiveInteraction(
+                user_id=202,
+                movie_id=30,
+                actions=(SnapshotAction.PINNED,),
+                representative_action=SnapshotAction.PINNED,
+                sample_weight=2.0,
+                latest_at=None,
+            ),
+            PositiveInteraction(
+                user_id=303,
+                movie_id=999,
+                actions=(SnapshotAction.SAVED,),
+                representative_action=SnapshotAction.SAVED,
+                sample_weight=2.0,
+                latest_at=None,
+            ),
+        )
+        export = build_user_feature_export(
+            user_ids=(101, 202, 303),
+            explicit_genre_rows=(),
+            favorite_rows=(),
+            item_export=item_export,
+            positive_interactions=positives,
+        )
+
+        genre_1 = export.feature_token_map["genre:1"]
+        genre_2 = export.feature_token_map["genre:2"]
+        healing = export.feature_token_map["theme:healing"]
+        self.assertAlmostEqual(float(export.user_features[0, genre_1]), 2.0 / 3.0)
+        self.assertAlmostEqual(float(export.user_features[0, genre_2]), 1.0 / 3.0)
+        self.assertAlmostEqual(float(export.user_features[0, healing]), 2.3 / 3.0)
+        self.assertAlmostEqual(float(export.user_features[1, genre_2]), 1.0)
+        self.assertEqual(export.user_features[2, 3:].nnz, 0)
+        self.assertEqual(export.manifest.long_term_positive_pair_count, 4)
+        self.assertEqual(export.manifest.long_term_covered_user_count, 2)
+        self.assertEqual(export.manifest.missing_long_term_movie_count, 1)
+        self.assertGreater(export.manifest.long_term_derived_feature_count, 0)
+
     def test_feature_representation_normalizes_semantics_and_limits_item_identity(self) -> None:
         original = synthetic_item_export()
         transformed = transform_item_feature_export(
@@ -145,6 +204,74 @@ class UserFeatureBuilderTest(unittest.TestCase):
         )
         movie_count = len(transformed.movie_ids)
         self.assertEqual(transformed.item_features[:, :movie_count].nnz, 0)
+
+    def test_field_budget_does_not_redistribute_missing_or_low_information_weight(self) -> None:
+        original = synthetic_item_export()
+        keyword_matrix = csr_matrix(
+            np.asarray(
+                [
+                    [1.0, 0.0],
+                    [1.0, 0.0],
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                    [0.0, 0.0],
+                ],
+                dtype=np.float32,
+            )
+        )
+        matrix = hstack((original.item_features, keyword_matrix), format="csr")
+        tokens = original.feature_tokens + ("keyword:818", "keyword:999")
+        original = replace(
+            original,
+            feature_tokens=tokens,
+            feature_token_map={token: index for index, token in enumerate(tokens)},
+            item_features=matrix,
+            manifest=replace(
+                original.manifest,
+                feature_count=len(tokens),
+                matrix_nnz=int(matrix.nnz),
+                matrix_shape=matrix.shape,
+            ),
+        )
+        budgets = {
+            "genre": 0.25,
+            "keyword": 0.20,
+            "actor": 0.15,
+            "director": 0.15,
+            "theme": 0.15,
+            "mood": 0.10,
+        }
+        transformed = transform_item_feature_export(
+            original,
+            policy="supported_identity_field_budgeted",
+            supported_movie_ids=frozenset({10, 40}),
+            field_budgets=budgets,
+            keyword_weighting="normalized_idf",
+        )
+
+        movie_count = len(original.movie_ids)
+        identities = transformed.item_features[:, :movie_count]
+        semantics = transformed.item_features[:, movie_count:].toarray()
+        common_keyword_idf = np.log(6.0 / 4.0) / np.log(3.0)
+
+        self.assertEqual(identities.nnz, 2)
+        self.assertAlmostEqual(float(semantics[0, 0]), 0.25)
+        self.assertAlmostEqual(float(semantics[0, 2]), 0.15 * 0.8)
+        self.assertAlmostEqual(
+            float(semantics[0, 3]),
+            0.20 * common_keyword_idf,
+        )
+        self.assertAlmostEqual(float(semantics[3, 4]), 0.20)
+        self.assertAlmostEqual(float(semantics[4].sum()), 0.25)
+        self.assertLess(float(semantics[0].sum()), 1.0)
+        self.assertEqual(
+            transformed.manifest.semantic_field_budgets,
+            budgets,
+        )
+        self.assertEqual(
+            transformed.manifest.keyword_weighting_policy,
+            "normalized_idf",
+        )
 
 
 class HybridTrainerTest(unittest.TestCase):

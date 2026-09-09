@@ -80,22 +80,27 @@ def profile_feature(feature: FeatureName, ref_id: str, score: float = 1.0) -> Pr
 class RuntimeProfileBuilderTest(unittest.TestCase):
     def test_long_term_decay_is_action_specific_and_continuous(self) -> None:
         recent_saved = long_term_decay(signal(10, SnapshotAction.SAVED), AS_OF)
-        old_saved = long_term_decay(
-            signal(10, SnapshotAction.SAVED, days_ago=60),
+        half_life_saved = long_term_decay(
+            signal(10, SnapshotAction.SAVED, days_ago=365),
             AS_OF,
         )
-        old_watched = long_term_decay(
-            signal(10, SnapshotAction.WATCHED, days_ago=60),
+        same_age_saved = long_term_decay(
+            signal(10, SnapshotAction.SAVED, days_ago=180),
+            AS_OF,
+        )
+        half_life_watched = long_term_decay(
+            signal(10, SnapshotAction.WATCHED, days_ago=180),
             AS_OF,
         )
         very_old_saved = long_term_decay(
-            signal(10, SnapshotAction.SAVED, days_ago=1_000),
+            signal(10, SnapshotAction.SAVED, days_ago=4_000),
             AS_OF,
         )
 
         self.assertEqual(recent_saved, 1.0)
-        self.assertAlmostEqual(old_saved, 0.5, places=7)
-        self.assertGreater(old_watched, old_saved)
+        self.assertAlmostEqual(half_life_saved, 0.5, places=7)
+        self.assertAlmostEqual(half_life_watched, 0.5, places=7)
+        self.assertGreater(same_age_saved, half_life_watched)
         self.assertEqual(very_old_saved, 0.05)
         self.assertEqual(
             long_term_decay(signal(10, SnapshotAction.FAVORITE, days_ago=None), AS_OF),

@@ -25,6 +25,11 @@ from app.services.recsys.v3.retrieval.retrieval_schemas import (
     ProfileScope,
 )
 from app.services.recsys.v3.domain.schemas import FeatureDirection, ProfileFeatureSignal, UserProfileBundle
+from app.services.recsys.v3.retrieval.ontology_feature_retriever import (
+    build_budgeted_candidate_aggregate_rows,
+    supports_budgeted_ontology_retrieval,
+)
+from app.services.recsys.v3.serving.model_store import RuntimeHybridArtifact
 
 
 ANALYZER_FEATURE_ORDER = (
@@ -52,17 +57,30 @@ def analyze_candidates(
     candidate_movie_ids: Sequence[int],
     profile: UserProfileBundle,
     include_onboarding: bool = False,
+    artifact: RuntimeHybridArtifact | None = None,
 ) -> OntologyAnalysisResult:
     started = time.monotonic()
     movie_ids = _validate_candidate_ids(candidate_movie_ids)
     validate_profile_build(db, ontology_build_id)
     profile_rows = build_profile_rows(profile, include_onboarding=include_onboarding)
-    aggregate_rows = load_candidate_type_aggregates(
-        db,
-        ontology_build_id=ontology_build_id,
-        candidate_movie_ids=movie_ids,
-        profile_rows=profile_rows,
+    use_budgeted_features = (
+        artifact is not None
+        and artifact.ontology_build_id == ontology_build_id
+        and supports_budgeted_ontology_retrieval(artifact)
     )
+    if use_budgeted_features:
+        aggregate_rows = build_budgeted_candidate_aggregate_rows(
+            artifact,
+            candidate_movie_ids=movie_ids,
+            profile_rows=profile_rows,
+        )
+    else:
+        aggregate_rows = load_candidate_type_aggregates(
+            db,
+            ontology_build_id=ontology_build_id,
+            candidate_movie_ids=movie_ids,
+            profile_rows=profile_rows,
+        )
     repetition_rows = load_candidate_repetition_features(
         db,
         ontology_build_id=ontology_build_id,
@@ -75,6 +93,7 @@ def analyze_candidates(
         repetition_feature_rows=repetition_rows,
         streaming_ott_rows=ott_rows,
         subscribed_ott_ids=profile.serving_context.subscribed_ott_ids,
+        aggregate_scores_are_budgeted=use_budgeted_features,
     )
     matched_movie_ids = {int(row[0]) for row in aggregate_rows}
     return OntologyAnalysisResult(
@@ -88,7 +107,7 @@ def analyze_candidates(
             streaming_ott_row_count=len(ott_rows),
             query_count=(
                 1
-                + int(bool(movie_ids and profile_rows))
+                + int(bool(movie_ids and profile_rows) and not use_budgeted_features)
                 + int(bool(movie_ids))
                 + int(bool(movie_ids))
             ),
@@ -324,11 +343,16 @@ def assemble_candidate_ontology_analyses(
     streaming_ott_rows: Iterable[tuple[int, int]],
     subscribed_ott_ids: frozenset[int],
     repetition_feature_rows: Iterable[tuple[int, str, str]] = (),
+    aggregate_scores_are_budgeted: bool = False,
 ) -> tuple[CandidateOntologyAnalysis, ...]:
     values: dict[tuple[int, FeatureName], dict[tuple[ProfileScope, FeatureDirection], tuple[float, int]]] = {}
     for movie_id, feature_name, scope, direction, raw_score, peak_score, match_count in aggregate_rows:
         feature = FeatureName(str(feature_name))
-        damped_score = _damped_type_score(float(raw_score), float(peak_score))
+        damped_score = (
+            round(float(raw_score), 8)
+            if aggregate_scores_are_budgeted
+            else _damped_type_score(float(raw_score), float(peak_score))
+        )
         values.setdefault((int(movie_id), feature), {})[
             (ProfileScope(str(scope)), FeatureDirection(str(direction)))
         ] = (damped_score, int(match_count))

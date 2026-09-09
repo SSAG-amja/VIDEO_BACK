@@ -92,12 +92,19 @@ def merge_candidates(
             if agreement_denominator
             else 0.0
         )
-        base_model_weight = LONG_TERM_MODEL_MIN_SELECTION_WEIGHT + (
+        base_model_weight = round(
             LONG_TERM_MODEL_SELECTION_WEIGHT
-            - LONG_TERM_MODEL_MIN_SELECTION_WEIGHT
-        ) * semantic_agreement
-        ontology_weight = LONG_TERM_ONTOLOGY_SELECTION_WEIGHT + (
-            LONG_TERM_MODEL_SELECTION_WEIGHT - base_model_weight
+            - (
+                LONG_TERM_MODEL_SELECTION_WEIGHT
+                - LONG_TERM_MODEL_MIN_SELECTION_WEIGHT
+            )
+            * semantic_agreement,
+            8,
+        )
+        ontology_weight = round(
+            LONG_TERM_ONTOLOGY_SELECTION_WEIGHT
+            + (LONG_TERM_MODEL_SELECTION_WEIGHT - base_model_weight),
+            8,
         )
         model_weight = base_model_weight
     elif model_by_movie:

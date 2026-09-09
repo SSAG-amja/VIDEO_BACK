@@ -36,6 +36,7 @@ from app.services.recsys.v3.domain.feature_registry import FEATURE_REGISTRY_VERS
 
 
 ARTIFACT_FORMAT_VERSION = 1
+HYBRID_ARTIFACT_FORMAT_VERSION = 2
 ARTIFACT_FILES = (
     "model.joblib",
     "user_ids.npy",
@@ -55,6 +56,9 @@ HYBRID_ARTIFACT_FILES = (
     "item_feature_manifest.json",
     "config.json",
     "diagnostics.json",
+)
+HYBRID_ARTIFACT_FILES_V2 = HYBRID_ARTIFACT_FILES + (
+    "user_onboarding_signatures.npy",
 )
 
 
@@ -231,6 +235,16 @@ def publish_hybrid_artifact(
             temporary / "item_feature_tokens.joblib",
             compress=3,
         )
+        np.save(
+            temporary / "user_onboarding_signatures.npy",
+            np.asarray(
+                [
+                    list(bytes.fromhex(signature))
+                    for signature in result.user_feature_export.onboarding_profile_signatures
+                ],
+                dtype=np.uint8,
+            ),
+        )
         write_json(
             temporary / "user_feature_manifest.json",
             asdict(result.user_feature_export.manifest),
@@ -263,7 +277,7 @@ def build_hybrid_manifest(
     item_manifest = result.item_feature_export.manifest
     user_manifest = result.user_feature_export.manifest
     return {
-        "artifact_format_version": ARTIFACT_FORMAT_VERSION,
+        "artifact_format_version": HYBRID_ARTIFACT_FORMAT_VERSION,
         "model_build_id": result.model_build_id,
         "engine_name": ENGINE_NAME,
         "engine_version": ENGINE_VERSION,
@@ -295,8 +309,13 @@ def build_hybrid_manifest(
             "user_representation_policy": user_manifest.representation_policy,
             "item_identity_block_weight": item_manifest.identity_block_weight,
             "item_semantic_block_weight": item_manifest.semantic_block_weight,
+            "item_semantic_field_budgets": item_manifest.semantic_field_budgets,
+            "item_keyword_weighting_policy": item_manifest.keyword_weighting_policy,
             "user_identity_block_weight": user_manifest.identity_block_weight,
             "user_semantic_block_weight": user_manifest.semantic_block_weight,
+            "user_onboarding_profile_signature_hash": (
+                user_manifest.onboarding_profile_signature_hash
+            ),
         },
         "dimensions": {
             "users": len(result.user_ids),
@@ -319,7 +338,7 @@ def build_hybrid_manifest(
                 "sha256": hash_file(artifact_dir / filename),
                 "size_bytes": (artifact_dir / filename).stat().st_size,
             }
-            for filename in HYBRID_ARTIFACT_FILES
+            for filename in HYBRID_ARTIFACT_FILES_V2
         },
     }
 
@@ -350,6 +369,14 @@ def load_hybrid_artifact(path: str | Path) -> LoadedHybridArtifact:
     item_tokens = tuple(joblib.load(artifact_dir / "item_feature_tokens.joblib"))
     user_feature_manifest = read_json(artifact_dir / "user_feature_manifest.json")
     item_feature_manifest = read_json(artifact_dir / "item_feature_manifest.json")
+    onboarding_signatures = load_onboarding_signatures(
+        artifact_dir,
+        artifact_format_version=int(manifest["artifact_format_version"]),
+        expected_user_count=len(user_ids),
+        expected_hash=str(
+            user_feature_manifest.get("onboarding_profile_signature_hash", "")
+        ),
+    )
     dimensions = manifest["dimensions"]
     validate_hybrid_mappings(
         user_ids=user_ids,
@@ -392,6 +419,10 @@ def load_hybrid_artifact(path: str | Path) -> LoadedHybridArtifact:
         feature_mapping_hash=exports["user_feature_mapping_hash"],
         item_feature_export_hash=exports["item_export_hash"],
         matrix=user_features,
+        exporter_version=str(user_feature_manifest["exporter_version"]).split("+", 1)[0],
+        onboarding_profile_signature_hash=str(
+            user_feature_manifest.get("onboarding_profile_signature_hash", "")
+        ),
     ) != exports["user_export_hash"]:
         raise ValueError("hybrid artifact user feature export content hash mismatch")
 
@@ -419,11 +450,13 @@ def load_hybrid_artifact(path: str | Path) -> LoadedHybridArtifact:
         item_feature_tokens=item_tokens,
         manifest=manifest,
         diagnostics=diagnostics,
+        onboarding_profile_signatures=onboarding_signatures,
     )
 
 
 def validate_hybrid_manifest(manifest: dict[str, Any], artifact_dir: Path) -> None:
-    if manifest.get("artifact_format_version") != ARTIFACT_FORMAT_VERSION:
+    artifact_format_version = manifest.get("artifact_format_version")
+    if artifact_format_version not in {ARTIFACT_FORMAT_VERSION, HYBRID_ARTIFACT_FORMAT_VERSION}:
         raise ValueError("unsupported hybrid model artifact format")
     if manifest.get("engine_name") != ENGINE_NAME or manifest.get("stage") != "hybrid_ontology":
         raise ValueError("artifact is not a V3 ontology hybrid model")
@@ -441,7 +474,15 @@ def validate_hybrid_manifest(manifest: dict[str, Any], artifact_dir: Path) -> No
     ontology = manifest.get("ontology", {})
     if ontology.get("applicable") is not True or not isinstance(ontology.get("build_id"), int):
         raise ValueError("hybrid artifact requires an ontology build")
-    validate_artifact_files(manifest, artifact_dir, HYBRID_ARTIFACT_FILES)
+    validate_artifact_files(
+        manifest,
+        artifact_dir,
+        (
+            HYBRID_ARTIFACT_FILES_V2
+            if artifact_format_version == HYBRID_ARTIFACT_FORMAT_VERSION
+            else HYBRID_ARTIFACT_FILES
+        ),
+    )
 
 
 def validate_hybrid_mappings(
@@ -508,6 +549,11 @@ def validate_hybrid_feature_manifests(
         raise ValueError("hybrid user mapping manifest mismatch")
     if user_feature_manifest.get("feature_mapping_hash") != exports["user_feature_mapping_hash"]:
         raise ValueError("hybrid user feature mapping manifest mismatch")
+    if user_feature_manifest.get("onboarding_profile_signature_hash", "") != exports.get(
+        "user_onboarding_profile_signature_hash",
+        "",
+    ):
+        raise ValueError("hybrid user onboarding signature manifest mismatch")
     if item_feature_manifest.get("ontology_schema_version") != ontology["schema_version"]:
         raise ValueError("hybrid item feature ontology schema mismatch")
     for feature_manifest in (user_feature_manifest, item_feature_manifest):
@@ -520,6 +566,27 @@ def validate_hybrid_feature_manifests(
 def validate_sparse_feature_values(matrix, label: str) -> None:
     if matrix.nnz == 0 or not np.isfinite(matrix.data).all() or np.any(matrix.data <= 0):
         raise ValueError(f"hybrid artifact {label} features must be finite and positive")
+
+
+def load_onboarding_signatures(
+    artifact_dir: Path,
+    *,
+    artifact_format_version: int,
+    expected_user_count: int,
+    expected_hash: str,
+) -> tuple[str, ...] | None:
+    if artifact_format_version < HYBRID_ARTIFACT_FORMAT_VERSION:
+        return None
+    values = np.load(
+        artifact_dir / "user_onboarding_signatures.npy",
+        allow_pickle=False,
+    )
+    if values.dtype != np.uint8 or values.shape != (expected_user_count, 32):
+        raise ValueError("hybrid artifact onboarding signature dimensions mismatch")
+    signatures = tuple(bytes(row).hex() for row in values)
+    if hash_ordered_values("onboarding_profile_signature", signatures) != expected_hash:
+        raise ValueError("hybrid artifact onboarding signature content hash mismatch")
+    return signatures
 
 
 def validate_manifest(manifest: dict[str, Any], artifact_dir: Path) -> None:

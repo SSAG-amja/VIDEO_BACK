@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import joblib
@@ -32,6 +34,7 @@ class RuntimeHybridArtifact:
     item_features: csr_matrix
     user_feature_tokens: tuple[str, ...]
     item_feature_tokens: tuple[str, ...]
+    item_semantic_feature_index: Mapping[str, int]
     manifest: dict
     num_threads: int
     known_user_score_centering_weight: float
@@ -39,6 +42,7 @@ class RuntimeHybridArtifact:
     mean_user_embedding: np.ndarray
     user_representation_component_means: UserRepresentationComponentMeans
     collaborative_population_confidence: float
+    onboarding_profile_signatures: tuple[str, ...] | None
 
     @property
     def model_build_id(self) -> str:
@@ -53,6 +57,12 @@ class RuntimeHybridArtifact:
 
     def movie_index(self, movie_id: int) -> int | None:
         return _find_id(self.movie_ids, movie_id)
+
+    def movie_identity_supported(self, movie_id: int) -> bool:
+        movie_index = self.movie_index(movie_id)
+        if movie_index is None:
+            return False
+        return bool(self.item_features[movie_index, movie_index] > 0.0)
 
 
 class MovieIdIndex:
@@ -92,6 +102,11 @@ def load_runtime_hybrid_artifact(path: str | Path) -> RuntimeHybridArtifact:
     item_features = load_npz(artifact_dir / "item_features.npz").tocsr()
     user_tokens = tuple(joblib.load(artifact_dir / "user_feature_tokens.joblib"))
     item_tokens = tuple(joblib.load(artifact_dir / "item_feature_tokens.joblib"))
+    onboarding_profile_signatures = _load_onboarding_signatures(
+        artifact_dir,
+        artifact_format_version=int(manifest.get("artifact_format_version", 1)),
+        user_count=len(user_ids),
+    )
     dimensions = manifest.get("dimensions", {})
     _validate_mapping(user_ids, int(dimensions.get("users", -1)), "user")
     _validate_mapping(movie_ids, int(dimensions.get("movies", -1)), "movie")
@@ -141,6 +156,15 @@ def load_runtime_hybrid_artifact(path: str | Path) -> RuntimeHybridArtifact:
         item_features=item_features,
         user_feature_tokens=user_tokens,
         item_feature_tokens=item_tokens,
+        item_semantic_feature_index=MappingProxyType(
+            {
+                token: index
+                for index, token in enumerate(
+                    item_tokens[len(movie_ids) :],
+                    start=len(movie_ids),
+                )
+            }
+        ),
         manifest=manifest,
         num_threads=num_threads,
         known_user_score_centering_weight=centering_weight,
@@ -148,6 +172,7 @@ def load_runtime_hybrid_artifact(path: str | Path) -> RuntimeHybridArtifact:
         mean_user_embedding=mean_user_embedding,
         user_representation_component_means=component_means,
         collaborative_population_confidence=collaborative_population_confidence,
+        onboarding_profile_signatures=onboarding_profile_signatures,
     )
 
 
@@ -167,6 +192,23 @@ def _validate_mapping(values: np.ndarray, expected_size: int, label: str) -> Non
         raise ValueError(f"serving artifact {label} mapping dimension mismatch")
     if values.size > 1 and np.any(values[1:] <= values[:-1]):
         raise ValueError(f"serving artifact {label} IDs must be strictly increasing")
+
+
+def _load_onboarding_signatures(
+    artifact_dir: Path,
+    *,
+    artifact_format_version: int,
+    user_count: int,
+) -> tuple[str, ...] | None:
+    if artifact_format_version < 2:
+        return None
+    values = np.load(
+        artifact_dir / "user_onboarding_signatures.npy",
+        allow_pickle=False,
+    )
+    if values.dtype != np.uint8 or values.shape != (user_count, 32):
+        raise ValueError("serving artifact onboarding signature dimensions mismatch")
+    return tuple(bytes(row).hex() for row in values)
 
 
 def _find_id(values: np.ndarray, value: int) -> int | None:

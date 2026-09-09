@@ -257,6 +257,10 @@ def train_hybrid_model(
             "user": user_export.manifest.representation_policy,
             "item_identity_block_weight": item_export.manifest.identity_block_weight,
             "item_semantic_block_weight": item_export.manifest.semantic_block_weight,
+            "item_semantic_field_budgets": item_export.manifest.semantic_field_budgets,
+            "item_keyword_weighting_policy": (
+                item_export.manifest.keyword_weighting_policy
+            ),
             "user_identity_block_weight": user_export.manifest.identity_block_weight,
             "user_semantic_block_weight": user_export.manifest.semantic_block_weight,
             "user_row_sum": sparse_row_sum_diagnostics(user_features),
