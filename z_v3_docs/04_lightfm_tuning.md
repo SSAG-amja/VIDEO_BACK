@@ -232,7 +232,7 @@ semantic block은 행별 L1 정규화 후 지정한 총량을 곱한다. feature
 
 item-frequency 역제곱근 sample 보정과 item bias 제거는 집중도를 개선하지 못해 사용하지 않는다. 자세한 수치와 제한은 `10_quality_improvement_record.md`의 Phase B 결과를 따른다.
 
-### Phase I 협업 과집중 보정 (현재 기준)
+### Phase I 협업 과집중 보정 (활성 checkpoint 이력)
 
 시드 입력 편향을 제거한 뒤 다음 설정으로 다시 검증했다.
 
@@ -244,7 +244,11 @@ item-frequency 역제곱근 sample 보정과 item bias 제거는 집중도를 �
 | user activity | `cap_at_median` | 사용자 sample weight 총합을 활성 사용자 중앙값으로 상한 처리 |
 | known-user centering | `0.5` | 장기 취향 NDCG grid에서 선택한 현재값 |
 
+2026-09-11 소스 변경 이후 새 학습의 item-frequency 기본값은 `none`이다. 위 `inverse_sqrt` 값은 현재 활성 checkpoint의 학습 이력이며 새 shadow 모델의 기본값이 아니다. 모델은 개인 선호를 학습하고 인기 후보의 최종 노출 쏠림은 정책 재정렬에서 별도 제어한다. 재정렬 penalty는 아직 기본 `0`으로 비활성화되어 있다.
+
 전체 협업 신뢰도는 사용자 수, 한 영화의 최대 사용자 지지도, model top-100 사용자 간 Jaccard 중 가장 약한 항목으로 결정한다. 사용자별로는 positive pair `3~20개`를 `0~1`로 환산하고 전체 신뢰도와 사용자 신뢰도 중 작은 값을 사용한다. 이 값은 LightFM 전체 점수나 model 후보 lane을 줄이는 값이 아니라 known-user의 user-identity 성분만 조절한다.
+
+model health에서 embedding·bias·prediction의 수치 이상, 후보 목록 Jaccard 초과, top-20 고유 영화 비율 미달은 artifact 발행을 막는 hard violation이다. 단일 영화의 top-20 최대 사용자 노출률 초과는 인기 영화의 정상 노출도 잡을 수 있으므로 warning으로만 기록한다. 이 경고만으로 artifact를 차단하지 않으며, 목록 전체 중복 또는 고유 영화 부족이 함께 나타나는지는 별도 hard 지표로 판단한다.
 
 ```text
 collaborative_confidence
@@ -260,7 +264,7 @@ lightfm_adjusted
 
 `collaborative_confidence=1`이면 기존 centered known-user LightFM 점수와 같고, `0`이면 semantic LightFM 점수만 남는다. feature-only 사용자는 identity 성분이 없으므로 이 감쇠 대상이 아니다. 현재 120명 합성 모델의 population confidence는 `0.1556`이다.
 
-### 장기 취향 NDCG 조정 (현재 기준)
+### 장기 취향 NDCG 조정 (2026-09-10 checkpoint 이력)
 
 500명 학습 사용자와 고정 100명 평가 사용자의 시간순 70/30 holdout에서 다음 값을 비교했다.
 
@@ -273,14 +277,40 @@ lightfm_adjusted
 
 이 결과는 주어진 holdout 영화의 선호 순위 판별만 검증한다. 전체 카탈로그 후보 검색 품질이나 실제 사용자 만족도를 증명하지 않으며, 여러 사용자 규모와 반복 seed 검증 전에는 1단계 전체 완료로 간주하지 않는다.
 
+2026-09-11 matched 200명 재검사에서는 순수 LightFM이 현재 V3보다 NDCG@20 `0.019902`, NDCG@30 `0.018191` 높았고, identity-only 비교의 WARP/logistic 우열도 반전됐다. 따라서 위 값은 활성 checkpoint의 이력일 뿐 최종 튜닝 결론이 아니다. 현재 재검증 순서와 유지·재검토 범위는 루트의 `v3_recommendation_quality_tuning_plan.md`와 `v3_recommendation_quality_tuning_results.md`를 따른다.
+
+### TUNE-01 사용자 semantic 표현 (소스 기본값)
+
+기존에는 온보딩과 장기 행동 semantic을 합친 뒤 사용자마다 전체 행을 L1 정규화했다. 이 방식은 장기 행동 근거가 적거나 metadata coverage가 낮아도 남은 feature 총합을 항상 `0.5`로 확대했다.
+
+현재 소스 기본값은 두 출처를 분리한다.
+
+```text
+onboarding-only semantic = 기존 L1 정규화 유지
+
+long-term semantic
+  = item field-budget feature의 행동 가중 평균
+  * positive_movie_count / (positive_movie_count + 5)
+
+combined semantic
+  = coordinate-wise max(onboarding, long-term)
+  * 0.5
+```
+
+결합 합계가 1을 넘을 때만 하향 조정하고, 1보다 작은 장기 행동 벡터는 확대하지 않는다. 따라서 L1의 점수 규모 상한은 유지하면서 장기 취향 근거량 차이를 보존한다.
+
+고정 사용자 100명과 seed `42~46` 비교에서 이 방식은 기존 전체 L1보다 serving-adjusted NDCG@20 `+0.002801`, NDCG@30 `+0.000872`였다. feature별 반복 근거 감쇄와는 통계적으로 동률이었지만 @20 보존과 세부 취향 과감쇄 위험을 고려해 사용자 전체 근거량 방식을 선택했다. 이 값은 2026-09-10 checkpoint 모델부터 적용됐으며 활성 bundle `bundle-1c3b3416d156bfdfc2a1a0a4`의 기준 사용자 표현이다.
+
 ## 7. Loss 선택
 
-기본:
+현재 활성 checkpoint:
 
 ```text
 WARP
   positive implicit feedback의 top-K 순위 최적화
 ```
+
+WARP는 최종 확정값이 아니다. matched 200명 단일 seed에서 logistic이 우세했으므로 loss와 PASS는 다중 seed 재검증 대상으로 열려 있다.
 
 주의:
 
@@ -337,18 +367,21 @@ subscribed OTT는 user feature 후보가 아니다. 별도 serving context에서
 
 행동 interaction이 이미 표현하는 동적 취향을 user feature에 그대로 중복하지 않는다. user feature는 cold-start와 안정적인 prior 중심으로 구성한다.
 
-현재 S5 구현값:
+현재 구현값:
 
 ```text
-user identity                     1.0
+user identity                     2.0
 explicit onboarding genre         1.0
 favorite-derived retained feature item feature value * 0.5
+long-term derived feature          item field-budget weighted average
+long-term evidence confidence      n / (n + 5)
+user semantic block 상한           0.5
 동일 user-token 중복               max
-vocabulary                        전체 retained genre + 현재 favorite에서 관측된 token
+vocabulary                        전체 retained genre + onboarding/long-term 관측 token
 OTT                               제외
 ```
 
-전체 item feature 150만 개를 user vocabulary로 그대로 복제하면 user feature embedding 메모리가 불필요하게 커진다. 따라서 genre는 신규 사용자 feature-only 경로를 위해 전체 retained vocabulary를 유지하고 keyword/actor/director/theme/mood는 현재 onboarding favorite에서 관측된 token만 포함한다. 이 범위와 `0.5`는 실제 ablation 전 provisional이다.
+전체 item feature 150만 개를 user vocabulary로 그대로 복제하면 user feature embedding 메모리가 불필요하게 커진다. 따라서 genre는 신규 사용자 feature-only 경로를 위해 전체 retained vocabulary를 유지하고 keyword/actor/director/theme/mood는 현재 onboarding favorite 또는 장기 positive에서 관측된 token만 포함한다. 온보딩-only 행은 기존 정규화를 유지하고 장기 행동 행은 근거량을 보존한다.
 
 ## 10. 후보 결합 weight
 

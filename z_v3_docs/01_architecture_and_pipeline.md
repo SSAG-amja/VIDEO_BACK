@@ -183,10 +183,10 @@ Ontology 근거는 후보와 사용자 사이의 의미 관계를 설명한다. 
 | --- | --- |
 | ontology | build `22`, node `3,756,594`, edge `12,640,874`, evidence `2,078,395` |
 | item feature | `1,176,540 x 1,502,427`, `nnz=9,338,751` |
-| model | `hybrid-0088e46c78e6-8ee76ae0cc79-51c5cf5ab1c1-32da0f11b507-16fe5319a5c2-7b869d3b` |
-| candidates | `cand-72e516bd88d5e91a4a67ae1a`, 620명 x 150개 |
+| model | `hybrid-6e5ae61ef3bb-8ee76ae0cc79-51c5cf5ab1c1-32da0f11b507-6f0cb1a5dc05-7b869d3b` |
+| candidates | `cand-91eaed36f64d20baacfd7360`, 620명 x 150개 |
 | policy | `v3-policy-quality-v1` |
-| bundle | `bundle-c43cac19fbffc33c399f75b9` |
+| bundle | `bundle-1c3b3416d156bfdfc2a1a0a4` |
 
 전체 graph build `22`는 498.3초, full item feature export는 77.8초가 걸렸다. 모델 학습과 candidate materialization의 최신 품질 결과는 [10 품질 개선 기록](10_quality_improvement_record.md)을 따른다.
 

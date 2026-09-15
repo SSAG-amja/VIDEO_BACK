@@ -69,6 +69,26 @@ class V3LongTermAblationTest(unittest.TestCase):
         self.assertEqual(action, SnapshotAction.SAVED)
         self.assertAlmostEqual(weight, 1.0, places=6)
 
+    def test_positive_no_decay_keeps_pass_recency_separate(self) -> None:
+        _, saved_weight, _ = signal_for_rating(
+            5.0,
+            occurred_at=self.occurred_at,
+            as_of=self.as_of,
+            policy="v3_positive_no_decay",
+            saved_weight=1.5,
+            passed_half_life_days=90.0,
+        )
+        _, passed_weight, _ = signal_for_rating(
+            1.0,
+            occurred_at=self.occurred_at,
+            as_of=self.as_of,
+            policy="v3_positive_no_decay",
+            passed_half_life_days=90.0,
+        )
+
+        self.assertEqual(saved_weight, 1.5)
+        self.assertLess(passed_weight, 1.0)
+
     def test_corrections_do_not_change_interaction_labels(self) -> None:
         coordinates = (np.asarray([0, 0, 1]), np.asarray([0, 1, 0]))
         signals = TrainingSignals(
@@ -94,9 +114,9 @@ class V3LongTermAblationTest(unittest.TestCase):
         self.assertTrue(np.all(corrected.sample_weights.data > 0))
 
     def test_effect_verdict(self) -> None:
-        self.assertEqual(effect_verdict(0.01, 0.01), "favorable")
-        self.assertEqual(effect_verdict(-0.01, -0.01), "unfavorable")
-        self.assertEqual(effect_verdict(0.002, -0.002), "neutral")
+        self.assertEqual(effect_verdict(0.01), "favorable")
+        self.assertEqual(effect_verdict(-0.01), "unfavorable")
+        self.assertEqual(effect_verdict(0.002), "neutral")
 
     def test_warp_excludes_explicit_pass_rows(self) -> None:
         coordinates = (np.asarray([0, 0, 1]), np.asarray([0, 1, 0]))

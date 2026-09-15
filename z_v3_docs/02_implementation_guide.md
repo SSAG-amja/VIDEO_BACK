@@ -252,7 +252,7 @@ registry는 선택된 adapter만 lazy import한다. V3 adapter는 완성된 serv
 | playlist post like | `likes` + `posts.playlist_id` | likes 시각 없음 | 보류 |
 | movie post reply | `replies` + `posts.movie_id` | `replies.created_at` | raw 추출 구현, 학습 제외 |
 | playlist post reply | `replies` + `posts.playlist_id` | reply와 item 생성 시각 | raw `1/N` 투영 구현, 학습 제외 |
-| onboarding genre | `user_genres` | 없음 | user feature 예정 |
+| onboarding genre | `user_genres` | 없음 | user feature 구현 |
 | OTT 구독 | `user_otts` | 없음 | serving context와 rule filter |
 
 현재 테이블은 immutable event log가 아니라 최신 상태 snapshot이다. 상태 해제 이력, 정확한 반복 횟수, 과거 행동 순서를 복원하지 않는다.
@@ -394,6 +394,8 @@ identity feature는 제거하지 않는다. 협업 신호는 identity가 담당�
 
 LightFM에는 graph 객체가 아니라 고정 namespace의 sparse matrix만 전달한다. 가중치와 hyperparameter는 [04 LightFM 조정 지점](04_lightfm_tuning.md)에서 관리한다.
 
+현재 source default 사용자 semantic 표현은 `bounded_long_term_evidence`다. onboarding feature는 기존 L1 정규화를 유지하고, 장기 취향 feature는 영화별 field budget이 보존된 가중 평균에 관측 영화 수 신뢰도 `n / (n + 5)`를 곱한다. 두 출처는 좌표별 최댓값으로 합치고 합이 1을 넘을 때만 하향 조정한다. 따라서 정보가 적은 장기 취향의 단일 feature가 전체 semantic weight를 독점하지 않는다.
+
 ## 8. Model artifact
 
 권장 구조:
@@ -453,6 +455,8 @@ hybrid manifest는 ontology build ID/status/schema/source hash, item/user export
 ```bash
 python -m app.jobs.recsys.v3.training.train_hybrid_model 22
 ```
+
+비교 실험처럼 기본값을 바꿔야 할 때만 `--user-feature-representation`과 `--feature-representation`을 각각 지정한다. 전자는 사용자 feature, 후자는 영화 feature 정책이며 하나의 옵션으로 묶지 않는다.
 
 dataset에 positive user가 없으면 78초 규모의 item export를 다시 실행하기 전에 종료한다. hybrid artifact 게시만으로 serving bundle이나 ontology active 상태를 변경하지 않는다.
 

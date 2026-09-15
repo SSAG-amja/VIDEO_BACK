@@ -26,6 +26,7 @@ from tests.v3_long_term_eval.evaluate_pure_lightfm import (
 from tests.v3_long_term_eval.metrics import (
     evaluation_cutoffs,
     ndcg_at_k,
+    percentage_cutoff,
     rating_relevance,
 )
 from tests.v3_long_term_eval.movielens import (
@@ -39,9 +40,13 @@ from tests.v3_long_term_eval.movielens import (
     select_balanced_user_ids,
     select_balanced_user_sequence,
     select_focused_user_sequence,
+    select_stable_user_sequence,
+    temporal_genre_shift,
     temporal_split,
 )
-from tests.v3_long_term_eval.prepare import parse_user_counts
+from tests.v3_long_term_eval.prepare import DEFAULT_USER_COUNTS, parse_user_counts
+from tests.v3_long_term_eval.prepare_matched_profiles import activity_matched_pairs
+from tests.v3_long_term_eval.prepare_recency_profiles import ProfileCandidate
 
 
 def rating(movie_id: int, value: float, timestamp: int) -> MappedRating:
@@ -54,11 +59,70 @@ def rating(movie_id: int, value: float, timestamp: int) -> MappedRating:
 
 
 class LongTermEvaluationHelperTests(unittest.TestCase):
-    def test_rating_relevance_preserves_positive_grade_order(self) -> None:
+    def test_activity_matched_pairs_preserve_genre_and_nearest_activity(self) -> None:
+        def candidate(user_id: int, count: int, genre: str) -> ProfileCandidate:
+            return ProfileCandidate(
+                UserSummary(
+                    source_user_id=user_id,
+                    mapped_rating_count=count,
+                    train_rating_count=int(count * 0.7),
+                    train_positive_count=30,
+                    holdout_positive_count=10,
+                    genre_entropy=0.2 if user_id < 10 else 0.9,
+                    dominant_genre=genre,
+                    temporal_genre_shift=0.1,
+                ),
+                temporal_genre_shift=0.1,
+            )
+
+        focused = [
+            candidate(1, 100, "Action"),
+            candidate(2, 300, "Action"),
+            candidate(3, 200, "Drama"),
+            candidate(4, 400, "Drama"),
+        ]
+        diverse = [
+            candidate(11, 110, "Action"),
+            candidate(12, 290, "Action"),
+            candidate(13, 190, "Drama"),
+            candidate(14, 410, "Drama"),
+        ]
+
+        pairs = activity_matched_pairs(focused, diverse, count=4, seed=42)
+
+        self.assertEqual(len(pairs), 4)
         self.assertEqual(
-            [rating_relevance(value) for value in (3.0, 3.5, 4.0, 4.5, 5.0)],
-            [0.0, 1.0, 2.0, 3.0, 4.0],
+            {right.summary.source_user_id for _, right in pairs},
+            {11, 12, 13, 14},
         )
+        self.assertTrue(
+            all(
+                left.summary.dominant_genre == right.summary.dominant_genre
+                for left, right in pairs
+            )
+        )
+        self.assertTrue(
+            all(
+                abs(left.summary.mapped_rating_count - right.summary.mapped_rating_count)
+                <= 10
+                for left, right in pairs
+            )
+        )
+
+    def test_rating_relevance_matches_behavior_grade_order(self) -> None:
+        self.assertEqual(
+            [
+                rating_relevance(value)
+                for value in (0.5, 1.5, 2.0, 3.0, 3.5, 4.5, 5.0)
+            ],
+            [0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0],
+        )
+
+    def test_rating_relevance_rejects_out_of_range_rating(self) -> None:
+        for value in (0.0, 5.5):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    rating_relevance(value)
 
     def test_ndcg_rewards_correct_order(self) -> None:
         relevance = {11: 4.0, 12: 2.0, 13: 1.0}
@@ -191,8 +255,59 @@ class LongTermEvaluationHelperTests(unittest.TestCase):
             ["Action", "Drama"],
         )
 
+    def test_temporal_genre_shift_distinguishes_stable_and_changing_taste(self) -> None:
+        stable = tuple(rating(index, 4.0, index) for index in range(20))
+        changing = tuple(rating(index + 100, 4.0, index) for index in range(20))
+        genres = {
+            **{item.source_movie_id: ("Drama",) for item in stable},
+            **{
+                item.source_movie_id: (("Drama",) if index < 10 else ("Action",))
+                for index, item in enumerate(changing)
+            },
+        }
+
+        self.assertAlmostEqual(
+            temporal_genre_shift(stable, genres_by_source_movie_id=genres),
+            0.0,
+        )
+        self.assertAlmostEqual(
+            temporal_genre_shift(changing, genres_by_source_movie_id=genres),
+            1.0,
+        )
+
+    def test_stable_sequence_excludes_high_shift_and_spreads_genres(self) -> None:
+        summaries = [
+            UserSummary(1, 100, 70, 30, 10, 0.2, "Action", 0.02),
+            UserSummary(2, 100, 70, 30, 10, 0.8, "Drama", 0.03),
+            UserSummary(3, 100, 70, 30, 10, 0.3, "Action", 0.08),
+            UserSummary(4, 100, 70, 30, 10, 0.7, "Drama", 0.09),
+            UserSummary(5, 100, 70, 30, 10, 0.1, "Comedy", 0.30),
+        ]
+
+        sequence = select_stable_user_sequence(
+            summaries,
+            maximum_temporal_genre_shift=0.10,
+            user_count=4,
+            seed=7,
+        )
+
+        selected_ids = {source_user_id for source_user_id, _ in sequence}
+        self.assertNotIn(5, selected_ids)
+        self.assertEqual(
+            {profile_type for _, profile_type in sequence},
+            {"stable_low_variability"},
+        )
+        self.assertEqual(
+            [summaries[source_user_id - 1].dominant_genre for source_user_id, _ in sequence[:2]],
+            ["Action", "Drama"],
+        )
+
     def test_user_counts_are_unique_ascending_positive_values(self) -> None:
-        self.assertEqual(parse_user_counts("100,150,200,300,500"), (100, 150, 200, 300, 500))
+        self.assertEqual(DEFAULT_USER_COUNTS, (100, 200, 300, 400, 500))
+        self.assertEqual(
+            parse_user_counts("100,200,300,400,500"),
+            DEFAULT_USER_COUNTS,
+        )
         for invalid in ("", "100,0", "150,100", "100,100"):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(argparse.ArgumentTypeError):
@@ -231,6 +346,18 @@ class LongTermEvaluationHelperTests(unittest.TestCase):
         self.assertEqual(evaluation_cutoffs(30), (10, 20, 30))
         self.assertEqual(evaluation_cutoffs(55), (10, 20, 30, 40, 50, 55))
         self.assertEqual(evaluation_cutoffs(7), (7,))
+
+    def test_percentage_cutoff_uses_ceil_and_stays_in_candidate_range(self) -> None:
+        self.assertEqual(percentage_cutoff(30), 6)
+        self.assertEqual(percentage_cutoff(31), 7)
+        self.assertEqual(percentage_cutoff(1), 1)
+        self.assertEqual(percentage_cutoff(10, percentage=1.0), 10)
+
+    def test_percentage_cutoff_rejects_invalid_inputs(self) -> None:
+        for candidate_count, percentage in ((0, 0.2), (10, 0.0), (10, 1.1)):
+            with self.subTest(candidate_count=candidate_count, percentage=percentage):
+                with self.assertRaises(ValueError):
+                    percentage_cutoff(candidate_count, percentage=percentage)
 
     def test_shadow_dataset_keeps_only_evaluation_users(self) -> None:
         cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc)

@@ -6,23 +6,24 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from sqlalchemy import select
 
 from app.db.session import SessionLocal
 from app.models.user import User
-from app.services.recsys.v3.retrieval.collaborative_confidence import (
-    assess_user_collaborative_confidence,
+from tests.v3_long_term_eval.engine_backend import (
+    SUPPORTED_ENGINE_VERSIONS,
+    EvaluationEngineBackend,
+    load_evaluation_backend,
 )
-from app.services.recsys.v3.retrieval.score_calibration import (
-    collaborative_adjusted_user_representations,
+from tests.v3_long_term_eval.metrics import (
+    evaluation_cutoffs,
+    ndcg_at_k,
+    percentage_cutoff,
+    rating_relevance,
 )
-from app.services.recsys.v3.serving.model_store import (
-    RuntimeHybridArtifact,
-    load_runtime_hybrid_artifact,
-)
-from tests.v3_long_term_eval.metrics import evaluation_cutoffs, ndcg_at_k, rating_relevance
 
 
 ROOT = Path("tests/v3_long_term_eval")
@@ -30,9 +31,14 @@ ROOT = Path("tests/v3_long_term_eval")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Rank each user's temporal 30% MovieLens holdout with V3"
+        description="Rank each user's temporal 30% MovieLens holdout with V3/V4"
     )
     parser.add_argument("model_artifact", type=Path)
+    parser.add_argument(
+        "--engine-version",
+        choices=SUPPORTED_ENGINE_VERSIONS,
+        default="v3",
+    )
     parser.add_argument(
         "--plan",
         type=Path,
@@ -49,6 +55,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    backend = load_evaluation_backend(args.engine_version)
     plans = load_plan(args.plan)
     if args.source_user_id is not None:
         plans = [
@@ -63,10 +70,10 @@ def main() -> None:
     if not plans:
         raise SystemExit(f"evaluation plan is empty: {args.plan}")
 
-    artifact = load_runtime_hybrid_artifact(args.model_artifact)
+    artifact = backend.model_store.load_runtime_hybrid_artifact(args.model_artifact)
     attach_database_user_ids(plans, artifact=artifact)
     score_started = time.perf_counter()
-    rankings = score_holdout_candidates(artifact, plans)
+    rankings = score_holdout_candidates(artifact, plans, backend=backend)
     score_elapsed = time.perf_counter() - score_started
 
     rows = []
@@ -74,6 +81,7 @@ def main() -> None:
         user_id = int(plan["user_id"])
         ranking = rankings[user_id]
         candidate_count = int(plan["candidate_count"])
+        cutoff_at_20_percent = percentage_cutoff(candidate_count)
         relevance = holdout_relevance(plan, artifact)
         rows.append(
             {
@@ -92,6 +100,12 @@ def main() -> None:
                         relevance,
                         cutoffs=evaluation_cutoffs(candidate_count),
                     ),
+                    "ndcg_at_20_percent": ndcg_at_k(
+                        ranking,
+                        relevance,
+                        cutoff_at_20_percent,
+                    ),
+                    "cutoff_at_20_percent": cutoff_at_20_percent,
                     "ranked_movie_ids": ranking,
                 },
             }
@@ -165,7 +179,7 @@ def load_plan(path: Path) -> list[dict]:
 def attach_database_user_ids(
     plans: list[dict],
     *,
-    artifact: RuntimeHybridArtifact,
+    artifact: Any,
 ) -> None:
     with SessionLocal() as db:
         user_ids_by_email = dict(
@@ -196,25 +210,33 @@ def attach_database_user_ids(
 
 
 def score_holdout_candidates(
-    artifact: RuntimeHybridArtifact,
+    artifact: Any,
     plans: list[dict],
+    *,
+    backend: EvaluationEngineBackend | None = None,
 ) -> dict[int, list[int]]:
+    backend = backend or load_evaluation_backend("v3")
     rankings: dict[int, list[int]] = {}
     for plan in plans:
         user_id = int(plan["user_id"])
         user_index = artifact.user_index(user_id)
         assert user_index is not None
-        confidence = assess_user_collaborative_confidence(
+        confidence = backend.collaborative_confidence.assess_user_collaborative_confidence(
             positive_pair_count=int(plan["summary"]["train_positive_count"]),
             population_confidence=artifact.collaborative_population_confidence,
         ).effective_confidence
-        user_biases, user_embeddings = collaborative_adjusted_user_representations(
-            artifact.model,
-            artifact.user_features[user_index],
-            identity_feature_count=len(artifact.user_ids),
-            collaborative_confidences=np.asarray([confidence], dtype=np.float32),
-            centering_weight=artifact.known_user_score_centering_weight,
-            component_means=artifact.user_representation_component_means,
+        user_biases, user_embeddings = (
+            backend.score_calibration.collaborative_adjusted_user_representations(
+                artifact.model,
+                artifact.user_features[user_index],
+                identity_feature_count=len(artifact.user_ids),
+                collaborative_confidences=np.asarray(
+                    [confidence],
+                    dtype=np.float32,
+                ),
+                centering_weight=artifact.known_user_score_centering_weight,
+                component_means=artifact.user_representation_component_means,
+            )
         )
         candidate_movie_ids = np.asarray(
             [int(item["movie_id"]) for item in plan["holdout"]],
@@ -244,12 +266,11 @@ def score_holdout_candidates(
     return rankings
 
 
-def holdout_relevance(plan: dict, artifact: RuntimeHybridArtifact) -> dict[int, float]:
+def holdout_relevance(plan: dict, artifact: Any) -> dict[int, float]:
     return {
         int(item["movie_id"]): rating_relevance(float(item["rating"]))
         for item in plan["holdout"]
-        if float(item["rating"]) >= 3.5
-        and artifact.movie_index(int(item["movie_id"])) is not None
+        if artifact.movie_index(int(item["movie_id"])) is not None
     }
 
 
@@ -270,7 +291,7 @@ def exact_top_k_indices(scores: np.ndarray, movie_ids: np.ndarray, top_k: int) -
 def build_summary(
     rows: list[dict],
     *,
-    artifact: RuntimeHybridArtifact,
+    artifact: Any,
     plan_path: Path,
     score_elapsed: float,
 ) -> dict:
@@ -297,8 +318,16 @@ def build_summary(
             "candidate_set": "Exactly the movies in each user's temporal 30% holdout.",
             "predicted_order": "Descending V3 LightFM hybrid score within that holdout.",
             "ideal_order": "Descending MovieLens relevance grade within the same holdout.",
-            "ndcg_relevance": "MovieLens 3.5/4.0/4.5/5.0 map to grades 1/2/3/4.",
-            "cutoffs": "NDCG is measured every 10 ranks and at the exact holdout size.",
+            "ndcg_relevance": (
+                "MovieLens ratings map to behavior grades: "
+                "PASS=0, NEUTRAL=1, PIN=2, SAVED=3."
+            ),
+            "primary_cutoff": (
+                "NDCG@100% uses every movie in each user's temporal holdout."
+            ),
+            "diagnostic_cutoffs": (
+                "NDCG@20% and fixed-rank NDCG remain secondary diagnostics."
+            ),
         },
     }
 
@@ -323,6 +352,22 @@ def aggregate_rows(rows: list[dict]) -> dict:
         "mean_holdout_relevant_count": mean(
             [float(row["holdout_relevant_count"]) for row in rows]
         ),
+        "mean_full_holdout_ndcg": mean(
+            [
+                float(row["ranking"]["ndcg"][str(row["candidate_count"])])
+                for row in rows
+            ]
+        ),
+        "mean_ndcg_at_20_percent": mean(
+            [float(row["ranking"]["ndcg_at_20_percent"]) for row in rows]
+        ),
+        "mean_cutoff_at_20_percent": mean(
+            [float(row["ranking"]["cutoff_at_20_percent"]) for row in rows]
+        ),
+        "cutoff_at_20_percent_range": [
+            min(int(row["ranking"]["cutoff_at_20_percent"]) for row in rows),
+            max(int(row["ranking"]["cutoff_at_20_percent"]) for row in rows),
+        ],
         "mean_ndcg": {
             str(cutoff): mean(values)
             for cutoff, values in sorted(values_by_cutoff.items())
@@ -396,6 +441,17 @@ def summary_markdown(summary: dict) -> str:
 
 def metric_table(values: dict) -> str:
     rows = [
+        f"- primary NDCG@100%: `{values['mean_full_holdout_ndcg']:.6f}`",
+        f"- secondary NDCG@20%: `{values['mean_ndcg_at_20_percent']:.6f}`",
+        f"- mean dynamic K: `{values['mean_cutoff_at_20_percent']:.2f}`",
+        (
+            "- dynamic K range: "
+            f"`{values['cutoff_at_20_percent_range'][0]}-"
+            f"{values['cutoff_at_20_percent_range'][1]}`"
+        ),
+        "",
+        "Diagnostic fixed-rank metrics:",
+        "",
         "| cutoff | eligible users | mean NDCG |",
         "| ---: | ---: | ---: |",
     ]

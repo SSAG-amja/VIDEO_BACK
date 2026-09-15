@@ -17,29 +17,35 @@
 | [09 설계 판단 기록](09_design_decision_journal.md) | 문제를 다른 구조로 해결한 이유와 재검토 조건 |
 | [10 품질 개선 기록](10_quality_improvement_record.md) | Phase A~F에서 확인하고 반영한 내용과 남은 품질 판단 |
 | [진단 결과 목록](diagnostics/README.md) | 보존 중인 권위 있는 진단 파일과 용도 |
+| [장기 취향 재검증 계획](../v3_recommendation_quality_tuning_plan.md) | 현재 남은 NDCG 작업과 실행 순서 |
+| [장기 취향 튜닝 결과](../v3_recommendation_quality_tuning_results.md) | 과거 결과 중 유지·재검토할 판단과 최신 matched 재검사 |
 
 처음 인수인계받는 경우 다음 순서로 읽는다.
 
 ```text
 README -> 01 -> 07 -> 08
-                  -> 품질 작업: 10 -> 04 -> 03
+                  -> 장기 취향 품질: 루트 재검증 계획 -> 루트 결과 -> 04
+                  -> 과거 통합 품질: 10 -> 03
                   -> graph 작업: 05 -> 02
 ```
 
 ## 현재 기준점
 
-- 기준일: `2026-09-10`
+- 활성 checkpoint 기준일: `2026-09-10`
+- 최신 장기 취향 shadow 재검사: `2026-09-11`
 - ontology build: `22`
-- model: `hybrid-0088e46c78e6-8ee76ae0cc79-51c5cf5ab1c1-32da0f11b507-16fe5319a5c2-7b869d3b`
-- candidate snapshot: `cand-72e516bd88d5e91a4a67ae1a`
+- model: `hybrid-6e5ae61ef3bb-8ee76ae0cc79-51c5cf5ab1c1-32da0f11b507-6f0cb1a5dc05-7b869d3b`
+- candidate snapshot: `cand-91eaed36f64d20baacfd7360`
 - policy: `v3-policy-quality-v1`
-- serving bundle: `bundle-c43cac19fbffc33c399f75b9`
+- serving bundle: `bundle-1c3b3416d156bfdfc2a1a0a4`
 - V3 단위 테스트: `143개` 통과
 - 공용 추천 executor 테스트: `2개` 통과
 - 직전 응답 시간 기준선: [v3_online_baseline_20260827T230722Z.json](diagnostics/v3_online_baseline_20260827T230722Z.json)
 - 현재 LightFM 기준선: [v3_lightfm_ablation_20260907T102400Z.md](diagnostics/v3_lightfm_ablation_20260907T102400Z.md)
 - 현재 최종 품질 기준선: [v3_quality_snapshot_20260907T115937Z.md](diagnostics/v3_quality_snapshot_20260907T115937Z.md)
 - 현재 이상치 감사: [v3_ontology_outlier_audit_20260907T120631Z.md](diagnostics/v3_ontology_outlier_audit_20260907T120631Z.md)
+
+활성 checkpoint는 유지 중이지만 장기 취향 설정이 최종 확정된 것은 아니다. matched 200명 재검사에서 순수 LightFM NDCG@20/30은 `0.459511/0.497123`, 현재 V3 serving은 `0.439608/0.478932`였다. 이 결과로 WARP, PASS, 행동 weight, 반감기, 학습 영향 보정, 사용자 semantic과 serving 보정은 재검증 대상으로 돌아갔다.
 
 Phase A~F와 통합 bundle 검증은 완료됐다. 주요 반영 내용은 다음과 같다.
 
@@ -59,6 +65,8 @@ Phase A~F와 통합 bundle 검증은 완료됐다. 주요 반영 내용은 다�
 - 후보 선택용 ontology 점수와 최종 상세 ontology 점수를 분리해 최종 점수에는 한 번만 반영
 - saved/pinned 공통 반감기 365일과 학습 당시 온보딩 전용 서명 기반 known-user 변경 감지
 
+2026-09-11 이후 새 shadow 학습은 인기 영화의 positive 상호작용을 감쇄하지 않도록 item-frequency 기본값을 `none`으로 사용한다. 위 인기 영화 학습 기여 상한은 활성 checkpoint 이력이다. 후보 쏠림은 정책의 bounded popularity rerank로 옮겼으며, 활성값은 최종 모델 검증 뒤 선택한다.
+
 직전 다건 응답 시간 기준선은 known 평균 `2.973초`, p95 `3.430초`다. 현재 bundle 활성화 smoke test의 known-user 단일 요청은 `3.003초`였으며, 별도 부하 latency baseline은 다시 실행하지 않았다.
 
 ## 해석 제한
@@ -77,17 +85,17 @@ Phase A~F와 통합 bundle 검증은 완료됐다. 주요 반영 내용은 다�
 - 제외 위반과 사용자 내부 중복은 0건이고, 반복 top-5 영화가 현재 취향 장르 밖으로 퍼진 사례도 0건이었다.
 - top-10 저투표 후보는 240칸 중 6건이며 mixed/drift의 ontology·short source에 집중됐다.
 - 작은 합성 학습 집단에서 나타난 사용자 간 영화 반복은 실사용자 규모에서 다시 검증한다.
-- NDCG와 Recall은 사용자가 명시적으로 현재 범위에서 제외했다.
+- 현재 NDCG는 장기 취향 순위 판별의 주 평가다. Recall은 전체 카탈로그 후보 검색 단계까지 보류한다.
 
 ## 남은 핵심 작업
 
-즉시 점수 상수를 다시 조정하지 않는다. 후속 작업의 우선순위와 완료 조건은 [08 후속 작업](08_additional_work_backlog.md)에만 기록한다.
+현재 최우선 작업은 루트 [장기 취향 재검증 계획](../v3_recommendation_quality_tuning_plan.md)의 R1~R7이다. 먼저 LightFM loss와 PASS를 다중 seed로 확정하고, 그 결과에 맞춰 행동 weight·시간 감쇠·학습 영향 보정·ontology 결합·모델 용량·serving 보정을 순서대로 선택한다. 최종 일반화 검증 전에는 활성 bundle을 변경하지 않는다.
 
-요청·후보 계산의 병렬 비교와 Phase I 협업 과집중 보정·통합 재검증은 완료됐다. 다음 품질 작업은 저신뢰 ontology/short 후보의 catalog trust이며, 그다음 bounded negative 충돌을 검토한다. 실제 사용자 규모의 협업 신뢰도 calibration은 별도 검증으로 남는다.
+[08 후속 작업](08_additional_work_backlog.md)의 운영·부가 정책·성능 작업과 Recall 평가는 장기 취향 순위 판별을 동결한 뒤 진행한다.
 
 ## 문서 규칙
 
-- 현재 상태는 `README`, 남은 작업은 `08`, 품질 실험 결과는 `10`에서만 요약한다.
+- 전체 상태는 `README`, 장기 취향 남은 작업과 결과는 루트의 품질 계획·결과 문서, 그 밖의 backlog는 `08`, 과거 Phase 품질 결과는 `10`에서 관리한다.
 - 상세 숫자는 `04` 또는 `diagnostics/` 원본에 두고 다른 문서에는 결론만 반복한다.
 - ontology 근거는 의미적 지지이며 LightFM 점수의 인과 설명으로 표현하지 않는다.
 - 새 진단을 남길 때 같은 실험의 중간·실패 결과는 최종 결과가 확정되면 제거한다.

@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from app.db.session import engine
 from tests.v3_long_term_eval.prepare import DEFAULT_USER_COUNTS, parse_user_counts
+from tests.v3_long_term_eval.engine_backend import SUPPORTED_ENGINE_VERSIONS
 
 
 ROOT = Path("tests/v3_long_term_eval")
@@ -50,9 +51,14 @@ class ProgressBar:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the complete V3 long-term NDCG evaluation pipeline"
+        description="Run the complete V3/V4 long-term NDCG evaluation pipeline"
     )
     parser.add_argument("--ontology-build-id", type=int, default=22)
+    parser.add_argument(
+        "--engine-version",
+        choices=SUPPORTED_ENGINE_VERSIONS,
+        default="v3",
+    )
     parser.add_argument(
         "--user-counts",
         type=parse_user_counts,
@@ -71,15 +77,47 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Delete evaluation users after result files are written",
     )
+    parser.add_argument(
+        "--allow-health-gate-failure-for-ndcg",
+        action="store_true",
+        help=(
+            "Continue holdout ranking when an inactive shadow model fails only "
+            "the production candidate-concentration health gate"
+        ),
+    )
+    parser.add_argument(
+        "--retrain-user-counts",
+        type=parse_user_counts,
+        default=(),
+        help="Comma-separated cohort sizes to retrain even when --resume is used",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     validate_inputs()
+    unknown_retrain_counts = set(args.retrain_user_counts) - set(args.user_counts)
+    if unknown_retrain_counts:
+        raise SystemExit(
+            "retrain cohort is not in --user-counts: "
+            + ", ".join(map(str, sorted(unknown_retrain_counts)))
+        )
     ROOT.joinpath("generated").mkdir(parents=True, exist_ok=True)
     ROOT.joinpath("outputs").mkdir(parents=True, exist_ok=True)
-    log_path = ROOT / "outputs" / "pipeline.log"
+    engine_output_root = (
+        ROOT / "outputs"
+        if args.engine_version == "v3"
+        else ROOT / "outputs" / args.engine_version
+    )
+    engine_model_root = (
+        ROOT / "generated/models"
+        if args.engine_version == "v3"
+        else ROOT / "generated/models" / args.engine_version
+    )
+    engine_output_root.mkdir(parents=True, exist_ok=True)
+    engine_model_root.mkdir(parents=True, exist_ok=True)
+    log_path = engine_output_root / "pipeline.log"
     progress = ProgressBar()
     log_lines: list[str] = []
 
@@ -97,14 +135,14 @@ def main() -> None:
                 f"기존 평가 사용자 {user_count}명과 누적 계획 재사용",
             )
         else:
-            progress.update(0.0, "MovieLens 매핑 및 집중 취향 사용자 표본 준비")
+            progress.update(0.0, "MovieLens 매핑 및 낮은 취향 변동성 사용자 표본 준비")
             prepare_records = run_module(
                 "tests.v3_long_term_eval.prepare",
                 ["--user-counts", ",".join(map(str, args.user_counts))],
                 progress=progress,
                 base_percent=0.0,
                 end_percent=15.0,
-                label="MovieLens 매핑 및 집중 취향 사용자 표본 준비",
+                label="MovieLens 매핑 및 낮은 취향 변동성 사용자 표본 준비",
                 log_lines=log_lines,
             )
             if not any(record.get("format_version") == 1 for record in prepare_records):
@@ -135,11 +173,16 @@ def main() -> None:
             train_end = stage_start + stage_span * 0.8
             stage_end = stage_start + stage_span
             plan_path = cohort_plans[cohort_size]
-            model_root = ROOT / "generated/models" / str(cohort_size)
-            output_dir = ROOT / "outputs/scales" / str(cohort_size)
+            model_root = engine_model_root / str(cohort_size)
+            output_dir = engine_output_root / "scales" / str(cohort_size)
 
-            if args.resume and model_root.is_dir():
+            if (
+                args.resume
+                and cohort_size not in args.retrain_user_counts
+                and model_root.is_dir()
+            ):
                 artifact_path = str(find_latest_shadow_artifact(model_root))
+                model_health = read_artifact_model_health(Path(artifact_path))
                 progress.update(
                     train_end,
                     f"{cohort_size}명 기존 shadow 모델 재사용",
@@ -147,6 +190,8 @@ def main() -> None:
             else:
                 train_arguments = [
                     str(args.ontology_build_id),
+                    "--engine-version",
+                    args.engine_version,
                     "--data-cutoff-at",
                     str(plan_evaluation_as_of(plan_path)),
                     "--plan",
@@ -158,6 +203,8 @@ def main() -> None:
                     train_arguments.extend(("--epochs", str(args.epochs)))
                 if args.num_threads is not None:
                     train_arguments.extend(("--num-threads", str(args.num_threads)))
+                if args.allow_health_gate_failure_for_ndcg:
+                    train_arguments.append("--allow-health-gate-failure-for-ndcg")
                 progress.update(stage_start, f"{cohort_size}명 shadow 모델 학습")
                 train_records = run_module(
                     "tests.v3_long_term_eval.train_shadow_model",
@@ -181,6 +228,14 @@ def main() -> None:
                         f"{cohort_size}-user shadow training did not return an artifact path"
                     )
                 artifact_path = str(train_result["artifact_path"])
+                model_health = {
+                    "status": str(train_result["model_health_status"]),
+                    "violations": list(train_result["model_health_violations"]),
+                    "warnings": list(train_result["model_health_warnings"]),
+                    "gate_bypassed_for_ndcg": bool(
+                        train_result["health_gate_bypassed_for_ndcg"]
+                    ),
+                }
 
             progress.update(
                 train_end,
@@ -190,6 +245,8 @@ def main() -> None:
                 "tests.v3_long_term_eval.evaluate",
                 [
                     artifact_path,
+                    "--engine-version",
+                    args.engine_version,
                     "--plan",
                     str(anchor_plan),
                     "--output-dir",
@@ -220,12 +277,15 @@ def main() -> None:
                     cohort_size,
                     summary_path=Path(evaluate_result["summary"]),
                     results_path=Path(evaluate_result["results"]),
+                    model_health=model_health,
                 )
             )
 
         comparison_json, comparison_markdown = write_scale_comparison(
             comparison_rows,
             anchor_user_count=anchor_user_count,
+            engine_version=args.engine_version,
+            output_root=engine_output_root,
         )
 
         if args.cleanup_after:
@@ -374,6 +434,18 @@ def find_latest_shadow_artifact(model_root: Path) -> Path:
     return max(candidates, key=lambda path: path.joinpath("manifest.json").stat().st_mtime)
 
 
+def read_artifact_model_health(artifact_path: Path) -> dict:
+    diagnostics_path = artifact_path / "diagnostics.json"
+    diagnostics = json.loads(diagnostics_path.read_text(encoding="utf-8"))
+    model_health = diagnostics["model_health"]
+    return {
+        "status": str(model_health["status"]),
+        "violations": list(model_health["violations"]),
+        "warnings": list(model_health.get("warnings", [])),
+        "gate_bypassed_for_ndcg": False,
+    }
+
+
 def cohort_plan_paths(user_counts: tuple[int, ...]) -> dict[int, Path]:
     result = {
         user_count: (
@@ -400,6 +472,7 @@ def scale_comparison_row(
     *,
     summary_path: Path,
     results_path: Path,
+    model_health: dict,
 ) -> dict:
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     result_rows = [
@@ -416,10 +489,17 @@ def scale_comparison_row(
         "training_user_count": training_user_count,
         "evaluation_user_count": int(summary["user_count"]),
         "model_build_id": str(summary["model_build_id"]),
+        "ndcg_at_20_percent": float(
+            summary["overall"]["mean_ndcg_at_20_percent"]
+        ),
+        "mean_cutoff_at_20_percent": float(
+            summary["overall"]["mean_cutoff_at_20_percent"]
+        ),
         "ndcg_at_10": float(mean_ndcg["10"]),
         "ndcg_at_20": float(mean_ndcg["20"]),
         "ndcg_at_30": float(mean_ndcg["30"]),
         "mean_full_holdout_ndcg": sum(full_values) / len(full_values),
+        "model_health": model_health,
         "summary_path": str(summary_path),
         "results_path": str(results_path),
     }
@@ -429,11 +509,14 @@ def write_scale_comparison(
     rows: list[dict],
     *,
     anchor_user_count: int,
+    engine_version: str = "v3",
+    output_root: Path | None = None,
 ) -> tuple[Path, Path]:
-    output_root = ROOT / "outputs"
+    output_root = output_root or ROOT / "outputs"
     output_root.mkdir(parents=True, exist_ok=True)
     payload = {
         "generated_at": datetime.now().astimezone().isoformat(),
+        "engine_version": engine_version,
         "scope": "nested_training_population_with_fixed_anchor_evaluation",
         "anchor_evaluation_user_count": anchor_user_count,
         "rows": rows,
@@ -449,15 +532,16 @@ def write_scale_comparison(
         "",
         f"모든 모델은 동일한 기준 사용자 {anchor_user_count}명의 홀드아웃으로 평가한다.",
         "",
-        "| 학습 사용자 | 평가 사용자 | NDCG@10 | NDCG@20 | NDCG@30 | 전체 홀드아웃 NDCG |",
-        "|---:|---:|---:|---:|---:|---:|",
+        "| 학습 사용자 | 평가 사용자 | NDCG@20% | 평균 K | 전체 홀드아웃 NDCG | 모델 상태 |",
+        "|---:|---:|---:|---:|---:|:---|",
     ]
     for row in rows:
         lines.append(
             f"| {row['training_user_count']} | {row['evaluation_user_count']} "
-            f"| {row['ndcg_at_10']:.6f} | {row['ndcg_at_20']:.6f} "
-            f"| {row['ndcg_at_30']:.6f} "
-            f"| {row['mean_full_holdout_ndcg']:.6f} |"
+            f"| {row['ndcg_at_20_percent']:.6f} "
+            f"| {row['mean_cutoff_at_20_percent']:.2f} "
+            f"| {row['mean_full_holdout_ndcg']:.6f} "
+            f"| {row['model_health']['status']} |"
         )
     markdown_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return json_path, markdown_path

@@ -6,6 +6,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import numpy as np
 from sqlalchemy import select
 
 from app.db.session import SessionLocal
@@ -18,7 +19,7 @@ from tests.v3_long_term_eval.movielens import (
     iter_mapped_user_ratings,
     load_movielens_genres,
     load_movielens_links,
-    select_focused_user_sequence,
+    select_stable_user_sequence,
     selection_thresholds,
     summarize_user,
     temporal_split,
@@ -27,7 +28,7 @@ from tests.v3_long_term_eval.movielens import (
 
 ROOT = Path("tests/v3_long_term_eval")
 PLAN_FORMAT_VERSION = 1
-DEFAULT_USER_COUNTS = (100, 150, 200, 300, 500)
+DEFAULT_USER_COUNTS = (100, 200, 300, 400, 500)
 
 
 def parse_args() -> argparse.Namespace:
@@ -96,9 +97,20 @@ def main() -> None:
             summaries.append(summary)
 
     thresholds = selection_thresholds(summaries)
-    selected_sequence = select_focused_user_sequence(
+    temporal_shifts = np.asarray(
+        [
+            summary.temporal_genre_shift
+            for summary in summaries
+            if summary.temporal_genre_shift is not None
+        ],
+        dtype=np.float64,
+    )
+    if temporal_shifts.size == 0:
+        raise RuntimeError("no eligible users have enough temporal genre evidence")
+    stable_shift_threshold = float(np.quantile(temporal_shifts, 0.25))
+    selected_sequence = select_stable_user_sequence(
         summaries,
-        thresholds=thresholds,
+        maximum_temporal_genre_shift=stable_shift_threshold,
         user_count=max(args.user_counts),
         seed=args.seed,
     )
@@ -191,13 +203,15 @@ def main() -> None:
             "selected_user_count": len(selected_users),
             "nested_user_counts": list(args.user_counts),
             "anchor_evaluation_user_count": min(args.user_counts),
-            "profile_policy": "focused users below the eligible population median genre entropy",
+            "profile_policy": "low-variability users at or below temporal genre shift Q25",
             "genre_distribution_policy": "round-robin by dominant positive-training genre",
             "profile_type_counts": dict(sorted(profile_counts.items())),
             "cohort_profile_type_counts": cohort_profile_counts,
             "cohort_dominant_genre_counts": cohort_dominant_genre_counts,
             "activity_median": thresholds.activity_median,
             "genre_entropy_median": thresholds.genre_entropy_median,
+            "temporal_genre_shift_q25": stable_shift_threshold,
+            "selected_temporal_genre_shift": summarize_selected_shifts(selected_users),
             "min_mapped_ratings": args.min_mapped_ratings,
             "min_train_positives": args.min_train_positives,
             "min_holdout_positives": args.min_holdout_positives,
@@ -219,6 +233,21 @@ def main() -> None:
         encoding="utf-8",
     )
     print(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+
+
+def summarize_selected_shifts(users: list[SelectedUser]) -> dict[str, float]:
+    values = [
+        float(user.summary.temporal_genre_shift)
+        for user in users
+        if user.summary.temporal_genre_shift is not None
+    ]
+    if len(values) != len(users):
+        raise ValueError("all selected users must have temporal genre shift evidence")
+    return {
+        "min": min(values),
+        "max": max(values),
+        "mean": sum(values) / len(values),
+    }
 
 
 def parse_user_counts(value: str) -> tuple[int, ...]:
@@ -273,6 +302,7 @@ def write_plan(path: Path, users: list[SelectedUser], *, as_of: datetime) -> Non
                     "holdout_positive_count": user.summary.holdout_positive_count,
                     "genre_entropy": user.summary.genre_entropy,
                     "dominant_genre": user.summary.dominant_genre,
+                    "temporal_genre_shift": user.summary.temporal_genre_shift,
                 },
                 "train": [rating_payload(item) for item in user.train_ratings],
                 "holdout": [rating_payload(item) for item in user.holdout_ratings],

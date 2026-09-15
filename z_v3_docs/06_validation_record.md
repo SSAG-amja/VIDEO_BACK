@@ -160,3 +160,26 @@ Phase A~F는 12명의 post-model 사용자로 방향성을 확인했다.
 - 활성화 후 새 프로세스에서 bundle과 현재 policy hash 일치를 확인했다.
 - 학습 당시 온보딩 전용 서명을 artifact에 저장해 장기 행동 feature가 온보딩 변경으로 오인되던 문제를 수정했다.
 - 실제 known-user 요청은 `v3_model` 경로로 20편을 반환했으며 단일 smoke 응답 시간은 `3.003초`였다.
+
+## 2026-09-10 TUNE-06 checkpoint 운영 반영
+
+- 학습 데이터: 기존 V3 기준 시드와 MovieLens 장기 평가 사용자, 총 620명
+- model: `hybrid-6e5ae61ef3bb-8ee76ae0cc79-51c5cf5ab1c1-32da0f11b507-6f0cb1a5dc05-7b869d3b`
+- candidate: `cand-91eaed36f64d20baacfd7360`, 620명 x 150개, 실패 0명
+- bundle: `bundle-1c3b3416d156bfdfc2a1a0a4`
+- ontology: build `22`
+- 새 사용자 표현: `bounded_long_term_evidence`, 전체 장기 근거량 `n/(n+5)`
+- 유지값: WARP, PASS 학습 제외, SAVED/PINNED `2.0/2.0`, 반감기 `365일`, 영화 ontology 전체 family 유지
+- 관련 회귀 테스트 30개가 통과했고 artifact 재로딩 및 model health 검사가 통과했다.
+- 후보는 17.39초에 생성됐고 93,000개가 DB에 게시됐다.
+- 새 프로세스에서 활성 bundle, model, candidate, ontology build 로딩을 확인했다.
+
+## 2026-09-11 matched 200명 재검사
+
+- 사용자: 안정 집중형 100명과 안정 다취향형 100명, 대표 장르 분포와 활동량 matching
+- 같은 200명에서 순수 LightFM NDCG@20/30은 `0.459511/0.497123`, 현재 V3 serving은 `0.439608/0.478932`였다.
+- 과거 집중형 100명과 달리 identity-only logistic이 WARP보다 NDCG@20 `0.013687`, NDCG@30 `0.014830` 높았다.
+- 기존 WARP, PASS 제외, 반감기, 학습 영향 보정, 사용자 semantic, confidence와 centering 선택을 최종 확정 상태에서 해제했다.
+- 희소 metadata, field budget, keyword IDF, catalog trust, split filter와 점수 이중 반영 방지 같은 구조적 수정은 유지한다.
+- 단일 seed 결과이므로 활성 model, candidate와 bundle은 변경하지 않았다.
+- 현재 작업 순서는 루트 `v3_recommendation_quality_tuning_plan.md`를 따른다.

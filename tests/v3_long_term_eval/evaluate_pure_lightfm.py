@@ -10,7 +10,12 @@ from lightfm import LightFM
 from scipy.sparse import coo_matrix
 
 from tests.v3_long_term_eval.evaluate import load_plan
-from tests.v3_long_term_eval.metrics import evaluation_cutoffs, ndcg_at_k, rating_relevance
+from tests.v3_long_term_eval.metrics import (
+    evaluation_cutoffs,
+    ndcg_at_k,
+    percentage_cutoff,
+    rating_relevance,
+)
 from tests.v3_long_term_eval.prepare import DEFAULT_USER_COUNTS, parse_user_counts
 
 
@@ -252,9 +257,9 @@ def evaluate_anchor_users(
         relevance = {
             int(rating["movie_id"]): rating_relevance(float(rating["rating"]))
             for rating in plan["holdout"]
-            if float(rating["rating"]) >= 3.5
         }
         candidate_count = len(candidate_movie_ids)
+        cutoff_at_20_percent = percentage_cutoff(candidate_count)
         rows.append(
             {
                 "source_user_id": source_user_id,
@@ -265,6 +270,12 @@ def evaluate_anchor_users(
                         str(cutoff): ndcg_at_k(ranking, relevance, cutoff)
                         for cutoff in evaluation_cutoffs(candidate_count)
                     },
+                    "ndcg_at_20_percent": ndcg_at_k(
+                        ranking,
+                        relevance,
+                        cutoff_at_20_percent,
+                    ),
+                    "cutoff_at_20_percent": cutoff_at_20_percent,
                 },
             }
         )
@@ -286,6 +297,14 @@ def comparison_row(
         "interaction_count": interaction_count,
         "signal_counts": signal_counts,
         "training_seconds": training_seconds,
+        "ndcg_at_20_percent": sum(
+            float(row["ranking"]["ndcg_at_20_percent"]) for row in rows
+        )
+        / len(rows),
+        "mean_cutoff_at_20_percent": sum(
+            int(row["ranking"]["cutoff_at_20_percent"]) for row in rows
+        )
+        / len(rows),
         "ndcg_at_10": mean_ndcg(rows, 10),
         "ndcg_at_20": mean_ndcg(rows, 20),
         "ndcg_at_30": mean_ndcg(rows, 30),
@@ -315,14 +334,14 @@ def comparison_markdown(payload: dict) -> str:
         "",
         "Ontology feature와 V3 정책 없이 사용자·영화 identity와 명시적 행동만 학습한다.",
         "",
-        "| 학습 사용자 | 평가 사용자 | NDCG@10 | NDCG@20 | NDCG@30 | 전체 홀드아웃 NDCG |",
-        "| ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| 학습 사용자 | 평가 사용자 | NDCG@20% | 평균 K | 전체 홀드아웃 NDCG |",
+        "| ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in payload["rows"]:
         lines.append(
             f"| {row['training_user_count']} | {row['evaluation_user_count']} "
-            f"| {row['ndcg_at_10']:.6f} | {row['ndcg_at_20']:.6f} "
-            f"| {row['ndcg_at_30']:.6f} "
+            f"| {row['ndcg_at_20_percent']:.6f} "
+            f"| {row['mean_cutoff_at_20_percent']:.2f} "
             f"| {row['mean_full_holdout_ndcg']:.6f} |"
         )
     return "\n".join(lines) + "\n"

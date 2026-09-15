@@ -36,6 +36,7 @@ class UserSummary:
     holdout_positive_count: int
     genre_entropy: float
     dominant_genre: str | None = None
+    temporal_genre_shift: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +147,10 @@ def summarize_user(
         holdout_positive_count=sum(item.rating >= 3.5 for item in holdout),
         genre_entropy=normalized_genre_entropy_from_weights(genre_weights),
         dominant_genre=dominant_genre_from_weights(genre_weights),
+        temporal_genre_shift=temporal_genre_shift(
+            train,
+            genres_by_source_movie_id=genres_by_source_movie_id,
+        ),
     )
 
 
@@ -193,6 +198,48 @@ def dominant_genre_from_weights(weights: Mapping[str, float]) -> str | None:
     if not weights:
         return None
     return min(weights, key=lambda genre: (-weights[genre], genre))
+
+
+def temporal_genre_shift(
+    train: tuple[MappedRating, ...],
+    *,
+    genres_by_source_movie_id: Mapping[int, tuple[str, ...]],
+) -> float | None:
+    midpoint = len(train) // 2
+    early = tuple(item for item in train[:midpoint] if item.rating >= 3.5)
+    late = tuple(item for item in train[midpoint:] if item.rating >= 3.5)
+    if len(early) < 5 or len(late) < 5:
+        return None
+    early_weights = positive_genre_weights(
+        early,
+        genres_by_source_movie_id=genres_by_source_movie_id,
+    )
+    late_weights = positive_genre_weights(
+        late,
+        genres_by_source_movie_id=genres_by_source_movie_id,
+    )
+    return jensen_shannon_distance(early_weights, late_weights)
+
+
+def jensen_shannon_distance(
+    left: Mapping[str, float],
+    right: Mapping[str, float],
+) -> float | None:
+    keys = sorted(set(left) | set(right))
+    left_total = float(sum(left.values()))
+    right_total = float(sum(right.values()))
+    if not keys or left_total <= 0.0 or right_total <= 0.0:
+        return None
+    divergence = 0.0
+    for key in keys:
+        left_probability = float(left.get(key, 0.0)) / left_total
+        right_probability = float(right.get(key, 0.0)) / right_total
+        midpoint = (left_probability + right_probability) / 2.0
+        if left_probability > 0.0:
+            divergence += 0.5 * left_probability * math.log(left_probability / midpoint)
+        if right_probability > 0.0:
+            divergence += 0.5 * right_probability * math.log(right_probability / midpoint)
+    return math.sqrt(max(0.0, divergence / math.log(2.0)))
 
 
 def eligible_summary(
@@ -321,6 +368,60 @@ def select_focused_user_sequence(
             raise ValueError(
                 f"only {len(selected)} focused users with a dominant genre are available; "
                 f"requires {user_count}"
+            )
+    return tuple(selected)
+
+
+def select_stable_user_sequence(
+    summaries: Iterable[UserSummary],
+    *,
+    maximum_temporal_genre_shift: float,
+    user_count: int,
+    seed: int,
+) -> tuple[tuple[int, str], ...]:
+    if user_count <= 0:
+        raise ValueError("user count must be positive")
+    if not math.isfinite(maximum_temporal_genre_shift) or maximum_temporal_genre_shift < 0.0:
+        raise ValueError("maximum temporal genre shift must be finite and non-negative")
+
+    buckets: dict[str, list[UserSummary]] = {}
+    for summary in summaries:
+        if (
+            summary.temporal_genre_shift is None
+            or summary.temporal_genre_shift > maximum_temporal_genre_shift
+            or summary.dominant_genre is None
+        ):
+            continue
+        buckets.setdefault(summary.dominant_genre, []).append(summary)
+    for genre, values in buckets.items():
+        buckets[genre] = sorted(
+            values,
+            key=lambda item: (
+                item.temporal_genre_shift,
+                _stable_int(f"{seed}:stable:{genre}:{item.source_user_id}"),
+                item.source_user_id,
+            ),
+        )
+
+    selected: list[tuple[int, str]] = []
+    positions = {genre: 0 for genre in buckets}
+    genres = sorted(buckets)
+    while len(selected) < user_count:
+        added = False
+        for genre in genres:
+            position = positions[genre]
+            if position >= len(buckets[genre]):
+                continue
+            summary = buckets[genre][position]
+            positions[genre] += 1
+            selected.append((summary.source_user_id, "stable_low_variability"))
+            added = True
+            if len(selected) == user_count:
+                break
+        if not added:
+            raise ValueError(
+                f"only {len(selected)} low-variability users with a dominant genre "
+                f"are available; requires {user_count}"
             )
     return tuple(selected)
 

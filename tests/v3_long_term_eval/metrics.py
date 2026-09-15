@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 
 DEFAULT_CUTOFFS = (10, 20, 50, 100)
+DEFAULT_EVALUATION_PERCENTAGE = 0.20
 
 
 def evaluation_cutoffs(candidate_count: int, *, step: int = 10) -> tuple[int, ...]:
@@ -19,16 +20,34 @@ def evaluation_cutoffs(candidate_count: int, *, step: int = 10) -> tuple[int, ..
     return tuple(cutoffs)
 
 
+def percentage_cutoff(
+    candidate_count: int,
+    *,
+    percentage: float = DEFAULT_EVALUATION_PERCENTAGE,
+) -> int:
+    if candidate_count <= 0:
+        raise ValueError("candidate count must be positive")
+    if not 0.0 < percentage <= 1.0:
+        raise ValueError("evaluation percentage must be between 0 and 1")
+    return max(1, min(candidate_count, math.ceil(candidate_count * percentage)))
+
+
 @dataclass(frozen=True, slots=True)
 class RankingMetrics:
     ndcg: dict[int, float]
 
 
 def rating_relevance(rating: float) -> float:
-    """Map MovieLens positives to four ordered relevance grades."""
-    if rating < 3.5:
+    """Map MovieLens ratings to the service's ordered behavior grades."""
+    if not 0.5 <= rating <= 5.0:
+        raise ValueError("MovieLens rating must be between 0.5 and 5.0")
+    if rating <= 1.5:
         return 0.0
-    return (rating - 3.0) * 2.0
+    if rating <= 3.0:
+        return 1.0
+    if rating <= 4.5:
+        return 2.0
+    return 3.0
 
 
 def ndcg_at_k(

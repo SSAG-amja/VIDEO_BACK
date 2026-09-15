@@ -280,6 +280,7 @@ final_score
   + ott_adjustment
   + quality_adjustment
   - negative_preference_penalty
+  - popularity_pressure_penalty
   - repetition_penalty
 ```
 
@@ -455,6 +456,8 @@ V3 1차에 포함한다.
 - MMR은 개인 적합도와 후보 간 중복도를 함께 고려
 
 이는 random exploration과 다른 정책이다. 반복 감점은 정확도 중심 V3 1차에 유지한다.
+
+인기 영화 쏠림도 LightFM 학습 weight가 아니라 이 재정렬 단계에서 다룬다. 절대 최소 popularity와 후보 집합 내 상위 percentile을 모두 충족한 그룹을 구하고, 이미 선택된 인기 후보 수가 위치별 허용 비율을 초과할 때만 bounded penalty를 적용한다. 첫 인기 후보는 감점하지 않으며 개인 적합도가 충분히 높은 인기 영화를 일괄 제거하지 않는다. 현재 구현의 기본 penalty는 `0`이고 장기 취향 모델과 ontology 결합이 확정된 뒤 별도 비교로 활성값을 선택한다.
 
 ## 15. Cold-start
 

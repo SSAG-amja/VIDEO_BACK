@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
@@ -13,15 +12,14 @@ import numpy as np
 
 from app.db.session import SessionLocal
 from tests.v3_long_term_eval.movielens import (
-    MappedRating,
     SelectedUser,
     UserSummary,
     eligible_summary,
     iter_mapped_user_ratings,
     load_movielens_genres,
     load_movielens_links,
-    positive_genre_weights,
     summarize_user,
+    temporal_genre_shift,
     temporal_split,
 )
 from tests.v3_long_term_eval.prepare import load_database_movie_ids, write_plan
@@ -211,48 +209,6 @@ def main() -> None:
         encoding="utf-8",
     )
     print(json.dumps(summary, ensure_ascii=False, sort_keys=True), flush=True)
-
-
-def temporal_genre_shift(
-    train: tuple[MappedRating, ...],
-    *,
-    genres_by_source_movie_id: dict[int, tuple[str, ...]],
-) -> float | None:
-    midpoint = len(train) // 2
-    early = tuple(rating for rating in train[:midpoint] if rating.rating >= 3.5)
-    late = tuple(rating for rating in train[midpoint:] if rating.rating >= 3.5)
-    if len(early) < 5 or len(late) < 5:
-        return None
-    early_weights = positive_genre_weights(
-        early,
-        genres_by_source_movie_id=genres_by_source_movie_id,
-    )
-    late_weights = positive_genre_weights(
-        late,
-        genres_by_source_movie_id=genres_by_source_movie_id,
-    )
-    return jensen_shannon_distance(early_weights, late_weights)
-
-
-def jensen_shannon_distance(
-    left: Counter[str],
-    right: Counter[str],
-) -> float | None:
-    keys = sorted(set(left) | set(right))
-    left_total = float(sum(left.values()))
-    right_total = float(sum(right.values()))
-    if not keys or left_total <= 0.0 or right_total <= 0.0:
-        return None
-    divergence = 0.0
-    for key in keys:
-        left_probability = float(left[key]) / left_total
-        right_probability = float(right[key]) / right_total
-        midpoint = (left_probability + right_probability) / 2.0
-        if left_probability > 0.0:
-            divergence += 0.5 * left_probability * math.log(left_probability / midpoint)
-        if right_probability > 0.0:
-            divergence += 0.5 * right_probability * math.log(right_probability / midpoint)
-    return math.sqrt(max(0.0, divergence / math.log(2.0)))
 
 
 def select_genre_distributed(

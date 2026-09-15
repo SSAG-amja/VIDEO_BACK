@@ -31,6 +31,7 @@ from app.services.recsys.v3.config import (
     LIGHTFM_HYBRID_NO_COMPONENTS,
     LIGHTFM_HYBRID_USER_ALPHA,
     TRAINING_ITEM_FREQUENCY_MULTIPLIER_MIN,
+    TRAINING_RECENCY_HALF_LIFE_DAYS,
     TRAINING_RECENCY_MIN_MULTIPLIER,
     TRAINING_USER_ACTIVITY_MULTIPLIER_MIN,
 )
@@ -43,13 +44,23 @@ from app.services.recsys.v3.retrieval.score_calibration import (
 )
 from app.services.recsys.v3.serving.model_store import load_runtime_hybrid_artifact
 from tests.v3_long_term_eval.evaluate import load_plan
-from tests.v3_long_term_eval.metrics import evaluation_cutoffs, ndcg_at_k, rating_relevance
+from tests.v3_long_term_eval.metrics import (
+    evaluation_cutoffs,
+    ndcg_at_k,
+    percentage_cutoff,
+    rating_relevance,
+)
 from tests.v3_long_term_eval.prepare import normalized_training_times
 
 
 ROOT = Path("tests/v3_long_term_eval")
 DEFAULT_OUTPUT_DIR = ROOT / "outputs/ablation"
-SIGNAL_POLICIES = {"baseline", "v3_no_decay", "v3_decay"}
+SIGNAL_POLICIES = {
+    "baseline",
+    "v3_no_decay",
+    "v3_decay",
+    "v3_positive_no_decay",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,19 +90,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--evaluation-user-count", type=int, default=100)
     parser.add_argument("--epochs", type=int, default=LIGHTFM_HYBRID_EPOCHS)
     parser.add_argument("--num-threads", type=int, default=1)
+    parser.add_argument("--source-artifact", type=Path)
+    parser.add_argument("--training-plan", type=Path)
+    parser.add_argument("--evaluation-plan", type=Path)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    training_plan_path = (
+    training_plan_path = args.training_plan or (
         ROOT
         / "generated/cohorts"
         / str(args.training_user_count)
         / "evaluation_plan.jsonl"
     )
-    evaluation_plan_path = (
+    evaluation_plan_path = args.evaluation_plan or (
         ROOT
         / "generated/cohorts"
         / str(args.evaluation_user_count)
@@ -99,7 +113,9 @@ def main() -> None:
     )
     training_plans = load_plan(training_plan_path)
     evaluation_plans = load_plan(evaluation_plan_path)
-    artifact_path = current_artifact_path(args.training_user_count)
+    artifact_path = args.source_artifact or current_artifact_path(
+        args.training_user_count
+    )
     artifact = load_runtime_hybrid_artifact(artifact_path)
     attach_user_ids(training_plans, artifact.user_ids)
     attach_user_ids(evaluation_plans, artifact.user_ids)
@@ -119,6 +135,12 @@ def main() -> None:
             user_id_map=user_id_map,
             movie_id_map=movie_id_map,
             signal_policy=policy,
+            positive_half_life_days=float(
+                TRAINING_RECENCY_HALF_LIFE_DAYS["saved"]
+            ),
+            passed_half_life_days=float(
+                TRAINING_RECENCY_HALF_LIFE_DAYS["passed"]
+            ),
         )
         for policy in sorted(SIGNAL_POLICIES)
     }
@@ -419,6 +441,8 @@ def build_training_signals(
     positive_half_life_days: float | None = None,
     passed_half_life_days: float | None = None,
     recency_min_multiplier: float = TRAINING_RECENCY_MIN_MULTIPLIER,
+    saved_weight: float | None = None,
+    pinned_weight: float | None = None,
 ) -> TrainingSignals:
     if signal_policy not in SIGNAL_POLICIES:
         raise ValueError(f"unknown signal policy: {signal_policy}")
@@ -445,6 +469,8 @@ def build_training_signals(
                 positive_half_life_days=positive_half_life_days,
                 passed_half_life_days=passed_half_life_days,
                 recency_min_multiplier=recency_min_multiplier,
+                saved_weight=saved_weight,
+                pinned_weight=pinned_weight,
             )
             if signal is None:
                 continue
@@ -499,7 +525,12 @@ def signal_for_rating(
     positive_half_life_days: float | None = None,
     passed_half_life_days: float | None = None,
     recency_min_multiplier: float = TRAINING_RECENCY_MIN_MULTIPLIER,
+    saved_weight: float | None = None,
+    pinned_weight: float | None = None,
 ) -> tuple[float, float, SnapshotAction] | None:
+    for name, value in (("saved_weight", saved_weight), ("pinned_weight", pinned_weight)):
+        if value is not None and (not math.isfinite(value) or value <= 0.0):
+            raise ValueError(f"{name} must be finite and positive")
     if 2.0 <= rating <= 3.0:
         return None
     if rating <= 1.5:
@@ -509,17 +540,28 @@ def signal_for_rating(
         half_life = passed_half_life_days or 90.0
     elif 3.5 <= rating <= 4.5:
         action = SnapshotAction.PINNED
-        base_weight = 1.0 if policy == "baseline" else 2.0
+        base_weight = (
+            pinned_weight
+            if pinned_weight is not None
+            else (1.0 if policy == "baseline" else 2.0)
+        )
         label = 1.0
         half_life = positive_half_life_days or 60.0
     elif rating == 5.0:
         action = SnapshotAction.SAVED
-        base_weight = 1.5 if policy == "baseline" else 2.0
+        base_weight = (
+            saved_weight
+            if saved_weight is not None
+            else (1.5 if policy == "baseline" else 2.0)
+        )
         label = 1.0
         half_life = positive_half_life_days or 60.0
     else:
         return None
-    if policy == "v3_decay":
+    should_decay = policy == "v3_decay" or (
+        policy == "v3_positive_no_decay" and action is SnapshotAction.PASSED
+    )
+    if should_decay:
         age_days = max(0.0, (as_of - occurred_at).total_seconds() / 86_400.0)
         base_weight *= max(
             recency_min_multiplier,
@@ -697,9 +739,9 @@ def evaluate_model(
         relevance = {
             int(item["movie_id"]): rating_relevance(float(item["rating"]))
             for item in plan["holdout"]
-            if float(item["rating"]) >= 3.5
         }
         candidate_count = len(candidate_movie_ids)
+        cutoff_at_20_percent = percentage_cutoff(candidate_count)
         ndcg = {
             str(cutoff): ndcg_at_k(ranking, relevance, cutoff)
             for cutoff in evaluation_cutoffs(candidate_count)
@@ -709,6 +751,12 @@ def evaluate_model(
                 "source_user_id": int(plan["source_user_id"]),
                 "candidate_count": candidate_count,
                 "ndcg": ndcg,
+                "ndcg_at_20_percent": ndcg_at_k(
+                    ranking,
+                    relevance,
+                    cutoff_at_20_percent,
+                ),
+                "cutoff_at_20_percent": cutoff_at_20_percent,
             }
         )
     return rows
@@ -725,6 +773,12 @@ def result_summary(
         "name": name,
         "description": description,
         "training_seconds": training_seconds,
+        "ndcg_at_20_percent": statistics.mean(
+            float(row["ndcg_at_20_percent"]) for row in rows
+        ),
+        "mean_cutoff_at_20_percent": statistics.mean(
+            int(row["cutoff_at_20_percent"]) for row in rows
+        ),
         "ndcg_at_10": mean_cutoff(rows, 10),
         "ndcg_at_20": mean_cutoff(rows, 20),
         "ndcg_at_30": mean_cutoff(rows, 30),
@@ -733,6 +787,10 @@ def result_summary(
         ),
         "per_user_ndcg_at_20": {
             str(row["source_user_id"]): float(row["ndcg"]["20"]) for row in rows
+        },
+        "per_user_ndcg_at_20_percent": {
+            str(row["source_user_id"]): float(row["ndcg_at_20_percent"])
+            for row in rows
         },
     }
 
@@ -755,17 +813,17 @@ def build_report(
     for name, reference, changed, question in comparison_plan():
         before = by_name[reference]
         after = by_name[changed]
-        delta20 = float(after["ndcg_at_20"]) - float(before["ndcg_at_20"])
-        delta30 = float(after["ndcg_at_30"]) - float(before["ndcg_at_30"])
+        delta = float(after["ndcg_at_20_percent"]) - float(
+            before["ndcg_at_20_percent"]
+        )
         comparisons.append(
             {
                 "name": name,
                 "question": question,
                 "reference": reference,
                 "changed": changed,
-                "delta_ndcg_at_20": delta20,
-                "delta_ndcg_at_30": delta30,
-                "verdict": effect_verdict(delta20, delta30),
+                "delta_ndcg_at_20_percent": delta,
+                "verdict": effect_verdict(delta),
             }
         )
     return {
@@ -788,8 +846,10 @@ def build_report(
         ],
         "results": results,
         "comparisons": comparisons,
-        "winner_at_20": max(results, key=lambda row: row["ndcg_at_20"])["name"],
-        "winner_at_30": max(results, key=lambda row: row["ndcg_at_30"])["name"],
+        "winner_at_20_percent": max(
+            results,
+            key=lambda row: row["ndcg_at_20_percent"],
+        )["name"],
     }
 
 
@@ -864,11 +924,10 @@ def comparison_plan() -> tuple[tuple[str, str, str, str], ...]:
     )
 
 
-def effect_verdict(delta20: float, delta30: float) -> str:
-    average = (delta20 + delta30) / 2.0
-    if average >= 0.005:
+def effect_verdict(delta: float) -> str:
+    if delta >= 0.005:
         return "favorable"
-    if average <= -0.005:
+    if delta <= -0.005:
         return "unfavorable"
     return "neutral"
 
@@ -894,14 +953,14 @@ def report_markdown(report: dict) -> str:
             "",
             "## 측정 결과",
             "",
-            "| 변형 | NDCG@10 | NDCG@20 | NDCG@30 | 전체 holdout | 학습 초 |",
-            "| --- | ---: | ---: | ---: | ---: | ---: |",
+            "| 변형 | NDCG@20% | 평균 K | 전체 holdout | 학습 초 |",
+            "| --- | ---: | ---: | ---: | ---: |",
         ]
     )
     for row in report["results"]:
         lines.append(
-            f"| `{row['name']}` | {row['ndcg_at_10']:.6f} | "
-            f"{row['ndcg_at_20']:.6f} | {row['ndcg_at_30']:.6f} | "
+            f"| `{row['name']}` | {row['ndcg_at_20_percent']:.6f} | "
+            f"{row['mean_cutoff_at_20_percent']:.2f} | "
             f"{row['mean_full_holdout_ndcg']:.6f} | {row['training_seconds']:.3f} |"
         )
     lines.extend(
@@ -909,14 +968,14 @@ def report_markdown(report: dict) -> str:
             "",
             "## 조건별 판정",
             "",
-            "| 확인 항목 | 기준 -> 변경 | NDCG@20 차이 | NDCG@30 차이 | 판정 |",
-            "| --- | --- | ---: | ---: | --- |",
+            "| 확인 항목 | 기준 -> 변경 | NDCG@20% 차이 | 판정 |",
+            "| --- | --- | ---: | --- |",
         ]
     )
     for row in report["comparisons"]:
         lines.append(
             f"| `{row['name']}` | `{row['reference']}` -> `{row['changed']}` | "
-            f"{row['delta_ndcg_at_20']:+.6f} | {row['delta_ndcg_at_30']:+.6f} | "
+            f"{row['delta_ndcg_at_20_percent']:+.6f} | "
             f"{row['verdict']} |"
         )
     lines.extend(
@@ -924,10 +983,9 @@ def report_markdown(report: dict) -> str:
             "",
             "## 최고 결과",
             "",
-            f"- NDCG@20: `{report['winner_at_20']}`",
-            f"- NDCG@30: `{report['winner_at_30']}`",
+            f"- NDCG@20%: `{report['winner_at_20_percent']}`",
             "",
-            "`favorable`은 NDCG@20과 @30 차이 평균이 `+0.005` 이상인 경우다.",
+            "`favorable`은 NDCG@20% 차이가 `+0.005` 이상인 경우다.",
             "이 평가는 취향 순위 판별만 측정하며 전체 카탈로그 후보 검색 품질은 측정하지 않는다.",
             "",
         ]
