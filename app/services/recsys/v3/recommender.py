@@ -252,6 +252,7 @@ def _persist_feature_only_candidates(
         Recommendation(
             user_id=profile.user_id,
             movie_id=item.movie_id,
+            engine="v3",
             score=item.model_raw_score,
             rank=item.source_rank,
             source="lightfm_v3_feature_only",
@@ -270,7 +271,7 @@ def _persist_feature_only_candidates(
         for item in candidates
     ]
     try:
-        replace_user_recommendation_rows(db, profile.user_id, rows)
+        replace_user_recommendation_rows(db, profile.user_id, rows, engine="v3")
         db.commit()
         return True
     except Exception:

@@ -52,6 +52,7 @@ def publish_candidate_snapshot(
             {
                 "user_id": int(user_id),
                 "movie_id": int(movie_id),
+                "engine": "v3",
                 "score": float(score),
                 "rank": int(rank),
                 "source": "lightfm_v3",
@@ -79,6 +80,7 @@ def publish_candidate_snapshot(
             db,
             user_ids=successful_user_ids,
             rows=rows,
+            engine="v3",
             statement_chunk_size=statement_chunk_size,
         )
         inserted_candidates += len(rows)

@@ -1,0 +1,78 @@
+from __future__ import annotations
+
+import argparse
+import json
+from datetime import datetime
+from pathlib import Path
+
+from app.db.session import SessionLocal
+from app.jobs.recsys.v4.training.artifact_publisher import publish_identity_artifact
+from app.jobs.recsys.v4.datasets.dataset_builder import build_lightfm_dataset
+from app.jobs.recsys.v4.training.model_schemas import (
+    SUPPORTED_LIGHTFM_LOSSES,
+    LightFMTrainingConfig,
+)
+from app.jobs.recsys.v4.training.trainer import train_identity_model
+from app.services.recsys.v4.config import (
+    TRAINING_ITEM_FREQUENCY_WEIGHTING,
+    TRAINING_USER_ACTIVITY_WEIGHTING,
+)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Train the V4 identity-only LightFM baseline")
+    parser.add_argument("--output-root", type=Path, default=Path("assets/ml_models/v4"))
+    parser.add_argument("--data-cutoff-at", type=datetime.fromisoformat)
+    parser.add_argument("--epochs", type=int, default=None)
+    parser.add_argument("--num-threads", type=int, default=None)
+    parser.add_argument("--loss", choices=SUPPORTED_LIGHTFM_LOSSES, default="warp")
+    parser.add_argument(
+        "--item-frequency-weighting",
+        choices=("none", "inverse_sqrt"),
+        default=TRAINING_ITEM_FREQUENCY_WEIGHTING,
+    )
+    parser.add_argument(
+        "--user-activity-weighting",
+        choices=("none", "cap_at_median"),
+        default=TRAINING_USER_ACTIVITY_WEIGHTING,
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    overrides = {
+        key: value
+        for key, value in {
+            "epochs": args.epochs,
+            "num_threads": args.num_threads,
+            "loss": args.loss,
+            "item_frequency_weighting": args.item_frequency_weighting,
+            "user_activity_weighting": args.user_activity_weighting,
+        }.items()
+        if value is not None
+    }
+    config = LightFMTrainingConfig(**overrides)
+    with SessionLocal() as db:
+        dataset = build_lightfm_dataset(db, data_cutoff_at=args.data_cutoff_at)
+    try:
+        result = train_identity_model(dataset, config)
+    except ValueError as exc:
+        raise SystemExit(f"V4 identity-only training rejected: {exc}") from exc
+    artifact_path = publish_identity_artifact(result, args.output_root)
+    print(
+        json.dumps(
+            {
+                "status": "ok",
+                "model_build_id": result.model_build_id,
+                "artifact_path": str(artifact_path),
+                "diagnostics": result.diagnostics,
+                "artifact_reload_exact_match": True,
+            },
+            sort_keys=True,
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

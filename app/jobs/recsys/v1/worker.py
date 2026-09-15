@@ -501,6 +501,7 @@ def build_recommendation_rows(user_id: int, candidates: list[CandidateScore]) ->
         Recommendation(
             user_id=user_id,
             movie_id=candidate.movie_id,
+            engine="v1",
             score=candidate.score,
             rank=rank,
             source=candidate.source,
@@ -511,7 +512,7 @@ def build_recommendation_rows(user_id: int, candidates: list[CandidateScore]) ->
 
 
 def replace_user_recommendations(db: Session, user_id: int, recommendation_rows: list[Recommendation]) -> None:
-    replace_user_recommendation_rows(db, user_id, recommendation_rows)
+    replace_user_recommendation_rows(db, user_id, recommendation_rows, engine="v1")
 
 
 def allocate_candidate_counts(pool_size: int) -> tuple[int, int, int]:

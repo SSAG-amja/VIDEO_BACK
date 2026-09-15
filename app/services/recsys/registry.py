@@ -14,6 +14,7 @@ _ADAPTER_PATHS = {
     "v1": "app.services.recsys.v1.adapter:V1RecommendationAdapter",
     "v2": "app.services.recsys.v2.adapter:V2RecommendationAdapter",
     "v3": "app.services.recsys.v3.adapter:V3RecommendationAdapter",
+    "v4": "app.services.recsys.v4.adapter:V4RecommendationAdapter",
 }
 
 

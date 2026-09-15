@@ -152,6 +152,7 @@ def _as_dynamic_rows(movies: list[Movie]) -> list[tuple[Recommendation, Movie]]:
             Recommendation(
                 user_id=0,
                 movie_id=movie.id,
+                engine="v1",
                 score=movie.popularity or 0.0,
                 rank=index,
                 source="dynamic",

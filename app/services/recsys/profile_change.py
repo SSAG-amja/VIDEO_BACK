@@ -145,6 +145,18 @@ def mark_short_term_positive_removed(
     occurred_at: datetime | None = None,
 ) -> bool:
     """Force a debounced refresh because materialized positive evidence was removed."""
+    from app.core.config import settings
+
+    if settings.RECOMMENDATION_ENGINE == "v4":
+        from app.services.recsys.v4.profile_change import (
+            mark_short_term_positive_removed as mark_v4_short_term_positive_removed,
+        )
+
+        return mark_v4_short_term_positive_removed(
+            redis,
+            user_id,
+            occurred_at=occurred_at,
+        )
     timestamp = _timestamp(occurred_at)
     try:
         pipeline = redis.pipeline(transaction=True)

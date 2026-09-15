@@ -52,7 +52,12 @@ def record_interaction_cache(
             redis.expire(key, settings.REDIS_BLACKLIST_TTL_SECONDS)
         positive_weight = SHORT_TERM_POSITIVE_ACTION_WEIGHTS.get(payload.action)
         if positive_weight is not None:
-            return record_short_term_positive_change(
+            positive_recorder = record_short_term_positive_change
+            if settings.RECOMMENDATION_ENGINE == "v4":
+                from app.services.recsys.v4.profile_change import (
+                    record_short_term_positive_change as positive_recorder,
+                )
+            return positive_recorder(
                 redis,
                 user_id=payload.user_id,
                 movie_id=payload.movie_id,

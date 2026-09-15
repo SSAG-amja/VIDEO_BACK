@@ -277,6 +277,7 @@ def replace_user_recommendations(db: Session, user_id: int, candidates: list[Can
             Recommendation(
                 user_id=user_id,
                 movie_id=candidate.movie_id,
+                engine="v1",
                 score=candidate.score,
                 rank=rank,
                 source=candidate.source,
@@ -284,7 +285,7 @@ def replace_user_recommendations(db: Session, user_id: int, candidates: list[Can
             )
             for rank, candidate in enumerate(candidates, start=1)
         ]
-        replace_user_recommendation_rows(db, user_id, rows)
+        replace_user_recommendation_rows(db, user_id, rows, engine="v1")
         db.commit()
     except Exception:
         db.rollback()
