@@ -1,0 +1,11 @@
+{
+  "total_users": 10,
+  "qualified_users": 10,
+  "min_ratings_threshold": 0,
+  "train_ratio": 0.7,
+  "total_train_rows": 1477,
+  "total_test_rows": 640,
+  "users_with_timestamp_tie_at_boundary": 1,
+  "total_tied_groups_across_qualified_users": 49,
+  "warning": "동일 timestamp는 실제 행동 순서를 보장하지 않는다. 원본 CSV 행 순서를 보조 정렬 키로 사용했으나 이는 안정적인 처리 순서일 뿐, 실제 행동 순서의 근사치가 아닐 수 있다."
+}

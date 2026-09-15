@@ -1,0 +1,78 @@
+{
+  "item_pool_size": 7298,
+  "anchor_ml_user_ids": [
+    177,
+    169,
+    233,
+    198,
+    524,
+    600,
+    42,
+    604,
+    479,
+    122
+  ],
+  "random_seed": 20260728,
+  "results": [
+    {
+      "user_count": 10,
+      "interaction_count": 1389,
+      "train_seconds": 0.057,
+      "predict_seconds_total": 0.084,
+      "anchor_ndcg10_mean": 0.0687,
+      "anchor_users_with_ground_truth": 10,
+      "group_ndcg10_mean": 0.0687,
+      "group_users_with_ground_truth": 10
+    },
+    {
+      "user_count": 50,
+      "interaction_count": 5792,
+      "train_seconds": 0.13,
+      "predict_seconds_total": 0.48,
+      "anchor_ndcg10_mean": 0.1139,
+      "anchor_users_with_ground_truth": 10,
+      "group_ndcg10_mean": 0.1141,
+      "group_users_with_ground_truth": 50
+    },
+    {
+      "user_count": 100,
+      "interaction_count": 12876,
+      "train_seconds": 0.262,
+      "predict_seconds_total": 0.78,
+      "anchor_ndcg10_mean": 0.1599,
+      "anchor_users_with_ground_truth": 10,
+      "group_ndcg10_mean": 0.1626,
+      "group_users_with_ground_truth": 100
+    },
+    {
+      "user_count": 150,
+      "interaction_count": 20854,
+      "train_seconds": 0.415,
+      "predict_seconds_total": 1.155,
+      "anchor_ndcg10_mean": 0.1582,
+      "anchor_users_with_ground_truth": 10,
+      "group_ndcg10_mean": 0.1616,
+      "group_users_with_ground_truth": 149
+    },
+    {
+      "user_count": 200,
+      "interaction_count": 28652,
+      "train_seconds": 0.577,
+      "predict_seconds_total": 1.568,
+      "anchor_ndcg10_mean": 0.1606,
+      "anchor_users_with_ground_truth": 10,
+      "group_ndcg10_mean": 0.1568,
+      "group_users_with_ground_truth": 199
+    },
+    {
+      "user_count": 248,
+      "interaction_count": 35343,
+      "train_seconds": 0.69,
+      "predict_seconds_total": 1.958,
+      "anchor_ndcg10_mean": 0.1916,
+      "anchor_users_with_ground_truth": 10,
+      "group_ndcg10_mean": 0.1715,
+      "group_users_with_ground_truth": 247
+    }
+  ]
+}

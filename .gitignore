@@ -10,9 +10,11 @@ failed_sync_ids.jsonl
 test/
 test*
 data/
-*claude/
+
 assets/ml_models/*
 !assets/ml_models/.gitkeep
 !assets/ml_models/README.md
 ml-latest-small
 ml-32m
+# 추천 모델 비교 실험 산출물 (대용량 JSON, 재현 가능하므로 추적 제외)
+claude/results_ml32m/
