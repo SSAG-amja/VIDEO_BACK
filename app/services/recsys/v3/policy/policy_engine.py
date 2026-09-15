@@ -148,10 +148,17 @@ def evaluate_candidate_set(
         limit=min(context.limit, len(scored)),
         profile=profile,
     )
+    popular_movie_ids = _candidate_relative_popular_movie_ids(
+        scored,
+        top_percentile=adjustments.popularity_top_percentile,
+        popularity_minimum=adjustments.popularity_minimum,
+    )
     ranked = _deterministic_rerank(
         scored,
         limit=min(context.limit, len(scored)),
         profile=profile,
+        adjustment_settings=adjustments,
+        popular_movie_ids=popular_movie_ids,
     )
     return PolicyEvaluationResult(
         candidates=ranked,
@@ -183,6 +190,10 @@ def evaluate_candidate_set(
                 0,
                 sum(_is_short_term_only_candidate(item) for item in scored)
                 - sum(_is_short_term_only_candidate(item) for item in ranked),
+            ),
+            input_popular_candidate_count=len(popular_movie_ids),
+            selected_popular_candidate_count=sum(
+                item.movie_id in popular_movie_ids for item in ranked
             ),
         ),
     )
@@ -363,14 +374,19 @@ def _deterministic_rerank(
     *,
     limit: int,
     profile: UserProfileBundle,
+    adjustment_settings: PolicyAdjustmentSettings,
+    popular_movie_ids: frozenset[int],
 ) -> tuple[RankedPolicyCandidate, ...]:
     remaining = list(candidates)
     selected: list[RankedPolicyCandidate] = []
     feature_counts = {family: Counter() for family in _REPETITION_FAMILIES}
+    selected_popular_count = 0
     short_term_ratio = _short_term_lane_ratio(profile)
     short_term_available = sum(_is_short_term_only_candidate(item) for item in candidates)
     while remaining and len(selected) < limit:
-        scored_options: list[tuple[float, float, float, RankedPolicyCandidate]] = []
+        scored_options: list[
+            tuple[float, float, float, float, RankedPolicyCandidate]
+        ] = []
         for candidate in remaining:
             max_similarity = max(
                 (_candidate_similarity(candidate.ontology.repetition_features, item.ontology.repetition_features)
@@ -379,11 +395,29 @@ def _deterministic_rerank(
             )
             repetition = _repetition_penalty(candidate.ontology.repetition_features, feature_counts)
             similarity_penalty = POLICY_MMR_SIMILARITY_PENALTY_MAX * max_similarity
+            popularity_penalty = _popularity_pressure_penalty(
+                candidate,
+                popular_movie_ids=popular_movie_ids,
+                selected_popular_count=selected_popular_count,
+                next_position=len(selected) + 1,
+                settings=adjustment_settings,
+            )
             final_score = max(
                 0.0,
-                candidate.score.pre_rerank_score - repetition - similarity_penalty,
+                candidate.score.pre_rerank_score
+                - repetition
+                - similarity_penalty
+                - popularity_penalty,
             )
-            scored_options.append((final_score, max_similarity, repetition, candidate))
+            scored_options.append(
+                (
+                    final_score,
+                    max_similarity,
+                    repetition,
+                    popularity_penalty,
+                    candidate,
+                )
+            )
         short_term_selected = sum(_is_short_term_only_candidate(item) for item in selected)
         required_at_position = min(
             short_term_available,
@@ -394,16 +428,16 @@ def _deterministic_rerank(
             and any(_is_short_term_only_candidate(item) for item in remaining)
         )
         options = (
-            [item for item in scored_options if _is_short_term_only_candidate(item[3])]
+            [item for item in scored_options if _is_short_term_only_candidate(item[4])]
             if force_short_term
             else scored_options
         )
-        final_score, max_similarity, repetition, chosen = min(
+        final_score, max_similarity, repetition, popularity_penalty, chosen = min(
             options,
             key=lambda item: (
                 -item[0],
-                item[3].candidate.selection_rank,
-                item[3].movie_id,
+                item[4].candidate.selection_rank,
+                item[4].movie_id,
             ),
         )
         similarity_penalty = POLICY_MMR_SIMILARITY_PENALTY_MAX * max_similarity
@@ -416,14 +450,64 @@ def _deterministic_rerank(
                 max_selected_similarity=round(max_similarity, 8),
                 repetition_penalty=round(repetition, 8),
                 mmr_similarity_penalty=round(similarity_penalty, 8),
+                popularity_penalty=popularity_penalty,
                 short_term_lane_forced=force_short_term,
                 final_score=round(final_score, 8),
             ),
         )
         selected.append(chosen)
         remaining.remove(original)
+        if chosen.movie_id in popular_movie_ids:
+            selected_popular_count += 1
         _update_feature_counts(chosen.ontology.repetition_features, feature_counts)
     return tuple(selected)
+
+
+def _candidate_relative_popular_movie_ids(
+    candidates: tuple[RankedPolicyCandidate, ...],
+    *,
+    top_percentile: float,
+    popularity_minimum: float,
+) -> frozenset[int]:
+    positive = sorted(
+        (candidate.metadata.popularity, candidate.movie_id)
+        for candidate in candidates
+        if candidate.metadata.popularity > 0.0
+    )
+    if not positive:
+        return frozenset()
+    threshold_index = min(
+        len(positive) - 1,
+        max(0, math.floor(len(positive) * top_percentile)),
+    )
+    threshold = max(positive[threshold_index][0], popularity_minimum)
+    return frozenset(
+        movie_id for popularity, movie_id in positive if popularity >= threshold
+    )
+
+
+def _popularity_pressure_penalty(
+    candidate: RankedPolicyCandidate,
+    *,
+    popular_movie_ids: frozenset[int],
+    selected_popular_count: int,
+    next_position: int,
+    settings: PolicyAdjustmentSettings,
+) -> float:
+    if (
+        settings.popularity_penalty_max <= 0.0
+        or candidate.movie_id not in popular_movie_ids
+    ):
+        return 0.0
+    allowed_count = max(
+        1,
+        math.ceil(next_position * settings.popularity_target_max_ratio),
+    )
+    overflow = max(0, selected_popular_count + 1 - allowed_count)
+    return round(
+        settings.popularity_penalty_max * (1.0 - math.exp(-overflow)),
+        8,
+    )
 
 
 def _short_term_lane_target(

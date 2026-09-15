@@ -24,6 +24,7 @@ from app.services.recsys.v3.config import (
     USER_FEATURE_EXPLICIT_GENRE_WEIGHT,
     USER_FEATURE_EXPORTER_VERSION,
     USER_FEATURE_FAVORITE_DERIVED_WEIGHT,
+    USER_FEATURE_LONG_TERM_EVIDENCE_CONFIDENCE_K,
     USER_FEATURE_LONG_TERM_DERIVED_WEIGHT,
 )
 from app.services.recsys.v3.domain.feature_registry import FeatureName, get_feature_definition
@@ -135,11 +136,13 @@ def build_user_feature_export(
     all_genre_tokens = tuple(
         token for token in item_tokens[movie_identity_count:] if token.startswith(genre_prefix)
     )
-    values_by_user_token: dict[tuple[int, str], float] = {}
+    onboarding_values_by_user_token: dict[tuple[int, str], float] = {}
     for user_id, genre_id in explicit_rows:
         token = get_feature_definition(FeatureName.GENRE).token(genre_id)
         if token in item_export.feature_token_map:
-            values_by_user_token[(user_id, token)] = USER_FEATURE_EXPLICIT_GENRE_WEIGHT
+            onboarding_values_by_user_token[(user_id, token)] = (
+                USER_FEATURE_EXPLICIT_GENRE_WEIGHT
+            )
 
     favorite_derived_pair_count = 0
     missing_favorite_movie_count = 0
@@ -161,19 +164,27 @@ def build_user_feature_export(
             token = item_tokens[int(feature_index)]
             value = USER_FEATURE_FAVORITE_DERIVED_WEIGHT * float(item_value)
             key = (user_id, token)
-            values_by_user_token[key] = max(values_by_user_token.get(key, 0.0), value)
+            onboarding_values_by_user_token[key] = max(
+                onboarding_values_by_user_token.get(key, 0.0),
+                value,
+            )
             favorite_derived_pair_count += 1
 
     (
         long_term_values,
         long_term_covered_users,
         missing_long_term_movie_count,
+        long_term_evidence_counts_by_user,
     ) = build_long_term_behavior_values(
         positive_interactions=long_term_positives,
         item_export=item_export,
     )
-    for key, value in long_term_values.items():
-        weighted_value = USER_FEATURE_LONG_TERM_DERIVED_WEIGHT * value
+    long_term_values_by_user_token = {
+        key: USER_FEATURE_LONG_TERM_DERIVED_WEIGHT * value
+        for key, value in long_term_values.items()
+    }
+    values_by_user_token = dict(onboarding_values_by_user_token)
+    for key, weighted_value in long_term_values_by_user_token.items():
         values_by_user_token[key] = max(
             values_by_user_token.get(key, 0.0),
             weighted_value,
@@ -222,6 +233,20 @@ def build_user_feature_export(
     ).tocsr()
     matrix.sum_duplicates()
     matrix.sort_indices()
+    onboarding_matrix = build_component_feature_matrix(
+        user_count=len(user_ids),
+        feature_count=len(feature_tokens),
+        user_id_map=user_id_map,
+        feature_token_map=feature_token_map,
+        values_by_user_token=onboarding_values_by_user_token,
+    )
+    long_term_matrix = build_component_feature_matrix(
+        user_count=len(user_ids),
+        feature_count=len(feature_tokens),
+        user_id_map=user_id_map,
+        feature_token_map=feature_token_map,
+        values_by_user_token=long_term_values_by_user_token,
+    )
 
     user_mapping_hash = hash_ordered_values("user", (str(item) for item in user_ids))
     feature_mapping_hash = hash_ordered_values("user_feature", feature_tokens)
@@ -260,6 +285,10 @@ def build_user_feature_export(
         missing_long_term_movie_count=missing_long_term_movie_count,
         long_term_derived_weight=USER_FEATURE_LONG_TERM_DERIVED_WEIGHT,
         long_term_feature_top_k=dict(PROFILE_FEATURE_TOP_K),
+        long_term_evidence_policy="whole_user_n_over_n_plus_k",
+        long_term_evidence_confidence_k=(
+            USER_FEATURE_LONG_TERM_EVIDENCE_CONFIDENCE_K
+        ),
         onboarding_profile_signature_hash=onboarding_signature_hash,
     )
     return UserFeatureExport(
@@ -270,6 +299,12 @@ def build_user_feature_export(
         user_features=matrix,
         manifest=manifest,
         onboarding_profile_signatures=onboarding_signatures,
+        onboarding_features=onboarding_matrix,
+        long_term_features=long_term_matrix,
+        long_term_evidence_counts=tuple(
+            long_term_evidence_counts_by_user.get(user_id, 0)
+            for user_id in user_ids
+        ),
     )
 
 
@@ -277,11 +312,12 @@ def build_long_term_behavior_values(
     *,
     positive_interactions: tuple[PositiveInteraction, ...],
     item_export: ItemFeatureExport,
-) -> tuple[dict[tuple[int, str], float], set[int], int]:
+) -> tuple[dict[tuple[int, str], float], set[int], int, dict[int, int]]:
     movie_identity_count = len(item_export.movie_ids)
     item_matrix = item_export.item_features.tocsr(copy=False)
     weighted_values: dict[tuple[int, str], float] = defaultdict(float)
     total_weight_by_user: dict[int, float] = defaultdict(float)
+    evidence_movies_by_user: dict[int, int] = defaultdict(int)
     missing_movie_count = 0
 
     for interaction in positive_interactions:
@@ -291,6 +327,7 @@ def build_long_term_behavior_values(
             continue
         weight = float(interaction.sample_weight)
         total_weight_by_user[interaction.user_id] += weight
+        evidence_movies_by_user[interaction.user_id] += 1
         start = int(item_matrix.indptr[movie_index])
         end = int(item_matrix.indptr[movie_index + 1])
         for feature_index, item_value in zip(
@@ -322,7 +359,44 @@ def build_long_term_behavior_values(
         ]:
             selected[(user_id, token)] = value
             covered_users.add(user_id)
-    return selected, covered_users, missing_movie_count
+    return selected, covered_users, missing_movie_count, dict(evidence_movies_by_user)
+
+
+def build_component_feature_matrix(
+    *,
+    user_count: int,
+    feature_count: int,
+    user_id_map: dict[int, int],
+    feature_token_map: dict[str, int],
+    values_by_user_token: dict[tuple[int, str], float],
+) -> csr_matrix:
+    rows: list[int] = []
+    columns: list[int] = []
+    data: list[float] = []
+    for (user_id, token), value in sorted(
+        values_by_user_token.items(),
+        key=lambda item: (user_id_map[item[0][0]], feature_token_map.get(item[0][1], -1)),
+    ):
+        feature_index = feature_token_map.get(token)
+        if feature_index is None or value <= 0.0 or not math.isfinite(value):
+            continue
+        rows.append(user_id_map[user_id])
+        columns.append(feature_index)
+        data.append(value)
+    matrix = coo_matrix(
+        (
+            np.asarray(data, dtype=np.float32),
+            (
+                np.asarray(rows, dtype=np.int32),
+                np.asarray(columns, dtype=np.int32),
+            ),
+        ),
+        shape=(user_count, feature_count),
+        dtype=np.float32,
+    ).tocsr()
+    matrix.sum_duplicates()
+    matrix.sort_indices()
+    return matrix
 
 
 def validate_item_identity_columns(item_export: ItemFeatureExport) -> None:

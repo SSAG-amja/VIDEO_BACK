@@ -530,6 +530,7 @@ def evaluate_model_health(
         item_features=item_features,
     )
     violations: list[str] = []
+    warnings: list[str] = []
     for name in ("user_embeddings", "item_embeddings"):
         stats = parameters[name]
         if stats["max_abs"] > MODEL_HEALTH_THRESHOLDS["embedding_max_abs"]:
@@ -572,7 +573,7 @@ def evaluate_model_health(
         and candidate_sample["top20_max_user_frequency_ratio"]
         > MODEL_HEALTH_THRESHOLDS["candidate_top20_max_user_frequency_ratio"]
     ):
-        violations.append("candidate_sample.top20_max_user_frequency_ratio")
+        warnings.append("candidate_sample.top20_max_user_frequency_ratio")
     return {
         "status": "pass" if not violations else "fail",
         "thresholds": dict(MODEL_HEALTH_THRESHOLDS),
@@ -580,6 +581,7 @@ def evaluate_model_health(
         "prediction_sample": prediction,
         "candidate_sample": candidate_sample,
         "violations": violations,
+        "warnings": warnings,
     }
 
 

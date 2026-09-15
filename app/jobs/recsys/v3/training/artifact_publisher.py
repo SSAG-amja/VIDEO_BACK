@@ -313,6 +313,12 @@ def build_hybrid_manifest(
             "item_keyword_weighting_policy": item_manifest.keyword_weighting_policy,
             "user_identity_block_weight": user_manifest.identity_block_weight,
             "user_semantic_block_weight": user_manifest.semantic_block_weight,
+            "user_long_term_evidence_policy": (
+                user_manifest.long_term_evidence_policy
+            ),
+            "user_long_term_evidence_confidence_k": (
+                user_manifest.long_term_evidence_confidence_k
+            ),
             "user_onboarding_profile_signature_hash": (
                 user_manifest.onboarding_profile_signature_hash
             ),

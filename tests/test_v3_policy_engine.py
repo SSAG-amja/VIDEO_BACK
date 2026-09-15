@@ -699,6 +699,78 @@ class PolicyScoreTest(unittest.TestCase):
         self.assertGreater(first.candidates[2].score.repetition_penalty, 0.0)
         self.assertGreater(first.candidates[2].score.mmr_similarity_penalty, 0.0)
 
+    def test_popular_candidate_pressure_is_bounded_in_reranking(self) -> None:
+        profile = retrieval_profile()
+        movie_ids = (101, 102, 103, 104)
+        candidates = tuple(
+            merged(movie_id, rank, score=0.91 - rank * 0.01)
+            for rank, movie_id in enumerate(movie_ids, 1)
+        )
+        result_input = retrieval(
+            movie_ids,
+            tuple(analysis(movie_id) for movie_id in movie_ids),
+            candidates=candidates,
+        )
+        rows = [movie(movie_id) for movie_id in movie_ids]
+        for row, popularity in zip(rows, (1000.0, 900.0, 20.0, 10.0), strict=True):
+            row.popularity = popularity
+
+        with patch(
+            "app.services.recsys.v3.policy.policy_engine.load_movies_by_ids",
+            return_value=rows,
+        ):
+            result = evaluate_policy_candidates(
+                object(),
+                retrieval=result_input,
+                profile=profile,
+                context=PolicyRequestContext(as_of=AS_OF, limit=4),
+                component_weights=PolicyComponentWeights(personal=1.0, ontology=0.0),
+                adjustment_settings=PolicyAdjustmentSettings(
+                    popularity_penalty_max=0.2,
+                    popularity_top_percentile=0.5,
+                    popularity_target_max_ratio=0.25,
+                ),
+            )
+
+        self.assertEqual([item.movie_id for item in result.candidates], [101, 103, 104, 102])
+        self.assertEqual(result.diagnostics.input_popular_candidate_count, 2)
+        self.assertEqual(result.diagnostics.selected_popular_candidate_count, 2)
+        self.assertGreater(result.candidates[-1].score.popularity_penalty, 0.0)
+
+    def test_relative_popularity_does_not_penalize_an_all_low_popularity_pool(self) -> None:
+        profile = retrieval_profile()
+        movie_ids = (101, 102, 103)
+        result_input = retrieval(
+            movie_ids,
+            tuple(analysis(movie_id) for movie_id in movie_ids),
+        )
+        rows = [movie(movie_id) for movie_id in movie_ids]
+        for row, popularity in zip(rows, (30.0, 20.0, 10.0), strict=True):
+            row.popularity = popularity
+
+        with patch(
+            "app.services.recsys.v3.policy.policy_engine.load_movies_by_ids",
+            return_value=rows,
+        ):
+            result = evaluate_policy_candidates(
+                object(),
+                retrieval=result_input,
+                profile=profile,
+                context=PolicyRequestContext(as_of=AS_OF, limit=3),
+                adjustment_settings=PolicyAdjustmentSettings(
+                    popularity_penalty_max=0.2,
+                ),
+            )
+
+        self.assertEqual([item.movie_id for item in result.candidates], list(movie_ids))
+        self.assertEqual(result.diagnostics.input_popular_candidate_count, 0)
+        self.assertTrue(
+            all(item.score.popularity_penalty == 0.0 for item in result.candidates)
+        )
+
+    def test_popularity_reranking_is_disabled_by_default(self) -> None:
+        self.assertEqual(PolicyAdjustmentSettings().popularity_penalty_max, 0.0)
+
     def test_drift_preserves_short_term_lane_in_final_results(self) -> None:
         profile = replace(
             retrieval_profile(),

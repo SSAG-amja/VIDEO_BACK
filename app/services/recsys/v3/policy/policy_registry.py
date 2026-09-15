@@ -128,6 +128,21 @@ POLICY_REGISTRY = (
         comparison_required=True,
     ),
     PolicyDecision(
+        policy_id="training_popularity_separation",
+        selected_source=PolicySource.V3_NEW,
+        status=DecisionStatus.PROVISIONAL,
+        selection_reason=(
+            "Learn personal relevance without attenuating an interaction only because its movie is "
+            "popular; control excessive popular-item exposure as a bounded serving rerank effect."
+        ),
+        references=(
+            "v3_recommendation_quality_tuning_plan.md",
+            "app/services/recsys/v3/policy/policy_engine.py",
+        ),
+        config_keys=("TRAINING_ITEM_FREQUENCY_WEIGHTING",),
+        comparison_required=True,
+    ),
+    PolicyDecision(
         policy_id="serving_watched_passed_exclusion",
         selected_source=PolicySource.V1,
         status=DecisionStatus.ADOPTED,

@@ -31,6 +31,7 @@ from app.services.recsys.v3.config import (
     LIGHTFM_HYBRID_NO_COMPONENTS,
     LIGHTFM_HYBRID_NUM_THREADS,
     LIGHTFM_HYBRID_USER_ALPHA,
+    LIGHTFM_HYBRID_USER_FEATURE_REPRESENTATION,
     LIGHTFM_HYBRID_USER_IDENTITY_WEIGHT,
     LIGHTFM_HYBRID_USER_SEMANTIC_WEIGHT,
     TRAINING_ITEM_FREQUENCY_WEIGHTING,
@@ -69,6 +70,11 @@ def parse_args() -> argparse.Namespace:
         "--feature-representation",
         choices=FEATURE_REPRESENTATION_POLICIES,
         default=LIGHTFM_HYBRID_FEATURE_REPRESENTATION,
+    )
+    parser.add_argument(
+        "--user-feature-representation",
+        choices=FEATURE_REPRESENTATION_POLICIES,
+        default=LIGHTFM_HYBRID_USER_FEATURE_REPRESENTATION,
     )
     parser.add_argument(
         "--user-identity-weight",
@@ -148,7 +154,7 @@ def main() -> None:
         )
         user_export = transform_user_feature_export(
             user_export,
-            policy=args.feature_representation,
+            policy=args.user_feature_representation,
             identity_weight=args.user_identity_weight,
             semantic_weight=args.user_semantic_weight,
         )
@@ -168,6 +174,7 @@ def main() -> None:
                 "artifact_path": str(artifact_path),
                 "ontology_build_id": item_export.manifest.ontology_build_id,
                 "feature_representation": args.feature_representation,
+                "user_feature_representation": args.user_feature_representation,
                 "diagnostics": result.diagnostics,
                 "artifact_reload_exact_match": True,
             },

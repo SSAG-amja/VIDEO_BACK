@@ -31,6 +31,7 @@ from app.jobs.recsys.v3.features.user_feature_builder import (
     hash_ordered_values,
 )
 from app.services.recsys.v3.domain.behavior import SnapshotAction
+from app.services.recsys.v3.config import TRAINING_ITEM_FREQUENCY_WEIGHTING
 from tests.test_v3_identity_trainer import synthetic_dataset
 
 
@@ -166,6 +167,87 @@ class UserFeatureBuilderTest(unittest.TestCase):
         self.assertEqual(export.manifest.long_term_covered_user_count, 2)
         self.assertEqual(export.manifest.missing_long_term_movie_count, 1)
         self.assertGreater(export.manifest.long_term_derived_feature_count, 0)
+        self.assertEqual(export.long_term_evidence_counts, (2, 1, 0))
+        self.assertIsNotNone(export.onboarding_features)
+        self.assertIsNotNone(export.long_term_features)
+
+    def test_bounded_long_term_evidence_preserves_onboarding_and_scales_history(self) -> None:
+        item_export = transform_item_feature_export(
+            synthetic_item_export(),
+            policy="supported_identity_field_budgeted",
+            supported_movie_ids=frozenset({10, 20, 30, 40}),
+            field_budgets={
+                "genre": 0.25,
+                "keyword": 0.20,
+                "actor": 0.15,
+                "director": 0.15,
+                "theme": 0.15,
+                "mood": 0.10,
+            },
+            keyword_weighting="normalized_idf",
+        )
+        onboarding = synthetic_user_export(item_export)
+        onboarding_result = transform_user_feature_export(
+            onboarding,
+            policy="bounded_long_term_evidence",
+            identity_weight=2.0,
+            semantic_weight=0.5,
+        )
+        onboarding_sums = np.asarray(
+            onboarding_result.user_features[:, 3:].sum(axis=1)
+        ).reshape(-1)
+        np.testing.assert_allclose(onboarding_sums, np.full(3, 0.5), atol=1e-6)
+
+        positives = (
+            PositiveInteraction(
+                user_id=101,
+                movie_id=10,
+                actions=(SnapshotAction.SAVED,),
+                representative_action=SnapshotAction.SAVED,
+                sample_weight=2.0,
+                latest_at=None,
+            ),
+            PositiveInteraction(
+                user_id=101,
+                movie_id=40,
+                actions=(SnapshotAction.PINNED,),
+                representative_action=SnapshotAction.PINNED,
+                sample_weight=1.0,
+                latest_at=None,
+            ),
+        )
+        history = build_user_feature_export(
+            user_ids=(101, 202, 303),
+            explicit_genre_rows=(),
+            favorite_rows=(),
+            item_export=item_export,
+            positive_interactions=positives,
+        )
+        history_result = transform_user_feature_export(
+            history,
+            policy="bounded_long_term_evidence",
+            identity_weight=2.0,
+            semantic_weight=0.5,
+        )
+        raw_sum = float(history.long_term_features[0, 3:].sum())
+        expected = raw_sum * (2.0 / 7.0) * 0.5
+        self.assertAlmostEqual(
+            float(history_result.user_features[0, 3:].sum()),
+            expected,
+            places=6,
+        )
+        self.assertLessEqual(float(history_result.user_features[:, 3:].sum(axis=1).max()), 0.5)
+        self.assertEqual(
+            history_result.manifest.representation_policy,
+            "bounded_long_term_evidence",
+        )
+
+    def test_bounded_long_term_evidence_is_rejected_for_items(self) -> None:
+        with self.assertRaises(ValueError):
+            transform_item_feature_export(
+                synthetic_item_export(),
+                policy="bounded_long_term_evidence",
+            )
 
     def test_feature_representation_normalizes_semantics_and_limits_item_identity(self) -> None:
         original = synthetic_item_export()
@@ -430,8 +512,43 @@ class HybridTrainerTest(unittest.TestCase):
         self.assertIn("candidate_sample.top20_unique_ratio", report["violations"])
         self.assertIn(
             "candidate_sample.top20_max_user_frequency_ratio",
-            report["violations"],
+            report["warnings"],
         )
+
+    def test_model_health_warns_for_one_universal_top20_item(self) -> None:
+        class OneUniversalItemModel:
+            user_embeddings = np.eye(8, dtype=np.float32)
+            item_embeddings = np.zeros((240, 8), dtype=np.float32)
+            item_embeddings[0, :] = 2.0
+            for user_index in range(8):
+                start = 1 + user_index * 19
+                item_embeddings[start : start + 19, user_index] = 1.0
+            user_biases = np.zeros(8, dtype=np.float32)
+            item_biases = np.zeros(240, dtype=np.float32)
+
+            @classmethod
+            def predict(cls, user_ids, item_ids, **_kwargs):
+                users = np.asarray(user_ids, dtype=np.int64)
+                items = np.asarray(item_ids, dtype=np.int64)
+                return np.sum(
+                    cls.user_embeddings[users] * cls.item_embeddings[items],
+                    axis=1,
+                )
+
+        report = evaluate_model_health(
+            OneUniversalItemModel(),
+            user_count=8,
+            movie_count=240,
+            num_threads=1,
+        )
+
+        self.assertEqual(report["status"], "pass")
+        self.assertEqual(report["violations"], [])
+        self.assertIn(
+            "candidate_sample.top20_max_user_frequency_ratio",
+            report["warnings"],
+        )
+        assert_model_health(report)
 
     def test_inverse_sqrt_frequency_weighting_reduces_common_item_weight(self) -> None:
         dataset = synthetic_dataset()
@@ -453,6 +570,20 @@ class HybridTrainerTest(unittest.TestCase):
         self.assertEqual(diagnostics["mode"], "inverse_sqrt")
         self.assertLess(by_coordinate[(0, 1)] / 2.0, by_coordinate[(0, 0)] / 1.0)
         self.assertLessEqual(diagnostics["multiplier_max"], 1.0)
+
+    def test_default_training_does_not_attenuate_popular_items(self) -> None:
+        dataset = synthetic_dataset()
+        original = dataset.sample_weights.tocoo()
+
+        adjusted, diagnostics = apply_item_frequency_weighting(
+            dataset.interactions,
+            original,
+            mode=TRAINING_ITEM_FREQUENCY_WEIGHTING,
+        )
+
+        self.assertEqual(TRAINING_ITEM_FREQUENCY_WEIGHTING, "none")
+        self.assertEqual(diagnostics["mode"], "none")
+        np.testing.assert_array_equal(adjusted.data, original.data)
 
     def test_user_activity_weighting_caps_only_above_median_total(self) -> None:
         interactions = csr_matrix(

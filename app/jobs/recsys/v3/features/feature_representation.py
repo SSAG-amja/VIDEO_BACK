@@ -21,6 +21,7 @@ FeatureRepresentationPolicy = Literal[
     "full_identity_normalized",
     "supported_identity_normalized",
     "supported_identity_field_budgeted",
+    "bounded_long_term_evidence",
     "metadata_only_normalized",
 ]
 
@@ -29,6 +30,7 @@ FEATURE_REPRESENTATION_POLICIES: tuple[FeatureRepresentationPolicy, ...] = (
     "full_identity_normalized",
     "supported_identity_normalized",
     "supported_identity_field_budgeted",
+    "bounded_long_term_evidence",
     "metadata_only_normalized",
 )
 
@@ -47,6 +49,8 @@ def transform_item_feature_export(
     keyword_weighting: KeywordWeightingPolicy = "none",
 ) -> ItemFeatureExport:
     _validate_policy(policy)
+    if policy == "bounded_long_term_evidence":
+        raise ValueError("bounded long-term evidence is a user-only representation")
     if policy == "full_identity_raw":
         _validate_raw_weights(identity_weight, semantic_weight)
         return item_export
@@ -131,7 +135,11 @@ def transform_user_feature_export(
 
     user_count = len(user_export.user_ids)
     source = user_export.user_features.tocsr(copy=False).astype(np.float32)
-    semantic = _l1_normalize_rows(source[:, user_count:]) * semantic_weight
+    if policy == "bounded_long_term_evidence":
+        semantic = _bounded_long_term_user_semantics(user_export)
+    else:
+        semantic = _l1_normalize_rows(source[:, user_count:])
+    semantic *= semantic_weight
     retained_rows = np.arange(user_count, dtype=np.int32)
     identity = csr_matrix(
         (
@@ -156,7 +164,11 @@ def transform_user_feature_export(
     )
     manifest = replace(
         user_export.manifest,
-        exporter_version=f"{user_export.manifest.exporter_version}+representation-v1",
+        exporter_version=(
+            f"{user_export.manifest.exporter_version}+representation-v2"
+            if policy == "bounded_long_term_evidence"
+            else f"{user_export.manifest.exporter_version}+representation-v1"
+        ),
         matrix_nnz=int(matrix.nnz),
         export_hash=export_hash,
         representation_policy=policy,
@@ -164,6 +176,39 @@ def transform_user_feature_export(
         semantic_block_weight=semantic_weight,
     )
     return replace(user_export, user_features=matrix, manifest=manifest)
+
+
+def _bounded_long_term_user_semantics(user_export: UserFeatureExport) -> csr_matrix:
+    user_count = len(user_export.user_ids)
+    if (
+        user_export.onboarding_features is None
+        or user_export.long_term_features is None
+        or len(user_export.long_term_evidence_counts) != user_count
+    ):
+        raise ValueError(
+            "bounded long-term evidence requires separated onboarding and long-term features"
+        )
+
+    onboarding = _l1_normalize_rows(
+        user_export.onboarding_features[:, user_count:]
+    )
+    long_term = user_export.long_term_features[:, user_count:].tocsr(copy=True)
+    confidence_k = user_export.manifest.long_term_evidence_confidence_k
+    if confidence_k <= 0.0 or not math.isfinite(confidence_k):
+        raise ValueError("bounded long-term evidence requires a positive confidence k")
+    counts = np.asarray(user_export.long_term_evidence_counts, dtype=np.float32)
+    confidence = counts / (counts + confidence_k)
+    long_term = long_term.multiply(confidence[:, None]).tocsr()
+
+    combined = onboarding.maximum(long_term).tocsr()
+    row_sums = np.asarray(combined.sum(axis=1), dtype=np.float64).reshape(-1)
+    multipliers = np.ones_like(row_sums, dtype=np.float32)
+    above_bound = row_sums > 1.0
+    multipliers[above_bound] = 1.0 / row_sums[above_bound]
+    combined = combined.multiply(multipliers[:, None]).tocsr()
+    combined.eliminate_zeros()
+    combined.sort_indices()
+    return combined
 
 
 def sparse_row_sum_diagnostics(matrix: csr_matrix) -> dict[str, float]:

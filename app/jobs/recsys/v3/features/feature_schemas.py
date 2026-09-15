@@ -156,6 +156,8 @@ class UserFeatureManifest:
     missing_long_term_movie_count: int = 0
     long_term_derived_weight: float = 1.0
     long_term_feature_top_k: dict[str, int] = field(default_factory=dict)
+    long_term_evidence_policy: str = "none"
+    long_term_evidence_confidence_k: float = 0.0
     onboarding_profile_signature_hash: str = ""
 
     def __post_init__(self) -> None:
@@ -196,6 +198,13 @@ class UserFeatureManifest:
             for name, value in self.long_term_feature_top_k.items()
         ):
             raise ValueError("long-term feature top-K values must be positive")
+        if not self.long_term_evidence_policy.strip():
+            raise ValueError("long-term evidence policy is required")
+        if (
+            not math.isfinite(self.long_term_evidence_confidence_k)
+            or self.long_term_evidence_confidence_k < 0.0
+        ):
+            raise ValueError("long-term evidence confidence k must be finite and non-negative")
         if not self.vocabulary_policy.strip():
             raise ValueError("user feature vocabulary policy is required")
         if self.onboarding_profile_signature_hash and len(
@@ -229,6 +238,9 @@ class UserFeatureExport:
     user_features: Any
     manifest: UserFeatureManifest
     onboarding_profile_signatures: tuple[str, ...] = ()
+    onboarding_features: Any | None = None
+    long_term_features: Any | None = None
+    long_term_evidence_counts: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         if len(self.user_ids) != len(self.user_id_map):
@@ -239,7 +251,19 @@ class UserFeatureExport:
             self.onboarding_profile_signatures
         ) != len(self.user_ids):
             raise ValueError("user onboarding signatures must align with user IDs")
+        if self.long_term_evidence_counts and len(self.long_term_evidence_counts) != len(
+            self.user_ids
+        ):
+            raise ValueError("long-term evidence counts must align with user IDs")
+        if any(value < 0 for value in self.long_term_evidence_counts):
+            raise ValueError("long-term evidence counts cannot be negative")
         if self.user_features.shape != self.manifest.matrix_shape:
             raise ValueError("user feature matrix shape does not match manifest")
         if int(self.user_features.nnz) != self.manifest.matrix_nnz:
             raise ValueError("user feature matrix nnz does not match manifest")
+        for name, matrix in (
+            ("onboarding", self.onboarding_features),
+            ("long-term", self.long_term_features),
+        ):
+            if matrix is not None and matrix.shape != self.user_features.shape:
+                raise ValueError(f"{name} feature matrix must align with user features")

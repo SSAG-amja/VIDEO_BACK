@@ -5,7 +5,11 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
 
-from app.services.recsys.v3.config import CANDIDATE_POOL_SIZE, POLICY_BLOCKED_MOVIE_STATUSES
+from app.services.recsys.v3.config import (
+    CANDIDATE_POOL_SIZE,
+    POLICY_BLOCKED_MOVIE_STATUSES,
+    POLICY_QUALITY_POPULARITY_REFERENCE,
+)
 from app.services.recsys.v3.config import (
     POLICY_CATALOG_TRUST_PENALTY_MAX,
     POLICY_CATALOG_TRUST_VOTE_THRESHOLD,
@@ -51,17 +55,29 @@ class PolicyAdjustmentSettings:
     catalog_trust_vote_threshold: int = POLICY_CATALOG_TRUST_VOTE_THRESHOLD
     negative_max_base_ratio: float = POLICY_NEGATIVE_MAX_BASE_RATIO
     negative_max_absolute: float = POLICY_NEGATIVE_MAX_ABSOLUTE
+    popularity_penalty_max: float = 0.0
+    popularity_top_percentile: float = 0.80
+    popularity_target_max_ratio: float = 0.40
+    popularity_minimum: float = POLICY_QUALITY_POPULARITY_REFERENCE
 
     def __post_init__(self) -> None:
         for name, value in (
             ("catalog_trust_penalty_max", self.catalog_trust_penalty_max),
             ("negative_max_base_ratio", self.negative_max_base_ratio),
             ("negative_max_absolute", self.negative_max_absolute),
+            ("popularity_penalty_max", self.popularity_penalty_max),
+            ("popularity_target_max_ratio", self.popularity_target_max_ratio),
         ):
             if not math.isfinite(value) or not 0.0 <= value <= 1.0:
                 raise ValueError(f"policy adjustment {name} must be between zero and one")
         if self.catalog_trust_vote_threshold <= 0:
             raise ValueError("catalog trust vote threshold must be positive")
+        if not math.isfinite(self.popularity_top_percentile) or not (
+            0.0 <= self.popularity_top_percentile < 1.0
+        ):
+            raise ValueError("popularity top percentile must be in [0, 1)")
+        if not math.isfinite(self.popularity_minimum) or self.popularity_minimum < 0.0:
+            raise ValueError("popularity minimum must be finite and non-negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +169,7 @@ class PolicyScoreTrace:
     catalog_trust_penalty: float
     negative_preference_penalty: float
     pre_rerank_score: float
+    popularity_penalty: float = 0.0
     max_selected_similarity: float = 0.0
     repetition_penalty: float = 0.0
     mmr_similarity_penalty: float = 0.0
@@ -182,6 +199,7 @@ class PolicyScoreTrace:
                 self.catalog_trust_penalty,
                 self.negative_preference_penalty,
                 self.pre_rerank_score,
+                self.popularity_penalty,
                 self.max_selected_similarity,
                 self.repetition_penalty,
                 self.mmr_similarity_penalty,
@@ -234,6 +252,8 @@ class PolicyDiagnostics:
     selected_short_term_only_count: int = 0
     forced_short_term_only_count: int = 0
     unselected_short_term_only_count: int = 0
+    input_popular_candidate_count: int = 0
+    selected_popular_candidate_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)

@@ -242,7 +242,7 @@ class ServingBundleTest(unittest.TestCase):
         user_export = synthetic_user_export(item_export)
         user_export = transform_user_feature_export(
             user_export,
-            policy="supported_identity_field_budgeted",
+            policy="bounded_long_term_evidence",
             identity_weight=4.0,
             semantic_weight=0.25,
         )
