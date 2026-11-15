@@ -60,6 +60,7 @@ def search_movies(
     genres: str | None = Query(None, description="Comma-separated genre ids"),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, le=500),
+    title_only: bool = Query(False, description="Search movie titles only without people joins"),
 ):
     try:
         search_title = query or title
@@ -67,7 +68,15 @@ def search_movies(
         if not any([search_title, search_tag, genres]):
             raise HTTPException(status_code=400, detail="At least one search parameter(query, tags, genres) is required.")
 
-        movies = movie_crud.search_movies(db, title=search_title, tag=search_tag, genres=genres, skip=skip, limit=limit)
+        movies = movie_crud.search_movies(
+            db,
+            title=search_title,
+            tag=search_tag,
+            genres=genres,
+            skip=skip,
+            limit=limit,
+            title_only=title_only,
+        )
         data = [movie_crud.to_movie_search_item(movie) for movie in movies]
     except HTTPException:
         raise

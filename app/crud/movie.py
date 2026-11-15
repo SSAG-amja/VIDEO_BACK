@@ -2,27 +2,47 @@ from sqlalchemy import case, desc, func, literal, or_, select, union_all
 from sqlalchemy.orm import Session
 
 from app.crud import user as user_crud
+from app.models import keyword as keyword_model
 from app.models import mapping as mapping_model
 from app.models import movie as movie_model
 from app.models import people as people_model
 
 
-TAG_HIGH_RATING = "#\ud3c9\uc810 \ub192\uc740 \uba85\uc791"
-TAG_ACTION = "#\ub3c4\ud30c\ubbfc \ud3ed\ubc1c \uc561\uc158"
-TAG_COMEDY = "#\uac00\ubccd\uac8c \uc6c3\uae30 \uc88b\uc740"
+TAG_KOREA_POPULAR = "#대한민국 인기작"
+TAG_GLOBAL_POPULAR = "#전세계 인기작"
+TAG_HIGH_RATING = "#평점 높은 명작"
+TAG_ACTION = "#도파민 폭발 액션"
+TAG_COMEDY = "#가볍게 웃기 좋은"
+TAG_ROMANCE = "#설렘 가득 로맨스"
+TAG_THRILLER = "#손에 땀을 쥐는 스릴러"
+TAG_HORROR = "#등골 오싹한 공포"
+TAG_SF_FANTASY = "#상상력 자극 SF·판타지"
+TAG_DRAMA = "#감성 충전 드라마"
+TAG_ANIMATION = "#동심 자극 애니메이션"
+TAG_MUSIC = "#여운이 남는 음악·예술"
+
 HIGH_RATING_MIN_VOTE_COUNT = 1000
-TAG_QUALITY_MIN_VOTE_COUNT = 300
+TAG_QUALITY_MIN_VOTE_COUNT = 200
+KOREA_POPULAR_MIN_VOTE_COUNT = 30
+EXCLUDED_ADULT_KEYWORDS = ("softcore", "erotic", "erotica", "pornography", "hentai", "pink film")
 HIGH_RATING_WEIGHTED_AVERAGE = (
     movie_model.Movie.vote_average * func.log(func.greatest(movie_model.Movie.vote_count, 1))
 )
-DIRECTOR_ROLE = "\uac10\ub3c5\uc791"
-ACTOR_ROLE = "\ucd9c\uc5f0\uc791"
+DIRECTOR_ROLE = "감독작"
+ACTOR_ROLE = "출연작"
 
 TAG_GENRE_MAP = {
     TAG_ACTION: [28, 53],
     TAG_COMEDY: [35],
+    TAG_ROMANCE: [10749],
+    TAG_THRILLER: [53, 80, 9648],
+    TAG_HORROR: [27],
+    TAG_SF_FANTASY: [878, 14, 12],
+    TAG_DRAMA: [18],
+    TAG_ANIMATION: [16, 10751],
+    TAG_MUSIC: [10402],
 }
-QUALITY_SCORE_TAGS = {TAG_HIGH_RATING, TAG_ACTION, TAG_COMEDY}
+QUALITY_SCORE_TAGS = {TAG_HIGH_RATING, *TAG_GENRE_MAP.keys()}
 
 
 # 2026.05.13 박현식
@@ -68,6 +88,7 @@ def search_movies(
     genres: str | None = None,
     skip: int = 0,
     limit: int = 200,
+    title_only: bool = False,
 ) -> list[movie_model.Movie]:
     title = title.strip() if title else None
     target_count = skip + limit
@@ -102,7 +123,10 @@ def search_movies(
             movie_model.Movie.popularity,
             HIGH_RATING_WEIGHTED_AVERAGE.label("high_rating_score"),
             relevance,
-        ).where(movie_model.Movie.poster_path.is_not(None))
+        ).where(
+            movie_model.Movie.poster_path.is_not(None),
+            movie_model.Movie.adult.is_(False),
+        )
 
     # 2026.05.13 박현식
     # 장르와 태그 필터를 검색 쿼리에 적용한다.
@@ -110,6 +134,26 @@ def search_movies(
         if genre_ids:
             stmt = stmt.join(mapping_model.movie_genres).where(mapping_model.movie_genres.c.genre_id.in_(genre_ids))
         if tag:
+            adult_keyword_exists = (
+                select(literal(1))
+                .select_from(mapping_model.movie_keywords)
+                .join(keyword_model.Keyword, keyword_model.Keyword.id == mapping_model.movie_keywords.c.keyword_id)
+                .where(
+                    mapping_model.movie_keywords.c.movie_id == movie_model.Movie.id,
+                    func.lower(keyword_model.Keyword.name).in_(EXCLUDED_ADULT_KEYWORDS),
+                )
+                .exists()
+            )
+            stmt = stmt.where(~adult_keyword_exists)
+
+            if tag == TAG_KOREA_POPULAR:
+                stmt = stmt.where(
+                    movie_model.Movie.original_language == "ko",
+                    movie_model.Movie.vote_count >= KOREA_POPULAR_MIN_VOTE_COUNT,
+                )
+            elif tag == TAG_GLOBAL_POPULAR:
+                stmt = stmt.where(movie_model.Movie.vote_count >= 100)
+
             tag_genre_ids = TAG_GENRE_MAP.get(tag)
             if tag_genre_ids:
                 stmt = stmt.join(mapping_model.movie_genres).where(mapping_model.movie_genres.c.genre_id.in_(tag_genre_ids))
@@ -125,14 +169,15 @@ def search_movies(
     # 2026.05.13 박현식
     # 검색 결과 정렬과 limit 규칙을 적용한다.
     def finish(stmt, result_limit: int):
+        is_genre_tag = tag in TAG_GENRE_MAP
         return (
             apply_filters(stmt)
             .distinct()
             .order_by(
                 "relevance",
-                desc("high_rating_score" if tag in QUALITY_SCORE_TAGS else movie_model.Movie.popularity),
-                desc(movie_model.Movie.popularity if tag in (TAG_ACTION, TAG_COMEDY) else movie_model.Movie.vote_average),
-                desc(movie_model.Movie.vote_average if tag in (TAG_ACTION, TAG_COMEDY) else movie_model.Movie.vote_count),
+                desc("high_rating_score" if tag == TAG_HIGH_RATING else movie_model.Movie.popularity),
+                desc(movie_model.Movie.popularity if is_genre_tag else movie_model.Movie.vote_average),
+                desc(movie_model.Movie.vote_average if is_genre_tag else movie_model.Movie.vote_count),
             )
             .limit(result_limit)
         )
@@ -160,6 +205,10 @@ def search_movies(
                 movie_model.Movie.original_title.ilike(search_kw),
             )
         )
+
+        if title_only:
+            append_movies(db.execute(finish(title_stmt, target_count)).mappings().all())
+            return
 
         director_stmt = (
             base_movie_select(people_relevance)
