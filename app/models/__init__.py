@@ -12,6 +12,9 @@ from .genre import Genre
 from .recommendations import Recommendation
 from app.models.poll import Poll, PollOption, PollVote
 from app.models.report import Report
+from .ontology import MovieOverviewSemanticSignal, OntologyBuild, OntologyEdge, OntologyEdgeEvidence, OntologyNode
+from .recommendation_runs import RecommendationRun
+from .ontology_recommendations import OntologyRecommendation, RecommendationFeedEvent
 
 from .mapping import (
     UserInteraction, PlaylistMovie, MovieOtt, MovieActor

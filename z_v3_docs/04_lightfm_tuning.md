@@ -1,0 +1,523 @@
+# 04. LightFM 가중치 및 조정 지점
+
+## 1. 문서 책임
+
+이 문서는 V3에서 조정 가능한 숫자를 다음 세 종류로 분리한다.
+
+```text
+1. 행동 sample weight
+   어떤 positive 행동을 얼마나 강하게 학습할 것인가
+
+2. LightFM hyperparameter
+   latent model을 어떤 크기와 규제로 학습할 것인가
+
+3. 추천 결합 weight
+   LightFM, 단기 취향, ontology, policy를 최종 순위에 어떻게 반영할 것인가
+```
+
+세 종류의 숫자를 한 번에 변경하지 않는다. 원인을 구분할 수 없기 때문이다.
+
+## 2. 행동 weight 범위
+
+### 2.1 현재 구현된 직접 행동
+
+위치: `app/services/recsys/v3/config.py`
+
+| 행동 | 현재 값 | 역할 | 상태 |
+| --- | ---: | --- | --- |
+| favorite | `1.0` | timestamp 없는 onboarding prior | provisional |
+| watched | `1.5` | 긍정 취향이지만 소비 완료 | provisional |
+| saved | `2.0` | 강한 명시적 positive | provisional |
+| pinned | `2.0` | 강한 명시적 positive | provisional |
+
+이 값은 V1의 `+4`, `+6` 같은 추천 점수를 복사한 것이 아니다. LightFM의 positive pair별 sample weight다.
+
+`passed`는 WARP sample weight가 없다. WARP positive에서 제외하고 serving hard filter와 ontology negative policy로 처리한다.
+
+현재 dataset builder는 위 네 positive와 passed만 학습 행렬에 반영한다. 게시글·좋아요·댓글 raw signal 추출과 provenance는 구현됐지만 아래 weight, eligibility, 집계식은 아직 config와 positive builder에 연결되지 않았다.
+
+### 2.2 추가할 게시글·소셜 행동
+
+| 행동 | 최초 weight/계수 후보 | 시간 처리 | 상태 |
+| --- | ---: | --- | --- |
+| movie_post_write | `2.2` | `posts.created_at` recency | provisional |
+| movie_post_like | `0.45` | 현재 시점 build에서만 missing-time multiplier 적용 | provisional |
+| movie_post_reply | `0.55` | `replies.created_at` recency | provisional |
+| playlist_post_write | movie post weight의 `0.5` | post 시점 구성에 `1/N` 분산 | provisional |
+| playlist_post_reply | movie reply weight의 `0.5` | reply 시점 구성에 `1/N` 분산 | provisional |
+| playlist_post_like | 없음 | 좋아요 시점 복원 불가 | deferred |
+
+초기값은 V1의 상대 순서인 `post_write > playlist_add > reply > like`를 참고하되 V1 추천 점수를 그대로 복사하지 않는다. 영화 게시글 작성 외의 social 행동은 의미가 모호하므로 saved/pinned보다 낮게 시작한다.
+
+추가할 config 후보:
+
+```text
+TRAINING_SOCIAL_ACTION_WEIGHTS
+TRAINING_PLAYLIST_DERIVED_MULTIPLIER = 0.5
+TRAINING_SOCIAL_ONLY_MAX_WEIGHT = 0.8
+TRAINING_SOCIAL_BONUS_CAP = 0.25
+TRAINING_SOCIAL_MISSING_TIMESTAMP_MULTIPLIER = 0.5
+```
+
+이름과 값은 builder 구현 전에 확정하고 artifact manifest에 저장한다.
+
+## 3. 중복 행동 집계
+
+현재 구현은 같은 사용자-영화에 여러 직접 positive 상태가 겹칠 때 다음처럼 계산한다.
+
+```text
+effective_action_weight
+  = base_action_weight * recency_multiplier
+
+sample_weight
+  = strongest effective_action_weight
+  + sum(other_action_recency * overlap_bonus)
+
+sample_weight
+  = min(sample_weight, max_sample_weight)
+```
+
+현재 값:
+
+| 설정 | 값 | 의미 |
+| --- | ---: | --- |
+| `TRAINING_OVERLAP_CONFIDENCE_BONUS` | `0.15` | 다른 positive 종류가 겹칠 때의 작은 신뢰도 증가 |
+| `TRAINING_MAX_SAMPLE_WEIGHT` | `2.3` | 한 user-movie pair의 영향 상한 |
+
+예:
+
+```text
+최근 saved       2.0 * 1.0 = 2.0
+100일 전 watched 1.5 * 0.6 = 0.9
+overlap bonus    0.15 * 0.6 = 0.09
+
+최종 sample weight = 2.09
+```
+
+반복 이벤트 횟수는 현재 snapshot schema에 없으므로 추정하거나 추가 합산하지 않는다.
+
+게시글·social 신호를 추가한 목표 계산은 직접 신호와 파생 신호를 분리한다.
+
+```text
+primary_component
+  = strongest(favorite, watched, saved, pinned, movie_post_write)
+
+primary_overlap
+  = bounded bonus from other primary actions
+
+derived_units
+  movie target event    = 1
+  playlist target event = 1 / valid_movie_count_at_event_time
+
+derived_component
+  = action_weight * log2(1 + accumulated_units)
+
+if primary exists:
+  sample_weight = primary_component
+                + primary_overlap
+                + min(sum(derived_component), social_bonus_cap)
+else:
+  sample_weight = min(sum(derived_component), social_only_max_weight)
+
+sample_weight = min(sample_weight, global_max_sample_weight)
+```
+
+이 구조는 게시글을 반복 작성하거나 큰 플레이리스트에 반응한 사용자가 한 영화에 saved/pinned한 사용자보다 큰 sample weight를 만드는 것을 막는다.
+
+## 4. 최근성 multiplier
+
+현재 값은 행동별 연속 half-life를 사용한다.
+
+| 행동 | half-life | timestamp 없음 |
+| --- | ---: | ---: |
+| saved/pinned | 365일 | `0.25` |
+| watched | 180일 | `0.25` |
+| passed | 90일 | `0.25` |
+| onboarding favorite | 감쇠 없음 | `1.0` |
+
+계산식은 `max(0.05, 0.5 ** (age_days / half_life_days))`다. 과거 행동이 영구 40%로 남던 bucket 방식은 Phase H에서 제거했다.
+
+timestamp가 없는 favorite를 오래된 행동으로 임의 감점하지 않는다.
+
+조정 시 확인할 현상:
+
+- 오래된 watched가 최신 saved보다 과도하게 강하면 decay를 더 빠르게 한다.
+- 장기 사용자에서 유효 interaction이 지나치게 약해지면 older multiplier를 높인다.
+- 단기 취향과 학습 최근성이 같은 신호를 이중 증폭하면 sample decay 또는 drift 중 하나의 상한을 낮춘다.
+- 오래된 좋아요의 시점을 알 수 없는 현재 schema에서는 movie post like의 base weight와 missing-time multiplier를 동시에 높이지 않는다.
+
+## 5. 행동 weight 조정 순서
+
+한 번에 하나의 가설만 적용한다.
+
+권장 순서:
+
+```text
+1. favorite 대비 saved/pinned 상대 강도
+2. watched와 movie post write 상대 weight
+3. social-only weight와 playlist 분산 계수
+4. overlap/social bonus와 상한
+5. recency 및 missing-time multiplier
+6. loss 변경
+```
+
+관측과 조정 예:
+
+| 관측 | 우선 확인 | 가능한 조정 |
+| --- | --- | --- |
+| saved 영화과 관련된 후보 rank가 낮음 | saved signal 수, feature coverage | saved `2.0` 상향 또는 favorite 하향 |
+| watched가 추천을 과도하게 지배 | 사용자별 watched 비율 | watched `1.5` 하향 |
+| onboarding favorite만 있는 사용자가 불안정 | favorite coverage | favorite 유지, user feature/cold-start 보완 |
+| 여러 행동이 겹친 영화만 과도하게 지배 | overlap pair 비율 | bonus `0.15` 또는 cap `2.3` 하향 |
+| 최근 취향 반영이 약함 | sample decay와 short-term source 분리 확인 | 학습 weight보다 short-term retrieval 우선 조정 |
+| 게시글 활동이 많은 사용자가 순위를 지배 | source별 pair와 cap 도달률 | social cap 또는 log saturation 강화 |
+| 큰 플레이리스트 영화가 과대 반영 | event당 unit 합과 playlist 크기 | `1/N` 투영 및 derived multiplier 확인 |
+| social-only 사용자의 결과가 불안정 | movie post like/reply coverage | social-only cap 조정 전 신호 방향성부터 확인 |
+
+최근 취향 문제를 행동 weight만 높여 해결하지 않는다. 단기 후보는 별도 source다.
+
+## 6. LightFM 모델 hyperparameter
+
+identity-only trainer의 기존 시작값과 현재 활성 Phase B hybrid 채택값은 다르다.
+
+| parameter | 기존 기본값 | Phase B hybrid | 조정 방향 |
+| --- | ---: | ---: | --- |
+| `loss` | `warp` | `warp` | top-K implicit ranking 기준 |
+| `no_components` | `64` | `32` | 데이터가 충분해질 때 재비교 |
+| `epochs` | `40` | `20` | 80 epoch가 집중도를 개선하지 못함 |
+| `learning_rate` | `0.05` | `0.01` | 기존 값에서 수치 발산 발생 |
+| `user_alpha` | `1e-6` | `1e-5` | user embedding 과적합 시 증가 |
+| `item_alpha` | `1e-6` | `1e-5` | item/feature embedding 과적합 시 증가 |
+| `max_sampled` | `10` | `10` | WARP negative sampling 강도와 시간 조정 |
+| `random_state` | `42` | `42` | build 비교 시 고정 |
+| `num_threads` | 실행 환경 기준 | `1` | 결과 재현성과 처리시간을 함께 기록 |
+
+기본값은 `config.py`에 정의하고 실행별 `LightFMTrainingConfig`와 artifact manifest에 실제 사용값을 저장한다.
+
+### 조정 의미
+
+`no_components`:
+
+- 너무 작으면 다양한 협업 패턴을 표현하지 못한다.
+- 너무 크면 희소 사용자·영화 embedding이 과적합하고 artifact가 커진다.
+
+`user_alpha`, `item_alpha`:
+
+- 값이 크면 embedding을 더 강하게 규제한다.
+- feature 수가 많은 hybrid 모델에서는 identity-only와 같은 alpha가 최적이라는 보장이 없다.
+
+`epochs`:
+
+- 데이터 크기와 loss 변화 추이를 함께 본다.
+- 고정 epoch 증가를 품질 개선으로 간주하지 않는다.
+
+`max_sampled`:
+
+- 큰 값은 WARP가 어려운 negative를 더 찾게 하지만 학습 시간이 증가한다.
+
+### Phase B feature와 score calibration (과거 기준)
+
+당시 선택한 hybrid 표현은 다음과 같다.
+
+| 항목 | 값 | 의미 |
+| --- | ---: | --- |
+| item identity 범위 | positive 근거 영화만 | 나머지는 ontology feature-only 표현 |
+| user identity block | `4.0` | known-user 협업 차이 우선 |
+| user semantic block | `0.25` | 공통 semantic 인기 방향 상한 |
+| item identity block | `1.0` | 영화별 협업 표현 |
+| item semantic block | `1.0` | feature-only item 추론 유지 |
+| known-user mean centering | `0.9` | 전체 사용자 공통 점수의 90% 제거 |
+
+semantic block은 행별 L1 정규화 후 지정한 총량을 곱한다. feature-only serving row도 artifact manifest의 같은 정규화와 weight를 사용한다. known-user centering은 학습 사용자의 평균 LightFM 점수를 영화별로 제거하며 feature-only 콜드 사용자에게는 적용하지 않는다.
+
+item-frequency 역제곱근 sample 보정과 item bias 제거는 집중도를 개선하지 못해 사용하지 않는다. 자세한 수치와 제한은 `10_quality_improvement_record.md`의 Phase B 결과를 따른다.
+
+### Phase I 협업 과집중 보정 (활성 checkpoint 이력)
+
+시드 입력 편향을 제거한 뒤 다음 설정으로 다시 검증했다.
+
+| 항목 | 현재 값 | 의미 |
+| --- | ---: | --- |
+| user identity / semantic | `2.0 / 0.5` | identity 대 semantic 비율을 `16:1 → 4:1`로 완화 |
+| item identity / semantic | `1.0 / 1.0` | 기존 유지 |
+| item frequency | `inverse_sqrt` | 중앙 지지도보다 흔한 영화만 감점, multiplier `0.25~1.0` |
+| user activity | `cap_at_median` | 사용자 sample weight 총합을 활성 사용자 중앙값으로 상한 처리 |
+| known-user centering | `0.5` | 장기 취향 NDCG grid에서 선택한 현재값 |
+
+2026-09-11 소스 변경 이후 새 학습의 item-frequency 기본값은 `none`이다. 위 `inverse_sqrt` 값은 현재 활성 checkpoint의 학습 이력이며 새 shadow 모델의 기본값이 아니다. 모델은 개인 선호를 학습하고 인기 후보의 최종 노출 쏠림은 정책 재정렬에서 별도 제어한다. 재정렬 penalty는 아직 기본 `0`으로 비활성화되어 있다.
+
+전체 협업 신뢰도는 사용자 수, 한 영화의 최대 사용자 지지도, model top-100 사용자 간 Jaccard 중 가장 약한 항목으로 결정한다. 사용자별로는 positive pair `3~20개`를 `0~1`로 환산하고 전체 신뢰도와 사용자 신뢰도 중 작은 값을 사용한다. 이 값은 LightFM 전체 점수나 model 후보 lane을 줄이는 값이 아니라 known-user의 user-identity 성분만 조절한다.
+
+model health에서 embedding·bias·prediction의 수치 이상, 후보 목록 Jaccard 초과, top-20 고유 영화 비율 미달은 artifact 발행을 막는 hard violation이다. 단일 영화의 top-20 최대 사용자 노출률 초과는 인기 영화의 정상 노출도 잡을 수 있으므로 warning으로만 기록한다. 이 경고만으로 artifact를 차단하지 않으며, 목록 전체 중복 또는 고유 영화 부족이 함께 나타나는지는 별도 hard 지표로 판단한다.
+
+```text
+collaborative_confidence
+  = min(population_confidence, user_evidence_confidence)
+
+lightfm_full
+  = lightfm_semantic + lightfm_user_identity
+
+lightfm_adjusted
+  = centered(lightfm_semantic)
+  + collaborative_confidence * centered(lightfm_user_identity)
+```
+
+`collaborative_confidence=1`이면 기존 centered known-user LightFM 점수와 같고, `0`이면 semantic LightFM 점수만 남는다. feature-only 사용자는 identity 성분이 없으므로 이 감쇠 대상이 아니다. 현재 120명 합성 모델의 population confidence는 `0.1556`이다.
+
+### 장기 취향 NDCG 조정 (2026-09-10 checkpoint 이력)
+
+500명 학습 사용자와 고정 100명 평가 사용자의 시간순 70/30 holdout에서 다음 값을 비교했다.
+
+- 협업 신뢰도를 유지한 centering `0/0.1/0.25/0.5/0.75/0.9` 비교에서 `0.5`가 NDCG@20 `0.509625`, NDCG@30 `0.580062`로 가장 높았다.
+- 초기 집중형 평가 사용자에서는 centering `0.5`를 고정한 saved/pinned 반감기 `60/120/180/365/730일/없음` 비교에서 `730일`이 NDCG@20 `0.524424`, NDCG@30 `0.596696`으로 가장 높았다.
+- WARP, item-frequency `inverse_sqrt`, user-activity `cap_at_median`, ontology item/user feature와 협업 identity confidence는 유지했다.
+- 최종 비활성 shadow 모델은 동일 평가의 순수 LightFM 기준선 NDCG@20 `0.513805`, NDCG@30 `0.578975`를 각각 `+0.010619`, `+0.017721` 넘었다.
+
+집중·안정형, 다취향·안정형, 취향변화형 각 100명을 함께 학습한 후속 비교에서는 전체 `NDCG@20 + NDCG@30`이 `365일`에서 가장 높았다. 유형별 최고값은 각각 `365일`, 감쇠 없음, `730일`로 달랐으므로 `730일`을 전역 최적값으로 보지 않고 공통 절충값 `365일`을 현재 기본값으로 사용한다. 전체 기준 `365일`과 감쇠 없음의 차이는 매우 작으므로 실제 사용자 및 반복 seed 검증 전까지 잠정값이다.
+
+이 결과는 주어진 holdout 영화의 선호 순위 판별만 검증한다. 전체 카탈로그 후보 검색 품질이나 실제 사용자 만족도를 증명하지 않으며, 여러 사용자 규모와 반복 seed 검증 전에는 1단계 전체 완료로 간주하지 않는다.
+
+2026-09-11 matched 200명 재검사에서는 순수 LightFM이 현재 V3보다 NDCG@20 `0.019902`, NDCG@30 `0.018191` 높았고, identity-only 비교의 WARP/logistic 우열도 반전됐다. 따라서 위 값은 활성 checkpoint의 이력일 뿐 최종 튜닝 결론이 아니다. 현재 재검증 순서와 유지·재검토 범위는 루트의 `v3_recommendation_quality_tuning_plan.md`와 `v3_recommendation_quality_tuning_results.md`를 따른다.
+
+### TUNE-01 사용자 semantic 표현 (소스 기본값)
+
+기존에는 온보딩과 장기 행동 semantic을 합친 뒤 사용자마다 전체 행을 L1 정규화했다. 이 방식은 장기 행동 근거가 적거나 metadata coverage가 낮아도 남은 feature 총합을 항상 `0.5`로 확대했다.
+
+현재 소스 기본값은 두 출처를 분리한다.
+
+```text
+onboarding-only semantic = 기존 L1 정규화 유지
+
+long-term semantic
+  = item field-budget feature의 행동 가중 평균
+  * positive_movie_count / (positive_movie_count + 5)
+
+combined semantic
+  = coordinate-wise max(onboarding, long-term)
+  * 0.5
+```
+
+결합 합계가 1을 넘을 때만 하향 조정하고, 1보다 작은 장기 행동 벡터는 확대하지 않는다. 따라서 L1의 점수 규모 상한은 유지하면서 장기 취향 근거량 차이를 보존한다.
+
+고정 사용자 100명과 seed `42~46` 비교에서 이 방식은 기존 전체 L1보다 serving-adjusted NDCG@20 `+0.002801`, NDCG@30 `+0.000872`였다. feature별 반복 근거 감쇄와는 통계적으로 동률이었지만 @20 보존과 세부 취향 과감쇄 위험을 고려해 사용자 전체 근거량 방식을 선택했다. 이 값은 2026-09-10 checkpoint 모델부터 적용됐으며 활성 bundle `bundle-1c3b3416d156bfdfc2a1a0a4`의 기준 사용자 표현이다.
+
+## 7. Loss 선택
+
+현재 활성 checkpoint:
+
+```text
+WARP
+  positive implicit feedback의 top-K 순위 최적화
+```
+
+WARP는 최종 확정값이 아니다. matched 200명 단일 seed에서 logistic이 우세했으므로 loss와 PASS는 다중 seed 재검증 대상으로 열려 있다.
+
+주의:
+
+- passed를 `-1` interaction으로 WARP에 넣지 않는다.
+- BPR은 ranking 대안이지만 같은 sample weight 의미를 자동 보장하지 않는다.
+- logistic loss에서 명시적 negative를 실험하려면 WARP용 행렬을 그대로 재사용하지 않는다.
+- loss가 달라지면 model build 이름과 config를 분리한다.
+
+## 8. Ontology feature 조정 지점
+
+LightFM에는 graph 전체가 아니라 sparse feature를 전달한다.
+
+namespace:
+
+```text
+genre:{id}
+keyword:{id}
+actor:{person_id}
+director:{person_id}
+theme:{key}
+mood:{key}
+```
+
+주요 조정값:
+
+| 항목 | 최초 방향 | 이유 |
+| --- | --- | --- |
+| actor 최소 movie frequency | `>= 5` | 1편 actor는 다른 영화 일반화 이득이 작음 |
+| actor 비교 후보 | `>= 2 / 5 / 10` | cardinality와 coverage 균형 |
+| keyword 최소 frequency | `>= 5` | 희소 noise 제거, provisional |
+| keyword 최대 catalog 비율 | `<= 0.5` | 지나치게 흔한 feature 제거, provisional |
+| relation feature weight | `edge.weight * confidence` 기반 | 원천 신뢰도 반영 |
+| OTT model feature | 사용하지 않음 | 구독과 제공 여부는 취향이 아니라 최신 rule filter 입력 |
+
+전체 graph에서 관계를 삭제하지 않고 LightFM exporter에서만 feature cardinality를 제한한다.
+
+현재 exporter는 movie identity column을 항상 유지하고 factual edge는 `1.0`, semantic edge는 canonical `effective_strength`를 CSR 값으로 사용한다. threshold와 ratio는 export manifest에 저장하며 전체 graph 실측과 ablation 전에는 확정값으로 간주하지 않는다.
+
+## 9. User feature 조정 지점
+
+기본 필수:
+
+- user identity
+- onboarding genre
+- onboarding favorite에서 추출한 feature
+
+선택 후보:
+
+- keyword
+- actor/director
+- theme/mood
+
+subscribed OTT는 user feature 후보가 아니다. 별도 serving context에서 최신 availability filter와 정책에만 전달한다.
+
+행동 interaction이 이미 표현하는 동적 취향을 user feature에 그대로 중복하지 않는다. user feature는 cold-start와 안정적인 prior 중심으로 구성한다.
+
+현재 구현값:
+
+```text
+user identity                     2.0
+explicit onboarding genre         1.0
+favorite-derived retained feature item feature value * 0.5
+long-term derived feature          item field-budget weighted average
+long-term evidence confidence      n / (n + 5)
+user semantic block 상한           0.5
+동일 user-token 중복               max
+vocabulary                        전체 retained genre + onboarding/long-term 관측 token
+OTT                               제외
+```
+
+전체 item feature 150만 개를 user vocabulary로 그대로 복제하면 user feature embedding 메모리가 불필요하게 커진다. 따라서 genre는 신규 사용자 feature-only 경로를 위해 전체 retained vocabulary를 유지하고 keyword/actor/director/theme/mood는 현재 onboarding favorite 또는 장기 positive에서 관측된 token만 포함한다. 온보딩-only 행은 기존 정규화를 유지하고 장기 행동 행은 근거량을 보존한다.
+
+## 10. 후보 결합 weight
+
+이 값은 LightFM 학습 parameter가 아니라 retrieval/reranking 설정이다.
+
+장기·단기 후보:
+
+```text
+candidate_selection_score
+  = (1 - drift_weight)
+    * (model_weight * normalized_long_term_score
+       + ontology_weight * normalized_long_term_ontology_score)
+  + drift_weight * normalized_short_term_score
+```
+
+model/장기 ontology 상위 50개 영화 ID 일치율로 model weight `0.55~0.65`를 구한다. 일치가 없으면 model/ontology `0.65/0.35`, 일치율이 높아질수록 최대 `0.55/0.45`까지 이동한다. Phase I의 협업 신뢰도는 이 비율에 적용하지 않고, 앞 단계에서 LightFM user-identity 성분만 감쇠한다. 장기 ontology 후보는 상세 분석 전 100개에 최소 20%를 보장한다. 저투표 ontology/short 후보 문제는 source별 catalog trust와 field-budgeted ontology 점수로 별도 처리한다.
+
+초기 drift 범위:
+
+| 최근 신호 | `drift_weight` 방향 |
+| --- | ---: |
+| 없음 | `0.00` |
+| 최근 positive 영화 1개 | `0.10~0.20` |
+| 다른 영화에서 같은 concept 반복 | `0.35~0.45` |
+| 최대값 | `0.45` |
+
+현재 S7 구현은 `drift_weight = drift_confidence * 0.45`를 사용한다. Phase C에서 최근 근거량과 의미 거리를 분리했고, `drift_confidence >= 0.60`인 `drift` 상태에서만 병합 100개의 short-only floor를 최대 25%까지 활성화한다. Phase D 최종 정책은 `15% + 25% * drift_confidence` 비율로 short-only lane을 순위 전반에 배치한다. post-model 검증 결과와 정확한 판정 기준은 `10_quality_improvement_record.md`의 Phase C/D 결과를 따른다.
+
+Phase E 고정 후보 ablation에서는 ontology `0% -> 25%`가 stable 장기 장르 일치를 `0.302 -> 0.409`, drift 단기 장르 일치를 `0.372 -> 0.398`로 높였다. short-only 비율은 두 설정 모두 34.2%였으므로 현재 `0.75/0.25`와 short-term ontology multiplier `0.5`를 유지한다. 이는 이후 reranker의 확정 가중치가 아니라 현재 baseline 결정이다.
+
+개인 점수·온톨로지:
+
+```text
+base_score
+  = 0.75 * normalized_personal_score
+  + 0.25 * normalized_ontology_score
+```
+
+`0.75/0.25`는 구현 확정값이 아니라 최초 결합 후보다. LightFM 품질과 ontology evidence 품질을 분리해서 확인한 뒤 조정한다.
+
+## 11. Policy adjustment 상한
+
+다음 값은 LightFM을 재학습하지 않고 policy config에서 조정한다.
+
+- OTT bonus
+- quality bonus
+- negative preference penalty
+- repetition penalty
+- MMR relevance/diversity balance
+
+policy adjustment가 model/ontology base score를 완전히 뒤집지 않도록 유형별·총량 상한을 둔다. hard filter는 상한 대상이 아니다.
+
+현재 S8 provisional 값은 `app/services/recsys/v3/config.py`에 있다.
+
+```text
+personal / ontology             0.75 / 0.25
+short ontology multiplier       0.50
+all-mode subscribed OTT bonus   최대 0.04
+recent release bonus            최대 0.03, 365일 선형 감쇠
+quality bonus                   최대 0.08
+vote confidence prior           100
+catalog trust penalty           vote 20 미만, 최대 0.05 선형 감점
+negative penalty                base의 30%, 절대 0.20 중 작은 값
+negative confidence saturation  passed 3건
+MMR similarity penalty          최대 0.08
+repetition penalty              최대 0.06
+cold-start feature-only 비중    0.65
+```
+
+품질 원점수는 `vote_count / (vote_count + 100)` 신뢰도를 rating과 bounded popularity 결합값에 먼저 곱한다. 따라서 popularity가 높아도 vote count가 1이면 품질 bonus는 작다. Phase F부터 일반 후보에는 vote 20 미만일 때 `0.05 * (20 - vote_count) / 20`의 soft 감점을 적용한다. 모든 영화에 일괄적인 최소 vote hard filter는 사용하지 않는다. 다만 학습 행동 지지가 없고 개봉 180일 이내 신작도 아닌 장기 cold item은 초기 후보 자격에서 `vote_count >= 20`을 요구한다. 장르만 있는 cold-start의 기존 최소 1표 필터는 별도 규칙으로 유지한다.
+
+negative feature 초기 상대값은 genre `0.15`, actor `0.30`, keyword `0.35`, mood `0.35`, director/theme `0.45`다. 최근 negative ontology score에는 `1.25` multiplier를 사용한다. 이는 V2 절대값 계승이 아니라 비교를 위한 초기값이다.
+
+Phase F 고정 후보 비교에서 현재 semantic negative 감점은 비활성화 대비 선택 결과의 weighted negative evidence를 stable `0.660 -> 0.519`, drift `1.323 -> 1.069`, negative-heavy `2.199 -> 1.662`로 낮췄다. 정확히 passed한 영화의 hard exclusion 위반은 모든 변형에서 0건이었다. 따라서 현재 negative 상한은 유지한다.
+
+## 12. 조정 단위와 기록
+
+한 model build에서 함께 고정할 값:
+
+```text
+행동 weight/recency
+loss/hyperparameter
+user/item feature registry
+feature frequency threshold
+dataset hash/cutoff
+random seed/package versions
+source별 projection rule과 social cap
+```
+
+serving bundle에서 고정할 값:
+
+```text
+model build
+ontology build
+source normalization
+personal/ontology 결합 weight
+policy config
+```
+
+추천 결과에는 다음을 남긴다.
+
+```text
+model raw/normalized score
+ontology type score
+policy별 effect
+final score
+각 build/config version
+positive pair의 대표 action과 source provenance
+```
+
+## 13. 사람이 수행하는 tuning 절차
+
+```text
+분리 진단에서 이상 패턴 확인
+-> 원인 계층 결정
+   behavior weight | model | feature | ontology | policy
+-> 한 종류의 값만 변경한 새 build/config 생성
+-> 동일한 data cutoff와 mapping 조건에서 비교
+-> 개선 근거와 부작용 기록
+-> serving bundle 활성화 여부 결정
+```
+
+추천 이유를 보고 LightFM이 해당 feature 때문에 추천했다고 단정하지 않는다. ontology evidence는 tuning 가설을 만드는 관측 자료이고 LightFM의 인과 설명이 아니다.
+
+## 14. 현재 확정되지 않은 값
+
+- identity-only trainer hyperparameter의 실제 데이터 기준 적정값
+- hybrid model의 feature별 scale
+- keyword/actor frequency threshold 최종값
+- user feature 범위
+- drift confidence 계산식
+- personal/ontology 결합 비율
+- policy adjustment 상한
+- MMR lambda
+- 게시글·social 행동 weight와 상한
+- timestamp가 없는 like의 multiplier
+- reply를 positive로 유지할지 여부
+
+이 값들은 구현 코드에 숨은 기본값으로 넣지 않고 config와 artifact에 명시한다.

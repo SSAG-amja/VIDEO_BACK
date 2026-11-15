@@ -1,0 +1,15 @@
+{
+  "version": "0.1.0",
+  "relations": [
+    {"source_type": "theme", "source_key": "revenge", "relation_type": "related_to", "target_type": "theme", "target_key": "justice", "weight": 0.5, "confidence": 0.7, "source": "manual_asset", "description": "Revenge and justice are frequently related motives.", "version": "0.1.0"},
+    {"source_type": "theme", "source_key": "revenge", "relation_type": "related_to", "target_type": "theme", "target_key": "betrayal", "weight": 0.5, "confidence": 0.65, "source": "manual_asset", "description": "Revenge is often caused by betrayal.", "version": "0.1.0"},
+    {"source_type": "theme", "source_key": "crime", "relation_type": "related_to", "target_type": "theme", "target_key": "justice", "weight": 0.55, "confidence": 0.7, "source": "manual_asset", "description": "Crime often creates a justice pursuit.", "version": "0.1.0"},
+    {"source_type": "theme", "source_key": "crime", "relation_type": "related_to", "target_type": "theme", "target_key": "conspiracy", "weight": 0.4, "confidence": 0.5, "source": "manual_asset", "description": "Crime can be tied to conspiracies.", "version": "0.1.0"},
+    {"source_type": "theme", "source_key": "family_conflict", "relation_type": "related_to", "target_type": "theme", "target_key": "healing", "weight": 0.4, "confidence": 0.5, "source": "manual_asset", "description": "Family conflict may lead to healing stories.", "version": "0.1.0"},
+    {"source_type": "theme", "source_key": "coming_of_age", "relation_type": "related_to", "target_type": "theme", "target_key": "identity", "weight": 0.6, "confidence": 0.75, "source": "manual_asset", "description": "Coming of age often involves identity formation.", "version": "0.1.0"},
+    {"source_type": "theme", "source_key": "grief", "relation_type": "related_to", "target_type": "theme", "target_key": "healing", "weight": 0.55, "confidence": 0.7, "source": "manual_asset", "description": "Grief and healing are naturally connected.", "version": "0.1.0"},
+    {"source_type": "theme", "source_key": "technology", "relation_type": "related_to", "target_type": "theme", "target_key": "identity", "weight": 0.35, "confidence": 0.45, "source": "manual_asset", "description": "Technology stories can explore identity.", "version": "0.1.0"},
+    {"source_type": "theme", "source_key": "survival", "relation_type": "related_to", "target_type": "theme", "target_key": "sacrifice", "weight": 0.45, "confidence": 0.55, "source": "manual_asset", "description": "Survival stories often involve sacrifice.", "version": "0.1.0"},
+    {"source_type": "theme", "source_key": "adventure", "relation_type": "related_to", "target_type": "theme", "target_key": "heroism", "weight": 0.4, "confidence": 0.5, "source": "manual_asset", "description": "Adventure may involve heroic action.", "version": "0.1.0"}
+  ]
+}

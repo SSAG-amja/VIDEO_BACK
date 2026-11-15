@@ -1,0 +1,158 @@
+{
+  "elapsed_seconds": 77.824267,
+  "generated_at": "2026-08-19T20:00:37.046989+00:00",
+  "manifest": {
+    "export_hash": "159ca3769e3b0958c4512c19438f6651ba0eb2684217be8b52067f83ffe48706",
+    "exporter_version": "v1",
+    "family_diagnostics": [
+      {
+        "covered_movie_count": 859996,
+        "drop_counts": [],
+        "dropped_value_count": 0,
+        "feature": "genre",
+        "matrix_nnz": 1323156,
+        "movie_coverage_ratio": 0.73095347,
+        "relation_type": "has_genre",
+        "retained_edge_count": 1323156,
+        "retained_value_count": 19,
+        "source_edge_count": 1323156,
+        "source_value_count": 19,
+        "total_movie_count": 1176540
+      },
+      {
+        "covered_movie_count": 327686,
+        "drop_counts": [
+          {
+            "count": 47480,
+            "reason": "low_frequency"
+          }
+        ],
+        "dropped_value_count": 47480,
+        "feature": "keyword",
+        "matrix_nnz": 1030431,
+        "movie_coverage_ratio": 0.27851667,
+        "relation_type": "has_keyword",
+        "retained_edge_count": 1030431,
+        "retained_value_count": 21390,
+        "source_edge_count": 1105263,
+        "source_value_count": 68870,
+        "total_movie_count": 1176540
+      },
+      {
+        "covered_movie_count": 629092,
+        "drop_counts": [
+          {
+            "count": 1976718,
+            "reason": "low_frequency"
+          }
+        ],
+        "dropped_value_count": 1976718,
+        "feature": "actor",
+        "matrix_nnz": 4639493,
+        "movie_coverage_ratio": 0.53469665,
+        "relation_type": "has_actor",
+        "retained_edge_count": 4639493,
+        "retained_value_count": 263755,
+        "source_edge_count": 7311771,
+        "source_value_count": 2240473,
+        "total_movie_count": 1176540
+      },
+      {
+        "covered_movie_count": 488978,
+        "drop_counts": [
+          {
+            "count": 336588,
+            "reason": "low_frequency"
+          }
+        ],
+        "dropped_value_count": 336588,
+        "feature": "director",
+        "matrix_nnz": 488978,
+        "movie_coverage_ratio": 0.41560678,
+        "relation_type": "has_director",
+        "retained_edge_count": 488978,
+        "retained_value_count": 40677,
+        "source_edge_count": 980728,
+        "source_value_count": 377265,
+        "total_movie_count": 1176540
+      },
+      {
+        "covered_movie_count": 451028,
+        "drop_counts": [],
+        "dropped_value_count": 0,
+        "feature": "theme",
+        "matrix_nnz": 666249,
+        "movie_coverage_ratio": 0.38335118,
+        "relation_type": "has_theme",
+        "retained_edge_count": 666249,
+        "retained_value_count": 30,
+        "source_edge_count": 666249,
+        "source_value_count": 30,
+        "total_movie_count": 1176540
+      },
+      {
+        "covered_movie_count": 667739,
+        "drop_counts": [],
+        "dropped_value_count": 0,
+        "feature": "mood",
+        "matrix_nnz": 1180186,
+        "movie_coverage_ratio": 0.56754466,
+        "relation_type": "has_mood",
+        "retained_edge_count": 1180186,
+        "retained_value_count": 16,
+        "source_edge_count": 1180186,
+        "source_value_count": 16,
+        "total_movie_count": 1176540
+      }
+    ],
+    "feature_count": 1502427,
+    "feature_mapping_hash": "581fd6592ae53d3d01b75e4d57577b37bdbac1a94520a44d27412526bac366a0",
+    "movie_count": 1176540,
+    "movie_mapping_hash": "9c5136261c84254169ca4d1c1205e752b14a2d25ddaebfbfbdfcd38c9bb3b0c0",
+    "ontology_build_id": 22,
+    "ontology_engine_name": "v3",
+    "ontology_schema_version": "v3.0",
+    "ontology_source_hash": "b8b96dc7c12c9b050ba6ab45ae34740d5b4804df14ef0a70497a2f93ac476d8e",
+    "pruning_rules": {
+      "actor": {
+        "max_catalog_ratio": null,
+        "min_movie_frequency": 5
+      },
+      "director": {
+        "max_catalog_ratio": null,
+        "min_movie_frequency": 5
+      },
+      "genre": {
+        "max_catalog_ratio": null,
+        "min_movie_frequency": 1
+      },
+      "keyword": {
+        "max_catalog_ratio": 0.5,
+        "min_movie_frequency": 5
+      },
+      "mood": {
+        "max_catalog_ratio": null,
+        "min_movie_frequency": 1
+      },
+      "theme": {
+        "max_catalog_ratio": null,
+        "min_movie_frequency": 1
+      }
+    }
+  },
+  "matrix": {
+    "density": 5.942885247453642e-06,
+    "dtype": "float32",
+    "nnz": 10505033,
+    "shape": [
+      1176540,
+      1502427
+    ]
+  },
+  "memory": {
+    "csr_bytes": 88746428,
+    "final_rss_bytes": 655196160,
+    "initial_rss_bytes": 92479488,
+    "peak_rss_bytes": 918224896
+  }
+}

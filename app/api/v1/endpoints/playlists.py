@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.core.redis import get_redis
 from app.crud import playlist as playlist_crud
 from app.models import user as user_model
 from app.schemas import playlist as playlist_schema
+from app.services.recsys.profile_change import mark_short_term_positive_removed
 
 router = APIRouter()
 
@@ -52,6 +54,7 @@ def delete_playlist(
     db: Session = Depends(deps.get_db),
 ):
     deleted_id = playlist_crud.delete_playlist(db, current_user.id, playlist_id)
+    mark_short_term_positive_removed(get_redis(), current_user.id)
     return {"message": "플레이리스트가 삭제되었습니다.", "playlist_id": deleted_id}
 
 
@@ -63,4 +66,6 @@ def delete_all_playlists(
     db: Session = Depends(deps.get_db),
 ):
     count = playlist_crud.delete_all_playlists(db, current_user.id)
+    if count:
+        mark_short_term_positive_removed(get_redis(), current_user.id)
     return {"message": "모든 플레이리스트가 삭제되었습니다.", "count": count}

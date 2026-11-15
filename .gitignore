@@ -7,8 +7,6 @@ failed_sync_ids.jsonl
 .vscode/
 *.pyc"
 .DS_Store
-test/
-test*
 data/
 assets/ml_models/*
 !assets/ml_models/.gitkeep

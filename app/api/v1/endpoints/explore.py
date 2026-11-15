@@ -1,16 +1,20 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api import deps
-from app.core.config import settings
-from app.core.redis import get_redis
 from app.crud import movie as movie_crud
 from app.crud import movie_detail as movie_detail_crud
+from app.db.session import SessionLocal
 from app.schemas.movie import MovieSearchResponse, recommendedMovie
 from app.schemas.recsys import RecommendationMode
-from app.services.recsys.recommendation import RecommendationOptions, get_recommendations
+from app.services.recsys.contracts import RecommendationQuery
+from app.services.recsys.executor import recommendation_executor
+from app.services.recsys.registry import get_recommendation_adapter
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # 2026.06.04 김호영
@@ -20,32 +24,53 @@ router = APIRouter()
 # 2026.05.13 박현식
 # 사용자 선호 기반 추천 영화 목록을 반환한다.
 @router.get("/movies/recommended", response_model=recommendedMovie)
-def get_recommended_movies(
-    db: Session = Depends(deps.get_db),
+async def get_recommended_movies(
     current_user=Depends(deps.get_current_user),
     page: int = Query(1, ge=1, description="Page number"),
 ):
-    limit = 200
-    skip = (page - 1) * limit
     try:
+        recommended_movies = await recommendation_executor.run(
+            _load_explore_recommendations,
+            user_id=int(current_user.id),
+            page=page,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"data": recommended_movies}
+
+
+def _load_explore_recommendations(*, user_id: int, page: int):
+    adapter = get_recommendation_adapter()
+    limit = adapter.max_page_size
+    skip = (page - 1) * limit
+    with SessionLocal() as db:
         try:
-            recommendation = get_recommendations(
+            recommendation = adapter.get_recommendations(
                 db,
-                get_redis(),
-                settings,
-                RecommendationOptions(
-                    user_id=current_user.id,
+                RecommendationQuery(
+                    user_id=user_id,
                     mode=RecommendationMode.ALL,
                     limit=limit,
                     offset=skip,
                 ),
             )
-            recommended_movies = movie_crud.get_movies_by_internal_ids_preserve_order(db, recommendation.movie_ids)
+            return movie_crud.get_movies_by_internal_ids_preserve_order(
+                db,
+                recommendation.movie_ids,
+            )
         except Exception:
-            recommended_movies = movie_crud.get_recommended_movies(db, current_user.id, skip=skip, limit=limit)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    return {"data": recommended_movies}
+            logger.warning(
+                "recommendation engine failed engine=%s user_id=%s",
+                adapter.name,
+                user_id,
+                exc_info=True,
+            )
+            return movie_crud.get_recommended_movies(
+                db,
+                user_id,
+                skip=skip,
+                limit=limit,
+            )
 
 
 # 2026.05.13 박현식
