@@ -102,6 +102,10 @@ async def get_shorts_movies(
     current_user=Depends(deps.get_current_user),
     page: int = Query(1, ge=1, description="Page number"),
     shuffle_seed: str | None = Query(None, description="Stable shuffle seed for a refresh session"),
+    mode: RecommendationMode = Query(
+        RecommendationMode.SUBSCRIBED_ONLY,
+        description="Recommendation mode (all or subscribed_only)",
+    ),
 ):
     offset = (page - 1) * SHORTS_PAGE_SIZE
     redis = get_redis()
@@ -112,7 +116,7 @@ async def get_shorts_movies(
             settings,
             RecommendationOptions(
                 user_id=current_user.id,
-                mode=RecommendationMode.ALL,
+                mode=mode,
                 limit=SHORTS_PAGE_SIZE,
                 offset=offset,
                 shuffle_seed=shuffle_seed,
