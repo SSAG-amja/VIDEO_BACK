@@ -220,7 +220,11 @@ class MovieSynchronizer:
 
         delete_ids = set(db_movies.keys()) - dump_ids
         if delete_ids:
-            await self.db.execute(delete(Movie).where(Movie.tmdb_id.in_(list(delete_ids))))
+            delete_id_list = list(delete_ids)
+            chunk_size = 10000
+            for index in range(0, len(delete_id_list), chunk_size):
+                chunk = delete_id_list[index : index + chunk_size]
+                await self.db.execute(delete(Movie).where(Movie.tmdb_id.in_(chunk)))
             logger.info("%s편의 영화 삭제 완료 (매핑 테이블 연쇄 삭제됨).", len(delete_ids))
 
         return new_ids, title_changed_ids, reconciled_ids
