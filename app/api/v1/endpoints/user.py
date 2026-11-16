@@ -12,11 +12,14 @@ from app.api import deps
 from app.schemas import user as user_schema
 from app.schemas import auth as auth_schema
 
+from app.crud import passed as passed_crud
+from app.crud import pinned as pinned_crud
 from app.crud import user as user_crud
 from app.core.redis import get_redis
 from app.core import security
 from app.services.auth import email_verification
 from app.services.recsys.registry import get_recommendation_adapter
+from app.services.recsys.v1.interaction_cache import remove_blacklisted_movie_ids
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -133,6 +136,13 @@ def update_favorite_movies(
     try:
         user_crud.update_user_favorite_movies(db, user=current_user, movie_ids=request.movie_ids)
         user_crud.update_user_onboarding_status(db, user=current_user, is_completed=True)
+        try:
+            pinned_crud.clear_pinned_movies(db, current_user.id)
+            blacklist_removal_ids = passed_crud.load_unwatched_passed_movie_ids(db, current_user.id)
+            passed_crud.clear_passed_movies(db, current_user.id)
+            remove_blacklisted_movie_ids(get_redis(), current_user.id, blacklist_removal_ids)
+        except Exception:
+            logger.warning("onboarding pin/pass reset failed user_id=%s", current_user.id, exc_info=True)
         try:
             get_recommendation_adapter().refresh_cold_start(db, current_user.id)
         except Exception:

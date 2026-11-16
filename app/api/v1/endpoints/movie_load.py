@@ -23,7 +23,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.themoviedb.org/3"
-SHORTS_PAGE_SIZE = 20
+SHORTS_PAGE_SIZE = 30
 PREFETCH_PROVIDERS_COUNT = 10
 YOUTUBE_CACHE_TTL_SECONDS = 6 * 60 * 60
 YOUTUBE_CHECK_TIMEOUT_SECONDS = 0.8
