@@ -1,3 +1,5 @@
+from typing import Literal
+
 from sqlalchemy import case, desc, func, literal, or_, select, union_all
 from sqlalchemy.orm import Session
 
@@ -89,6 +91,7 @@ def search_movies(
     skip: int = 0,
     limit: int = 200,
     title_only: bool = False,
+    search_type: Literal["all", "title", "director", "actor"] = "all",
 ) -> list[movie_model.Movie]:
     title = title.strip() if title else None
     target_count = skip + limit
@@ -133,7 +136,7 @@ def search_movies(
     def apply_filters(stmt):
         if genre_ids:
             stmt = stmt.join(mapping_model.movie_genres).where(mapping_model.movie_genres.c.genre_id.in_(genre_ids))
-        if tag:
+        if tag or genre_ids:
             adult_keyword_exists = (
                 select(literal(1))
                 .select_from(mapping_model.movie_keywords)
@@ -146,6 +149,13 @@ def search_movies(
             )
             stmt = stmt.where(~adult_keyword_exists)
 
+        if genre_ids and not title and not tag:
+            stmt = stmt.where(
+                movie_model.Movie.vote_average.is_not(None),
+                movie_model.Movie.vote_count >= TAG_QUALITY_MIN_VOTE_COUNT,
+            )
+
+        if tag:
             if tag == TAG_KOREA_POPULAR:
                 stmt = stmt.where(
                     movie_model.Movie.original_language == "ko",
@@ -170,14 +180,15 @@ def search_movies(
     # 검색 결과 정렬과 limit 규칙을 적용한다.
     def finish(stmt, result_limit: int):
         is_genre_tag = tag in TAG_GENRE_MAP
+        is_genre_only = bool(genre_ids) and not title and not tag
         return (
             apply_filters(stmt)
             .distinct()
             .order_by(
                 "relevance",
-                desc("high_rating_score" if tag == TAG_HIGH_RATING else movie_model.Movie.popularity),
-                desc(movie_model.Movie.popularity if is_genre_tag else movie_model.Movie.vote_average),
-                desc(movie_model.Movie.vote_average if is_genre_tag else movie_model.Movie.vote_count),
+                desc("high_rating_score" if (tag == TAG_HIGH_RATING or is_genre_only) else movie_model.Movie.popularity),
+                desc(movie_model.Movie.vote_count if is_genre_only else (movie_model.Movie.popularity if is_genre_tag else movie_model.Movie.vote_average)),
+                desc(movie_model.Movie.popularity if is_genre_only else (movie_model.Movie.vote_average if is_genre_tag else movie_model.Movie.vote_count)),
             )
             .limit(result_limit)
         )
@@ -195,9 +206,44 @@ def search_movies(
                 break
 
     # 2026.05.13 박현식
-    # 영화 제목, 감독, 배우명을 한 번에 검색해 우선순위대로 합친다.
+    # 영화 제목, 감독, 배우명을 한 번에 검색하거나 search_type에 따라 개별 검색한다.
     def search_title_people_movies():
         search_kw = f"%{title}%"
+        effective_type = "title" if title_only else search_type
+
+        if effective_type == "title":
+            title_stmt = base_movie_select(title_relevance).add_columns(literal(None).label("badge")).where(
+                or_(
+                    movie_model.Movie.title_ko.ilike(search_kw),
+                    movie_model.Movie.title.ilike(search_kw),
+                    movie_model.Movie.original_title.ilike(search_kw),
+                )
+            )
+            append_movies(db.execute(finish(title_stmt, target_count)).mappings().all())
+            return
+
+        if effective_type == "director":
+            director_stmt = (
+                base_movie_select(people_relevance)
+                .add_columns(func.concat(people_model.People.name_ko, " ", DIRECTOR_ROLE).label("badge"))
+                .join(mapping_model.movie_directors, mapping_model.movie_directors.c.movie_id == movie_model.Movie.id)
+                .join(people_model.People, mapping_model.movie_directors.c.director_id == people_model.People.id)
+                .where(or_(people_model.People.name.ilike(search_kw), people_model.People.name_ko.ilike(search_kw)))
+            )
+            append_movies(db.execute(finish(director_stmt, target_count)).mappings().all())
+            return
+
+        if effective_type == "actor":
+            actor_stmt = (
+                base_movie_select(literal(5).label("relevance"))
+                .add_columns(func.concat(people_model.People.name_ko, " ", ACTOR_ROLE).label("badge"))
+                .join(mapping_model.MovieActor, mapping_model.MovieActor.movie_id == movie_model.Movie.id)
+                .join(people_model.People, mapping_model.MovieActor.actor_id == people_model.People.id)
+                .where(or_(people_model.People.name.ilike(search_kw), people_model.People.name_ko.ilike(search_kw)))
+            )
+            append_movies(db.execute(finish(actor_stmt, target_count)).mappings().all())
+            return
+
         title_stmt = base_movie_select(title_relevance).add_columns(literal(None).label("badge")).where(
             or_(
                 movie_model.Movie.title_ko.ilike(search_kw),
@@ -205,10 +251,6 @@ def search_movies(
                 movie_model.Movie.original_title.ilike(search_kw),
             )
         )
-
-        if title_only:
-            append_movies(db.execute(finish(title_stmt, target_count)).mappings().all())
-            return
 
         director_stmt = (
             base_movie_select(people_relevance)

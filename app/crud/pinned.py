@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -9,30 +11,38 @@ from app.schemas import pinned as pinned_schema
 
 # 2026.05.13 박현식
 # Pin 목록 응답에 사용할 영화 요약 DTO를 만든다.
-def _pinned_movie_summary(movie: movie_model.Movie) -> pinned_schema.PinnedMovieSummary:
+def _pinned_movie_summary(
+    movie: movie_model.Movie,
+    pinned_at: datetime | None = None,
+) -> pinned_schema.PinnedMovieSummary:
     return pinned_schema.PinnedMovieSummary(
         movie_id=movie.tmdb_id,
         movie_title=movie.title_ko or movie.title or movie.original_title,
         poster_path=movie.poster_path,
+        pinned_at=pinned_at,
     )
 
 
 # 2026.05.13 박현식
 # user_interactions에서 Pin 상태인 영화 목록을 조회한다.
 def get_pinned_movies(db: Session, user_id: int, limit: int) -> pinned_schema.PinnedMovieListResponse:
-    movies = db.execute(
-        select(movie_model.Movie)
+    rows = db.execute(
+        select(movie_model.Movie, mapping_model.UserInteraction.pinned_at)
         .join(mapping_model.UserInteraction, mapping_model.UserInteraction.movie_id == movie_model.Movie.id)
         .where(
             mapping_model.UserInteraction.user_id == user_id,
             mapping_model.UserInteraction.is_pinned.is_(True),
         )
+        .order_by(
+            mapping_model.UserInteraction.pinned_at.desc().nulls_last(),
+            movie_model.Movie.id.desc(),
+        )
         .limit(limit)
-    ).scalars().all()
+    ).all()
 
     return pinned_schema.PinnedMovieListResponse(
-        total=len(movies),
-        data=[_pinned_movie_summary(movie) for movie in movies],
+        total=len(rows),
+        data=[_pinned_movie_summary(movie, pinned_at) for movie, pinned_at in rows],
     )
 
 

@@ -1,5 +1,7 @@
 import logging
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -86,6 +88,10 @@ def search_movies(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, le=500),
     title_only: bool = Query(False, description="Search movie titles only without people joins"),
+    search_type: Literal["all", "title", "director", "actor"] = Query(
+        "all",
+        description="Search scope (all, title, director, actor)",
+    ),
 ):
     try:
         search_title = query or title
@@ -101,6 +107,7 @@ def search_movies(
             skip=skip,
             limit=limit,
             title_only=title_only,
+            search_type=search_type,
         )
         data = [movie_crud.to_movie_search_item(movie) for movie in movies]
     except HTTPException:
