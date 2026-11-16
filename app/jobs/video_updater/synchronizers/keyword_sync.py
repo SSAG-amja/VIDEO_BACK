@@ -104,7 +104,11 @@ class KeywordSynchronizer:
 
         delete_ids = db_ids - dump_ids
         if delete_ids:
-            await self.db.execute(delete(Keyword).where(Keyword.tmdb_id.in_(list(delete_ids))))
+            delete_id_list = list(delete_ids)
+            chunk_size = 10000
+            for index in range(0, len(delete_id_list), chunk_size):
+                chunk = delete_id_list[index : index + chunk_size]
+                await self.db.execute(delete(Keyword).where(Keyword.tmdb_id.in_(chunk)))
             logger.info("%s개의 삭제된 키워드 정리 완료.", len(delete_ids))
 
         logger.info("키워드 동기화 완료.")

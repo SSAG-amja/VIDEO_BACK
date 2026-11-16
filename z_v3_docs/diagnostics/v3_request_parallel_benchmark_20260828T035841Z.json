@@ -1,0 +1,220 @@
+{
+  "bundle_id": "bundle-21b4407076b864c2940b9fa3",
+  "candidate_snapshot_id": "cand-a439f89fd83762d09db1085e",
+  "generated_at": "2026-08-28T03:58:41.632703+00:00",
+  "model_build_id": "hybrid-77a977915f6b-abb9c7b0706d-bf89dc0a3ba9-e0b8d8686041-a401dba670c5-7b869d3b",
+  "result_invariant": true,
+  "results": [
+    {
+      "elapsed_seconds": 31.963099,
+      "max_request_seconds": 3.167965,
+      "mean_request_seconds": 2.663563,
+      "p95_request_seconds": 3.167965,
+      "peak_rss_bytes": 975081472,
+      "request_count": 12,
+      "requests_per_second": 0.3754,
+      "result_hash": "3c8223b20517302c78c0ba272ee232d08c30bae45d4d0e0062e0658ff0e01203",
+      "rss_before_bytes": 972460032,
+      "rss_growth_bytes": 2621440,
+      "scheduler": "sequential",
+      "trial": 1,
+      "worker_metrics": [
+        {
+          "active_seconds": 31.962757599001634,
+          "request_count": 12,
+          "worker_id": 1
+        }
+      ],
+      "workers": 1
+    },
+    {
+      "elapsed_seconds": 21.22632,
+      "max_request_seconds": 3.997502,
+      "mean_request_seconds": 3.537279,
+      "p95_request_seconds": 3.997502,
+      "peak_rss_bytes": 977833984,
+      "request_count": 12,
+      "requests_per_second": 0.5653,
+      "result_hash": "3c8223b20517302c78c0ba272ee232d08c30bae45d4d0e0062e0658ff0e01203",
+      "rss_before_bytes": 975081472,
+      "rss_growth_bytes": 2752512,
+      "scheduler": "shared_dynamic_request_queue",
+      "trial": 2,
+      "worker_metrics": [
+        {
+          "active_seconds": 21.226004133994138,
+          "request_count": 6,
+          "worker_id": 1
+        },
+        {
+          "active_seconds": 21.22134863399333,
+          "request_count": 6,
+          "worker_id": 2
+        }
+      ],
+      "workers": 2
+    },
+    {
+      "elapsed_seconds": 15.552722,
+      "max_request_seconds": 5.870174,
+      "mean_request_seconds": 5.096258,
+      "p95_request_seconds": 5.870174,
+      "peak_rss_bytes": 983339008,
+      "request_count": 12,
+      "requests_per_second": 0.7716,
+      "result_hash": "3c8223b20517302c78c0ba272ee232d08c30bae45d4d0e0062e0658ff0e01203",
+      "rss_before_bytes": 977833984,
+      "rss_growth_bytes": 5505024,
+      "scheduler": "shared_dynamic_request_queue",
+      "trial": 3,
+      "worker_metrics": [
+        {
+          "active_seconds": 15.55237825599761,
+          "request_count": 3,
+          "worker_id": 1
+        },
+        {
+          "active_seconds": 15.43269108900131,
+          "request_count": 3,
+          "worker_id": 2
+        },
+        {
+          "active_seconds": 15.432929257003707,
+          "request_count": 3,
+          "worker_id": 3
+        },
+        {
+          "active_seconds": 14.737097506000282,
+          "request_count": 3,
+          "worker_id": 4
+        }
+      ],
+      "workers": 4
+    },
+    {
+      "elapsed_seconds": 15.948447,
+      "max_request_seconds": 5.87217,
+      "mean_request_seconds": 5.236059,
+      "p95_request_seconds": 5.87217,
+      "peak_rss_bytes": 983339008,
+      "request_count": 12,
+      "requests_per_second": 0.7524,
+      "result_hash": "3c8223b20517302c78c0ba272ee232d08c30bae45d4d0e0062e0658ff0e01203",
+      "rss_before_bytes": 983339008,
+      "rss_growth_bytes": 0,
+      "scheduler": "shared_dynamic_request_queue",
+      "trial": 4,
+      "worker_metrics": [
+        {
+          "active_seconds": 15.943699341001775,
+          "request_count": 3,
+          "worker_id": 1
+        },
+        {
+          "active_seconds": 15.868309924997448,
+          "request_count": 3,
+          "worker_id": 2
+        },
+        {
+          "active_seconds": 15.947747131998767,
+          "request_count": 3,
+          "worker_id": 3
+        },
+        {
+          "active_seconds": 15.072954548999405,
+          "request_count": 3,
+          "worker_id": 4
+        }
+      ],
+      "workers": 4
+    },
+    {
+      "elapsed_seconds": 21.432518,
+      "max_request_seconds": 3.967058,
+      "mean_request_seconds": 3.565665,
+      "p95_request_seconds": 3.967058,
+      "peak_rss_bytes": 983339008,
+      "request_count": 12,
+      "requests_per_second": 0.5599,
+      "result_hash": "3c8223b20517302c78c0ba272ee232d08c30bae45d4d0e0062e0658ff0e01203",
+      "rss_before_bytes": 983339008,
+      "rss_growth_bytes": 0,
+      "scheduler": "shared_dynamic_request_queue",
+      "trial": 5,
+      "worker_metrics": [
+        {
+          "active_seconds": 21.43222405099732,
+          "request_count": 6,
+          "worker_id": 1
+        },
+        {
+          "active_seconds": 21.355759343998216,
+          "request_count": 6,
+          "worker_id": 2
+        }
+      ],
+      "workers": 2
+    },
+    {
+      "elapsed_seconds": 32.885391,
+      "max_request_seconds": 3.272945,
+      "mean_request_seconds": 2.740423,
+      "p95_request_seconds": 3.272945,
+      "peak_rss_bytes": 983339008,
+      "request_count": 12,
+      "requests_per_second": 0.3649,
+      "result_hash": "3c8223b20517302c78c0ba272ee232d08c30bae45d4d0e0062e0658ff0e01203",
+      "rss_before_bytes": 983339008,
+      "rss_growth_bytes": 0,
+      "scheduler": "sequential",
+      "trial": 6,
+      "worker_metrics": [
+        {
+          "active_seconds": 32.88507135000327,
+          "request_count": 12,
+          "worker_id": 1
+        }
+      ],
+      "workers": 1
+    }
+  ],
+  "summary": {
+    "1": {
+      "max_p95_request_seconds": 3.272945,
+      "max_peak_rss_bytes": 983339008,
+      "max_rss_growth_bytes": 2621440,
+      "median_elapsed_seconds": 32.424245,
+      "median_mean_request_seconds": 2.701993,
+      "median_requests_per_second": 0.3701,
+      "trials": 2
+    },
+    "2": {
+      "max_p95_request_seconds": 3.997502,
+      "max_peak_rss_bytes": 983339008,
+      "max_rss_growth_bytes": 2752512,
+      "median_elapsed_seconds": 21.329419,
+      "median_mean_request_seconds": 3.551472,
+      "median_requests_per_second": 0.5626,
+      "trials": 2
+    },
+    "4": {
+      "max_p95_request_seconds": 5.87217,
+      "max_peak_rss_bytes": 983339008,
+      "max_rss_growth_bytes": 5505024,
+      "median_elapsed_seconds": 15.750584,
+      "median_mean_request_seconds": 5.166158,
+      "median_requests_per_second": 0.762,
+      "trials": 2
+    }
+  },
+  "user_count": 12,
+  "warmup_request_count": 12,
+  "workers_order": [
+    1,
+    2,
+    4,
+    4,
+    2,
+    1
+  ]
+}

@@ -1,0 +1,766 @@
+{
+  "generated_at": "2026-08-27T22:28:05.297145+00:00",
+  "scope": {
+    "user_count": 12,
+    "scenario": "post-model",
+    "limit": 20,
+    "bundle_id": "bundle-77128ec4c5c9b5404efc3b4b",
+    "model_build_id": "hybrid-fcd0e51b5e6b-89de5ebb1943-bf89dc0a3ba9-159ca3769e3b-f321aac0c3a1-7b869d3b",
+    "ontology_build_id": 22,
+    "candidate_snapshot_id": "cand-950d86d7f1f978f316f2b773",
+    "current_weights": {
+      "personal": 0.75,
+      "ontology": 0.25,
+      "ontology_short_term_multiplier": 0.5
+    },
+    "no_ontology_weights": {
+      "personal": 1.0,
+      "ontology": 0.0,
+      "ontology_short_term_multiplier": 0.5
+    }
+  },
+  "summary": {
+    "by_profile_type": {
+      "post_model_stable": {
+        "user_count": 6,
+        "top20_overlap_ratio": 0.741667,
+        "current_long_genre_share": 0.408611,
+        "no_ontology_long_genre_share": 0.302361,
+        "current_short_genre_share": 0.303194,
+        "no_ontology_short_genre_share": 0.214028,
+        "current_short_only_ratio": 0.0,
+        "no_ontology_short_only_ratio": 0.0
+      },
+      "post_model_drift": {
+        "user_count": 6,
+        "top20_overlap_ratio": 0.758333,
+        "current_long_genre_share": 0.344861,
+        "no_ontology_long_genre_share": 0.271111,
+        "current_short_genre_share": 0.398195,
+        "no_ontology_short_genre_share": 0.372222,
+        "current_short_only_ratio": 0.341667,
+        "no_ontology_short_only_ratio": 0.341667
+      }
+    },
+    "family_share": {
+      "genre": 0.551406,
+      "mood": 0.208409,
+      "theme": 0.155535,
+      "keyword": 0.07038,
+      "director": 0.009346,
+      "actor": 0.004924
+    },
+    "ontology_base_share": {
+      "model": 0.241536,
+      "short_term_context": 0.475071
+    },
+    "semantic_rank_effect": {
+      "genre_only_mean_rank_uplift": -4.75,
+      "theme_or_mood_mean_rank_uplift": 6.100986
+    }
+  },
+  "users": [
+    {
+      "user_id": 905,
+      "email": "v3seed-train-025@pinlm.test",
+      "user_number": 25,
+      "profile_type": "post_model_stable",
+      "cohort_id": 1,
+      "cohort_name": "action_crime_thriller",
+      "recent_cohort_id": 1,
+      "recent_cohort_name": "action_crime_thriller",
+      "preference_state": "stable",
+      "drift_confidence": 0.28014027,
+      "top_overlap_ratio": 0.7,
+      "current": {
+        "long_genre_share": 0.375,
+        "short_genre_share": 0.383333,
+        "short_only_ratio": 0.0
+      },
+      "no_ontology": {
+        "long_genre_share": 0.225,
+        "short_genre_share": 0.25,
+        "short_only_ratio": 0.0
+      },
+      "family_contribution": {
+        "actor": {
+          "raw": 0.54041,
+          "share": 0.000884
+        },
+        "director": {
+          "raw": 0.0,
+          "share": 0.0
+        },
+        "genre": {
+          "raw": 361.393543,
+          "share": 0.591438
+        },
+        "keyword": {
+          "raw": 26.364395,
+          "share": 0.043147
+        },
+        "mood": {
+          "raw": 128.247907,
+          "share": 0.209884
+        },
+        "theme": {
+          "raw": 94.49593,
+          "share": 0.154647
+        }
+      },
+      "ontology_base_share": {
+        "model": 0.209809
+      },
+      "semantic_rank_effect": {
+        "genre_only_count": 0,
+        "genre_only_mean_rank_uplift": 0.0,
+        "theme_or_mood_count": 69,
+        "theme_or_mood_mean_rank_uplift": 5.753623
+      }
+    },
+    {
+      "user_id": 906,
+      "email": "v3seed-train-026@pinlm.test",
+      "user_number": 26,
+      "profile_type": "post_model_stable",
+      "cohort_id": 2,
+      "cohort_name": "romance_drama_comedy",
+      "recent_cohort_id": 2,
+      "recent_cohort_name": "romance_drama_comedy",
+      "preference_state": "stable",
+      "drift_confidence": 0.45092803,
+      "top_overlap_ratio": 0.8,
+      "current": {
+        "long_genre_share": 0.7725,
+        "short_genre_share": 0.7725,
+        "short_only_ratio": 0.0
+      },
+      "no_ontology": {
+        "long_genre_share": 0.6225,
+        "short_genre_share": 0.6225,
+        "short_only_ratio": 0.0
+      },
+      "family_contribution": {
+        "actor": {
+          "raw": 1.890991,
+          "share": 0.001967
+        },
+        "director": {
+          "raw": 2.4,
+          "share": 0.002496
+        },
+        "genre": {
+          "raw": 592.852876,
+          "share": 0.616651
+        },
+        "keyword": {
+          "raw": 34.037805,
+          "share": 0.035404
+        },
+        "mood": {
+          "raw": 220.157476,
+          "share": 0.228995
+        },
+        "theme": {
+          "raw": 110.067675,
+          "share": 0.114486
+        }
+      },
+      "ontology_base_share": {
+        "model": 0.273284
+      },
+      "semantic_rank_effect": {
+        "genre_only_count": 0,
+        "genre_only_mean_rank_uplift": 0.0,
+        "theme_or_mood_count": 81,
+        "theme_or_mood_mean_rank_uplift": 4.061728
+      }
+    },
+    {
+      "user_id": 907,
+      "email": "v3seed-train-027@pinlm.test",
+      "user_number": 27,
+      "profile_type": "post_model_stable",
+      "cohort_id": 3,
+      "cohort_name": "horror_mystery_thriller",
+      "recent_cohort_id": 3,
+      "recent_cohort_name": "horror_mystery_thriller",
+      "preference_state": "stable",
+      "drift_confidence": 0.45935502,
+      "top_overlap_ratio": 0.65,
+      "current": {
+        "long_genre_share": 0.5325,
+        "short_genre_share": 0.31,
+        "short_only_ratio": 0.0
+      },
+      "no_ontology": {
+        "long_genre_share": 0.395,
+        "short_genre_share": 0.118333,
+        "short_only_ratio": 0.0
+      },
+      "family_contribution": {
+        "actor": {
+          "raw": 0.50812,
+          "share": 0.000778
+        },
+        "director": {
+          "raw": 1.1,
+          "share": 0.001684
+        },
+        "genre": {
+          "raw": 395.159066,
+          "share": 0.604975
+        },
+        "keyword": {
+          "raw": 19.243537,
+          "share": 0.029461
+        },
+        "mood": {
+          "raw": 166.682405,
+          "share": 0.255185
+        },
+        "theme": {
+          "raw": 70.489728,
+          "share": 0.107917
+        }
+      },
+      "ontology_base_share": {
+        "model": 0.260545
+      },
+      "semantic_rank_effect": {
+        "genre_only_count": 0,
+        "genre_only_mean_rank_uplift": 0.0,
+        "theme_or_mood_count": 89,
+        "theme_or_mood_mean_rank_uplift": 1.932584
+      }
+    },
+    {
+      "user_id": 908,
+      "email": "v3seed-train-028@pinlm.test",
+      "user_number": 28,
+      "profile_type": "post_model_stable",
+      "cohort_id": 4,
+      "cohort_name": "animation_family_adventure",
+      "recent_cohort_id": 4,
+      "recent_cohort_name": "animation_family_adventure",
+      "preference_state": "stable",
+      "drift_confidence": 0.4470666,
+      "top_overlap_ratio": 0.75,
+      "current": {
+        "long_genre_share": 0.05,
+        "short_genre_share": 0.05,
+        "short_only_ratio": 0.0
+      },
+      "no_ontology": {
+        "long_genre_share": 0.05,
+        "short_genre_share": 0.05,
+        "short_only_ratio": 0.0
+      },
+      "family_contribution": {
+        "actor": {
+          "raw": 0.0,
+          "share": 0.0
+        },
+        "director": {
+          "raw": 0.0,
+          "share": 0.0
+        },
+        "genre": {
+          "raw": 165.549132,
+          "share": 0.502519
+        },
+        "keyword": {
+          "raw": 26.202342,
+          "share": 0.079536
+        },
+        "mood": {
+          "raw": 86.045424,
+          "share": 0.261188
+        },
+        "theme": {
+          "raw": 51.641512,
+          "share": 0.156756
+        }
+      },
+      "ontology_base_share": {
+        "model": 0.218552
+      },
+      "semantic_rank_effect": {
+        "genre_only_count": 0,
+        "genre_only_mean_rank_uplift": 0.0,
+        "theme_or_mood_count": 34,
+        "theme_or_mood_mean_rank_uplift": 13.058824
+      }
+    },
+    {
+      "user_id": 909,
+      "email": "v3seed-train-029@pinlm.test",
+      "user_number": 29,
+      "profile_type": "post_model_stable",
+      "cohort_id": 5,
+      "cohort_name": "scifi_fantasy_adventure",
+      "recent_cohort_id": 5,
+      "recent_cohort_name": "scifi_fantasy_adventure",
+      "preference_state": "stable",
+      "drift_confidence": 0.19648972,
+      "top_overlap_ratio": 0.8,
+      "current": {
+        "long_genre_share": 0.189167,
+        "short_genre_share": 0.168333,
+        "short_only_ratio": 0.0
+      },
+      "no_ontology": {
+        "long_genre_share": 0.1225,
+        "short_genre_share": 0.133333,
+        "short_only_ratio": 0.0
+      },
+      "family_contribution": {
+        "actor": {
+          "raw": 1.872988,
+          "share": 0.004049
+        },
+        "director": {
+          "raw": 1.489658,
+          "share": 0.00322
+        },
+        "genre": {
+          "raw": 220.669307,
+          "share": 0.477028
+        },
+        "keyword": {
+          "raw": 66.024624,
+          "share": 0.142728
+        },
+        "mood": {
+          "raw": 92.493782,
+          "share": 0.199947
+        },
+        "theme": {
+          "raw": 80.041406,
+          "share": 0.173028
+        }
+      },
+      "ontology_base_share": {
+        "model": 0.221647
+      },
+      "semantic_rank_effect": {
+        "genre_only_count": 0,
+        "genre_only_mean_rank_uplift": 0.0,
+        "theme_or_mood_count": 39,
+        "theme_or_mood_mean_rank_uplift": 11.641026
+      }
+    },
+    {
+      "user_id": 910,
+      "email": "v3seed-train-030@pinlm.test",
+      "user_number": 30,
+      "profile_type": "post_model_stable",
+      "cohort_id": 6,
+      "cohort_name": "documentary_history_war",
+      "recent_cohort_id": 6,
+      "recent_cohort_name": "documentary_history_war",
+      "preference_state": "stable",
+      "drift_confidence": 0.30392405,
+      "top_overlap_ratio": 0.75,
+      "current": {
+        "long_genre_share": 0.5325,
+        "short_genre_share": 0.135,
+        "short_only_ratio": 0.0
+      },
+      "no_ontology": {
+        "long_genre_share": 0.399167,
+        "short_genre_share": 0.11,
+        "short_only_ratio": 0.0
+      },
+      "family_contribution": {
+        "actor": {
+          "raw": 0.912994,
+          "share": 0.001424
+        },
+        "director": {
+          "raw": 5.752133,
+          "share": 0.008972
+        },
+        "genre": {
+          "raw": 390.424452,
+          "share": 0.608976
+        },
+        "keyword": {
+          "raw": 46.596852,
+          "share": 0.072681
+        },
+        "mood": {
+          "raw": 127.104606,
+          "share": 0.198255
+        },
+        "theme": {
+          "raw": 70.325556,
+          "share": 0.109692
+        }
+      },
+      "ontology_base_share": {
+        "model": 0.235171
+      },
+      "semantic_rank_effect": {
+        "genre_only_count": 2,
+        "genre_only_mean_rank_uplift": -5,
+        "theme_or_mood_count": 67,
+        "theme_or_mood_mean_rank_uplift": 7.283582
+      }
+    },
+    {
+      "user_id": 917,
+      "email": "v3seed-train-037@pinlm.test",
+      "user_number": 37,
+      "profile_type": "post_model_drift",
+      "cohort_id": 1,
+      "cohort_name": "action_crime_thriller",
+      "recent_cohort_id": 2,
+      "recent_cohort_name": "romance_drama_comedy",
+      "preference_state": "drift",
+      "drift_confidence": 0.8246845,
+      "top_overlap_ratio": 0.8,
+      "current": {
+        "long_genre_share": 0.37,
+        "short_genre_share": 0.624167,
+        "short_only_ratio": 0.35
+      },
+      "no_ontology": {
+        "long_genre_share": 0.366667,
+        "short_genre_share": 0.641667,
+        "short_only_ratio": 0.35
+      },
+      "family_contribution": {
+        "actor": {
+          "raw": 3.714643,
+          "share": 0.002943
+        },
+        "director": {
+          "raw": 8.917859,
+          "share": 0.007065
+        },
+        "genre": {
+          "raw": 717.143304,
+          "share": 0.568154
+        },
+        "keyword": {
+          "raw": 40.099134,
+          "share": 0.031768
+        },
+        "mood": {
+          "raw": 293.354352,
+          "share": 0.232409
+        },
+        "theme": {
+          "raw": 199.004271,
+          "share": 0.15766
+        }
+      },
+      "ontology_base_share": {
+        "model": 0.23354,
+        "short_term_context": 0.472078
+      },
+      "semantic_rank_effect": {
+        "genre_only_count": 0,
+        "genre_only_mean_rank_uplift": 0.0,
+        "theme_or_mood_count": 92,
+        "theme_or_mood_mean_rank_uplift": 1.673913
+      }
+    },
+    {
+      "user_id": 918,
+      "email": "v3seed-train-038@pinlm.test",
+      "user_number": 38,
+      "profile_type": "post_model_drift",
+      "cohort_id": 2,
+      "cohort_name": "romance_drama_comedy",
+      "recent_cohort_id": 3,
+      "recent_cohort_name": "horror_mystery_thriller",
+      "preference_state": "drift",
+      "drift_confidence": 0.71440703,
+      "top_overlap_ratio": 0.75,
+      "current": {
+        "long_genre_share": 0.594167,
+        "short_genre_share": 0.383333,
+        "short_only_ratio": 0.35
+      },
+      "no_ontology": {
+        "long_genre_share": 0.495,
+        "short_genre_share": 0.346667,
+        "short_only_ratio": 0.35
+      },
+      "family_contribution": {
+        "actor": {
+          "raw": 4.739104,
+          "share": 0.004743
+        },
+        "director": {
+          "raw": 11.478939,
+          "share": 0.011487
+        },
+        "genre": {
+          "raw": 539.042592,
+          "share": 0.539433
+        },
+        "keyword": {
+          "raw": 52.769725,
+          "share": 0.052808
+        },
+        "mood": {
+          "raw": 261.226533,
+          "share": 0.261416
+        },
+        "theme": {
+          "raw": 130.018677,
+          "share": 0.130113
+        }
+      },
+      "ontology_base_share": {
+        "model": 0.276785,
+        "short_term_context": 0.502857
+      },
+      "semantic_rank_effect": {
+        "genre_only_count": 0,
+        "genre_only_mean_rank_uplift": 0.0,
+        "theme_or_mood_count": 81,
+        "theme_or_mood_mean_rank_uplift": 3.666667
+      }
+    },
+    {
+      "user_id": 919,
+      "email": "v3seed-train-039@pinlm.test",
+      "user_number": 39,
+      "profile_type": "post_model_drift",
+      "cohort_id": 3,
+      "cohort_name": "horror_mystery_thriller",
+      "recent_cohort_id": 4,
+      "recent_cohort_name": "animation_family_adventure",
+      "preference_state": "drift",
+      "drift_confidence": 0.6679439,
+      "top_overlap_ratio": 0.85,
+      "current": {
+        "long_genre_share": 0.424167,
+        "short_genre_share": 0.3,
+        "short_only_ratio": 0.3
+      },
+      "no_ontology": {
+        "long_genre_share": 0.354167,
+        "short_genre_share": 0.3,
+        "short_only_ratio": 0.3
+      },
+      "family_contribution": {
+        "actor": {
+          "raw": 10.181733,
+          "share": 0.012888
+        },
+        "director": {
+          "raw": 20.785521,
+          "share": 0.02631
+        },
+        "genre": {
+          "raw": 448.773609,
+          "share": 0.568048
+        },
+        "keyword": {
+          "raw": 65.387108,
+          "share": 0.082766
+        },
+        "mood": {
+          "raw": 121.393692,
+          "share": 0.153658
+        },
+        "theme": {
+          "raw": 123.505919,
+          "share": 0.156331
+        }
+      },
+      "ontology_base_share": {
+        "model": 0.262246,
+        "short_term_context": 0.521787
+      },
+      "semantic_rank_effect": {
+        "genre_only_count": 0,
+        "genre_only_mean_rank_uplift": 0.0,
+        "theme_or_mood_count": 76,
+        "theme_or_mood_mean_rank_uplift": 4.302632
+      }
+    },
+    {
+      "user_id": 938,
+      "email": "v3seed-train-058@pinlm.test",
+      "user_number": 58,
+      "profile_type": "post_model_drift",
+      "cohort_id": 4,
+      "cohort_name": "animation_family_adventure",
+      "recent_cohort_id": 3,
+      "recent_cohort_name": "horror_mystery_thriller",
+      "preference_state": "drift",
+      "drift_confidence": 0.87931958,
+      "top_overlap_ratio": 0.8,
+      "current": {
+        "long_genre_share": 0.0625,
+        "short_genre_share": 0.516667,
+        "short_only_ratio": 0.35
+      },
+      "no_ontology": {
+        "long_genre_share": 0.029167,
+        "short_genre_share": 0.4,
+        "short_only_ratio": 0.35
+      },
+      "family_contribution": {
+        "actor": {
+          "raw": 11.061209,
+          "share": 0.008776
+        },
+        "director": {
+          "raw": 13.733891,
+          "share": 0.010896
+        },
+        "genre": {
+          "raw": 569.980909,
+          "share": 0.452206
+        },
+        "keyword": {
+          "raw": 95.206173,
+          "share": 0.075534
+        },
+        "mood": {
+          "raw": 339.75022,
+          "share": 0.269548
+        },
+        "theme": {
+          "raw": 230.712816,
+          "share": 0.183041
+        }
+      },
+      "ontology_base_share": {
+        "model": 0.198119,
+        "short_term_context": 0.45029
+      },
+      "semantic_rank_effect": {
+        "genre_only_count": 0,
+        "genre_only_mean_rank_uplift": 0.0,
+        "theme_or_mood_count": 68,
+        "theme_or_mood_mean_rank_uplift": 6.132353
+      }
+    },
+    {
+      "user_id": 915,
+      "email": "v3seed-train-035@pinlm.test",
+      "user_number": 35,
+      "profile_type": "post_model_drift",
+      "cohort_id": 5,
+      "cohort_name": "scifi_fantasy_adventure",
+      "recent_cohort_id": 6,
+      "recent_cohort_name": "documentary_history_war",
+      "preference_state": "drift",
+      "drift_confidence": 0.89846488,
+      "top_overlap_ratio": 0.65,
+      "current": {
+        "long_genre_share": 0.215833,
+        "short_genre_share": 0.2675,
+        "short_only_ratio": 0.35
+      },
+      "no_ontology": {
+        "long_genre_share": 0.076667,
+        "short_genre_share": 0.28,
+        "short_only_ratio": 0.35
+      },
+      "family_contribution": {
+        "actor": {
+          "raw": 6.496254,
+          "share": 0.00814
+        },
+        "director": {
+          "raw": 6.862918,
+          "share": 0.008599
+        },
+        "genre": {
+          "raw": 432.10885,
+          "share": 0.541421
+        },
+        "keyword": {
+          "raw": 68.815102,
+          "share": 0.086224
+        },
+        "mood": {
+          "raw": 97.51309,
+          "share": 0.122181
+        },
+        "theme": {
+          "raw": 186.304959,
+          "share": 0.233435
+        }
+      },
+      "ontology_base_share": {
+        "model": 0.255233,
+        "short_term_context": 0.45133
+      },
+      "semantic_rank_effect": {
+        "genre_only_count": 2,
+        "genre_only_mean_rank_uplift": -4.5,
+        "theme_or_mood_count": 63,
+        "theme_or_mood_mean_rank_uplift": 7.380952
+      }
+    },
+    {
+      "user_id": 916,
+      "email": "v3seed-train-036@pinlm.test",
+      "user_number": 36,
+      "profile_type": "post_model_drift",
+      "cohort_id": 6,
+      "cohort_name": "documentary_history_war",
+      "recent_cohort_id": 5,
+      "recent_cohort_name": "scifi_fantasy_adventure",
+      "preference_state": "drift",
+      "drift_confidence": 0.87318264,
+      "top_overlap_ratio": 0.7,
+      "current": {
+        "long_genre_share": 0.4025,
+        "short_genre_share": 0.2975,
+        "short_only_ratio": 0.35
+      },
+      "no_ontology": {
+        "long_genre_share": 0.305,
+        "short_genre_share": 0.265,
+        "short_only_ratio": 0.35
+      },
+      "family_contribution": {
+        "actor": {
+          "raw": 6.154842,
+          "share": 0.006186
+        },
+        "director": {
+          "raw": 18.732401,
+          "share": 0.018827
+        },
+        "genre": {
+          "raw": 550.737302,
+          "share": 0.553523
+        },
+        "keyword": {
+          "raw": 146.433571,
+          "share": 0.147174
+        },
+        "mood": {
+          "raw": 100.897884,
+          "share": 0.101408
+        },
+        "theme": {
+          "raw": 172.011482,
+          "share": 0.172882
+        }
+      },
+      "ontology_base_share": {
+        "model": 0.253505,
+        "short_term_context": 0.452083
+      },
+      "semantic_rank_effect": {
+        "genre_only_count": 0,
+        "genre_only_mean_rank_uplift": 0.0,
+        "theme_or_mood_count": 71,
+        "theme_or_mood_mean_rank_uplift": 6.323944
+      }
+    }
+  ]
+}

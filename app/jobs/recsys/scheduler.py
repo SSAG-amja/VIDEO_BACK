@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from app.core.config import settings
 from app.core.logging import configure_logging
-from app.jobs.recsys.rec_pipeline import run_pipeline
+from app.jobs.recsys.v1.worker import run_worker
 
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ def run_scheduler() -> None:
 
         try:
             logger.info("scheduled worker run started")
-            run_pipeline()
+            run_worker()
             logger.info("scheduled worker run finished")
         except Exception:
             logger.exception("scheduled worker run failed")

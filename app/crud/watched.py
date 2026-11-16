@@ -1,4 +1,6 @@
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.crud import interaction as interaction_crud
@@ -9,30 +11,38 @@ from app.schemas import watched as watched_schema
 
 # 2026.05.13 박현식
 # 본 영화 목록 응답에 사용할 영화 요약 DTO를 만든다.
-def _watched_movie_summary(movie: movie_model.Movie) -> watched_schema.WatchedMovieSummary:
+def _watched_movie_summary(
+    movie: movie_model.Movie,
+    watched_at: datetime | None = None,
+) -> watched_schema.WatchedMovieSummary:
     return watched_schema.WatchedMovieSummary(
         movie_id=movie.tmdb_id,
         movie_title=movie.title_ko or movie.title or movie.original_title,
         poster_path=movie.poster_path,
+        watched_at=watched_at,
     )
 
 
 # 2026.05.13 박현식
-# user_interactions에서 본 영화 상태인 영화 목록을 조회한다.
+# user_interactions에서 본 영화 상태인 영화 목록을 최신 시청순으로 조회한다.
 def get_watched_movies(db: Session, user_id: int, limit: int) -> watched_schema.WatchedMovieListResponse:
-    movies = db.execute(
-        select(movie_model.Movie)
+    rows = db.execute(
+        select(movie_model.Movie, mapping_model.UserInteraction.watched_at)
         .join(mapping_model.UserInteraction, mapping_model.UserInteraction.movie_id == movie_model.Movie.id)
         .where(
             mapping_model.UserInteraction.user_id == user_id,
             mapping_model.UserInteraction.is_watched.is_(True),
         )
+        .order_by(
+            desc(mapping_model.UserInteraction.watched_at).nulls_last(),
+            desc(mapping_model.UserInteraction.movie_id),
+        )
         .limit(limit)
-    ).scalars().all()
+    ).all()
 
     return watched_schema.WatchedMovieListResponse(
-        total=len(movies),
-        data=[_watched_movie_summary(movie) for movie in movies],
+        total=len(rows),
+        data=[_watched_movie_summary(movie, watched_at=watched_at) for movie, watched_at in rows],
     )
 
 

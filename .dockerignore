@@ -1,6 +1,9 @@
 .git
 .gitignore
 .DS_Store
+.env
+.env.*
+!.env.example
 __pycache__
 *.pyc
 *.pyo
@@ -11,3 +14,4 @@ downloads
 failed_sync_ids.jsonl
 result.md
 venv/
+ontol_test/

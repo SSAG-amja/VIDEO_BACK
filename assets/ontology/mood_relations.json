@@ -1,0 +1,15 @@
+{
+  "version": "0.1.0",
+  "relations": [
+    {"source_type": "theme", "source_key": "revenge", "relation_type": "evokes_mood", "target_type": "mood", "target_key": "tense", "weight": 0.6, "confidence": 0.65, "source": "manual_asset", "description": "Revenge stories often feel tense.", "version": "0.1.0"},
+    {"source_type": "theme", "source_key": "crime", "relation_type": "evokes_mood", "target_type": "mood", "target_key": "dark", "weight": 0.5, "confidence": 0.55, "source": "manual_asset", "description": "Crime stories often have dark mood.", "version": "0.1.0"},
+    {"source_type": "theme", "source_key": "mystery", "relation_type": "evokes_mood", "target_type": "mood", "target_key": "mysterious", "weight": 0.8, "confidence": 0.85, "source": "manual_asset", "description": "Mystery directly evokes mysterious mood.", "version": "0.1.0"},
+    {"source_type": "theme", "source_key": "family_conflict", "relation_type": "evokes_mood", "target_type": "mood", "target_key": "emotional", "weight": 0.5, "confidence": 0.55, "source": "manual_asset", "description": "Family conflict often feels emotional.", "version": "0.1.0"},
+    {"source_type": "theme", "source_key": "healing", "relation_type": "evokes_mood", "target_type": "mood", "target_key": "warm", "weight": 0.7, "confidence": 0.75, "source": "manual_asset", "description": "Healing stories often feel warm.", "version": "0.1.0"},
+    {"source_type": "theme", "source_key": "grief", "relation_type": "evokes_mood", "target_type": "mood", "target_key": "melancholic", "weight": 0.75, "confidence": 0.8, "source": "manual_asset", "description": "Grief evokes melancholy.", "version": "0.1.0"},
+    {"source_type": "mood", "source_key": "tense", "relation_type": "compatible_with", "target_type": "mood", "target_key": "dark", "weight": 0.4, "confidence": 0.55, "source": "manual_asset", "description": "Tense and dark moods can transition naturally.", "version": "0.1.0"},
+    {"source_type": "mood", "source_key": "warm", "relation_type": "compatible_with", "target_type": "mood", "target_key": "hopeful", "weight": 0.5, "confidence": 0.65, "source": "manual_asset", "description": "Warm and hopeful moods pair well.", "version": "0.1.0"},
+    {"source_type": "mood", "source_key": "comic", "relation_type": "compatible_with", "target_type": "mood", "target_key": "lighthearted", "weight": 0.6, "confidence": 0.75, "source": "manual_asset", "description": "Comic and lighthearted moods pair well.", "version": "0.1.0"},
+    {"source_type": "mood", "source_key": "mysterious", "relation_type": "compatible_with", "target_type": "mood", "target_key": "tense", "weight": 0.5, "confidence": 0.7, "source": "manual_asset", "description": "Mysterious and tense moods are compatible.", "version": "0.1.0"}
+  ]
+}

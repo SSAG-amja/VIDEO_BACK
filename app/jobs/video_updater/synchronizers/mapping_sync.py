@@ -109,8 +109,11 @@ class MappingSynchronizer:
         movie_column = target.c.movie_id if hasattr(target, "c") else target.movie_id
         target_column = getattr(target.c, target_id_column) if hasattr(target, "c") else getattr(target, target_id_column)
         target_tuples = [(movie_id, target_id) for movie_id, target_id, *_ in delete_list]
-        stmt = delete(target).where(tuple_(movie_column, target_column).in_(target_tuples))
-        await self.db.execute(stmt)
+        chunk_size = 5000
+        for index in range(0, len(target_tuples), chunk_size):
+            chunk = target_tuples[index : index + chunk_size]
+            stmt = delete(target).where(tuple_(movie_column, target_column).in_(chunk))
+            await self.db.execute(stmt)
 
     # 26.05.17 김광원
     # BACK Table 객체 기반 매핑 row를 일괄 추가한다.
@@ -118,11 +121,14 @@ class MappingSynchronizer:
         if not add_list:
             return
 
-        await self.db.execute(
-            insert(table)
-            .values([{"movie_id": movie_id, target_column: target_id} for movie_id, target_id in add_list])
-            .on_conflict_do_nothing()
-        )
+        chunk_size = 5000
+        for index in range(0, len(add_list), chunk_size):
+            chunk = add_list[index : index + chunk_size]
+            await self.db.execute(
+                insert(table)
+                .values([{"movie_id": movie_id, target_column: target_id} for movie_id, target_id in chunk])
+                .on_conflict_do_nothing()
+            )
 
     # 26.05.17 김광원
     # 배우 매핑을 추가하고 기존 row는 cast_name만 갱신한다.

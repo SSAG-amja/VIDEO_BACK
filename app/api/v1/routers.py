@@ -1,5 +1,18 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, movie_load, explore, user, pinned, passed, watched, interactions, playlist_items, playlists, posts
+from app.api.v1.endpoints import (
+    auth,
+    movie_load,
+    explore,
+    user,
+    pinned,
+    passed,
+    watched,
+    interactions,
+    playlist_items,
+    playlists,
+    posts,
+    reports,
+)
 
 api_router = APIRouter()
 
@@ -14,3 +27,5 @@ api_router.include_router(interactions.router, prefix="/interactions", tags=["In
 api_router.include_router(playlists.router, prefix="/playlist", tags=["Playlist"])
 api_router.include_router(playlist_items.router, prefix="/playlist", tags=["PlaylistItem"])
 api_router.include_router(posts.router, prefix="/post")
+# 2026.08.22 임재준: 게시글/댓글/영화 신고 전용 라우터 등록
+api_router.include_router(reports.router, prefix="/reports", tags=["Report"])

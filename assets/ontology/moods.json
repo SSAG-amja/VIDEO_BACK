@@ -1,0 +1,21 @@
+{
+  "version": "0.1.0",
+  "items": [
+    {"key": "dark", "label_ko": "어두움", "label_en": "Dark", "aliases": ["bleak", "grim"], "description": "A bleak or morally heavy tone.", "version": "0.1.0"},
+    {"key": "tense", "label_ko": "긴장감", "label_en": "Tense", "aliases": ["suspenseful", "nervous"], "description": "A sustained feeling of pressure or suspense.", "version": "0.1.0"},
+    {"key": "warm", "label_ko": "따뜻함", "label_en": "Warm", "aliases": ["heartwarming", "kind"], "description": "A comforting and emotionally warm tone.", "version": "0.1.0"},
+    {"key": "lighthearted", "label_ko": "경쾌함", "label_en": "Lighthearted", "aliases": ["playful", "easygoing"], "description": "A playful and easy tone.", "version": "0.1.0"},
+    {"key": "emotional", "label_ko": "감성적", "label_en": "Emotional", "aliases": ["touching", "sentimental"], "description": "A tone focused on strong feelings.", "version": "0.1.0"},
+    {"key": "brutal", "label_ko": "잔혹함", "label_en": "Brutal", "aliases": ["violent", "harsh"], "description": "A violent or harsh tone.", "version": "0.1.0"},
+    {"key": "mysterious", "label_ko": "미스터리함", "label_en": "Mysterious", "aliases": ["enigmatic", "uncertain"], "description": "A tone of hidden truth or uncertainty.", "version": "0.1.0"},
+    {"key": "epic", "label_ko": "웅장함", "label_en": "Epic", "aliases": ["grand", "large scale"], "description": "A grand and large-scale feeling.", "version": "0.1.0"},
+    {"key": "melancholic", "label_ko": "쓸쓸함", "label_en": "Melancholic", "aliases": ["sad", "lonely"], "description": "A quiet sadness or loneliness.", "version": "0.1.0"},
+    {"key": "hopeful", "label_ko": "희망적", "label_en": "Hopeful", "aliases": ["optimistic"], "description": "A feeling of hope or possibility.", "version": "0.1.0"},
+    {"key": "romantic", "label_ko": "로맨틱", "label_en": "Romantic", "aliases": ["loving", "tender"], "description": "A romantic or tender tone.", "version": "0.1.0"},
+    {"key": "comic", "label_ko": "코믹", "label_en": "Comic", "aliases": ["funny", "humorous"], "description": "A humorous or comedic tone.", "version": "0.1.0"},
+    {"key": "scary", "label_ko": "공포감", "label_en": "Scary", "aliases": ["frightening", "horror"], "description": "A frightening or fear-inducing tone.", "version": "0.1.0"},
+    {"key": "dreamlike", "label_ko": "몽환적", "label_en": "Dreamlike", "aliases": ["surreal", "ethereal"], "description": "A surreal or dreamlike feeling.", "version": "0.1.0"},
+    {"key": "fast_paced", "label_ko": "속도감", "label_en": "Fast Paced", "aliases": ["rapid", "energetic"], "description": "A quick and energetic pace.", "version": "0.1.0"},
+    {"key": "thoughtful", "label_ko": "사색적", "label_en": "Thoughtful", "aliases": ["reflective", "philosophical"], "description": "A reflective and contemplative tone.", "version": "0.1.0"}
+  ]
+}

@@ -1,0 +1,615 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from dataclasses import replace
+
+import numpy as np
+from scipy.sparse import csr_matrix, hstack, vstack
+
+from app.jobs.recsys.v3.datasets.dataset_schemas import PositiveInteraction
+from app.jobs.recsys.v3.training.artifact_publisher import (
+    load_hybrid_artifact,
+    publish_hybrid_artifact,
+)
+from app.jobs.recsys.v3.features.feature_representation import (
+    transform_item_feature_export,
+    transform_user_feature_export,
+)
+from app.jobs.recsys.v3.features.feature_schemas import ItemFeatureExport, ItemFeatureManifest
+from app.jobs.recsys.v3.training.model_schemas import LightFMTrainingConfig
+from app.jobs.recsys.v3.training.trainer import (
+    ModelHealthError,
+    apply_item_frequency_weighting,
+    apply_user_activity_weighting,
+    assert_model_health,
+    evaluate_model_health,
+    train_hybrid_model,
+)
+from app.jobs.recsys.v3.features.user_feature_builder import (
+    build_user_feature_export,
+    hash_ordered_values,
+)
+from app.services.recsys.v3.domain.behavior import SnapshotAction
+from app.services.recsys.v3.config import TRAINING_ITEM_FREQUENCY_WEIGHTING
+from tests.test_v3_identity_trainer import synthetic_dataset
+
+
+def synthetic_item_export() -> ItemFeatureExport:
+    movie_ids = (10, 20, 30, 40, 50)
+    tokens = (
+        "movie:10",
+        "movie:20",
+        "movie:30",
+        "movie:40",
+        "movie:50",
+        "genre:1",
+        "genre:2",
+        "theme:healing",
+    )
+    matrix = csr_matrix(
+        np.array(
+            [
+                [1, 0, 0, 0, 0, 1, 0, 0.8],
+                [0, 1, 0, 0, 0, 1, 0, 0.4],
+                [0, 0, 1, 0, 0, 0, 1, 0.0],
+                [0, 0, 0, 1, 0, 0, 1, 0.7],
+                [0, 0, 0, 0, 1, 1, 0, 0.0],
+            ],
+            dtype=np.float32,
+        )
+    )
+    manifest = ItemFeatureManifest(
+        exporter_version="test-v1",
+        ontology_build_id=22,
+        ontology_engine_name="v3",
+        ontology_schema_version="v3.0",
+        ontology_source_hash="s" * 64,
+        movie_count=len(movie_ids),
+        feature_count=len(tokens),
+        matrix_nnz=int(matrix.nnz),
+        matrix_shape=matrix.shape,
+        movie_mapping_hash=hash_ordered_values("movie", (str(item) for item in movie_ids)),
+        feature_mapping_hash=hash_ordered_values("feature", tokens),
+        export_hash="e" * 64,
+        pruning_rules={},
+        family_diagnostics=(),
+        ontology_build_status="success",
+    )
+    return ItemFeatureExport(
+        movie_ids=movie_ids,
+        movie_id_map={value: index for index, value in enumerate(movie_ids)},
+        feature_tokens=tokens,
+        feature_token_map={value: index for index, value in enumerate(tokens)},
+        item_features=matrix,
+        manifest=manifest,
+    )
+
+
+def synthetic_user_export(item_export: ItemFeatureExport):
+    return build_user_feature_export(
+        user_ids=(101, 202, 303),
+        explicit_genre_rows=((101, 1), (202, 2)),
+        favorite_rows=((101, 10), (303, 40), (303, 999)),
+        item_export=item_export,
+    )
+
+
+class UserFeatureBuilderTest(unittest.TestCase):
+    def test_user_features_keep_identity_and_bounded_onboarding_vocabulary(self) -> None:
+        item_export = synthetic_item_export()
+        export = synthetic_user_export(item_export)
+
+        self.assertEqual(export.feature_tokens[:3], ("user:101", "user:202", "user:303"))
+        self.assertIn("genre:1", export.feature_token_map)
+        self.assertIn("genre:2", export.feature_token_map)
+        self.assertIn("theme:healing", export.feature_token_map)
+        self.assertNotIn("movie:10", export.feature_token_map)
+        self.assertEqual(export.manifest.missing_favorite_movie_count, 1)
+        self.assertEqual(export.manifest.covered_user_count, 3)
+        self.assertEqual(export.manifest.item_feature_export_hash, "e" * 64)
+        self.assertEqual(export.user_features.shape[0], 3)
+        self.assertTrue(np.all(export.user_features.data > 0))
+
+    def test_long_term_features_are_derived_from_training_positives(self) -> None:
+        item_export = synthetic_item_export()
+        positives = (
+            PositiveInteraction(
+                user_id=101,
+                movie_id=10,
+                actions=(SnapshotAction.SAVED,),
+                representative_action=SnapshotAction.SAVED,
+                sample_weight=2.0,
+                latest_at=None,
+            ),
+            PositiveInteraction(
+                user_id=101,
+                movie_id=40,
+                actions=(SnapshotAction.WATCHED,),
+                representative_action=SnapshotAction.WATCHED,
+                sample_weight=1.0,
+                latest_at=None,
+            ),
+            PositiveInteraction(
+                user_id=202,
+                movie_id=30,
+                actions=(SnapshotAction.PINNED,),
+                representative_action=SnapshotAction.PINNED,
+                sample_weight=2.0,
+                latest_at=None,
+            ),
+            PositiveInteraction(
+                user_id=303,
+                movie_id=999,
+                actions=(SnapshotAction.SAVED,),
+                representative_action=SnapshotAction.SAVED,
+                sample_weight=2.0,
+                latest_at=None,
+            ),
+        )
+        export = build_user_feature_export(
+            user_ids=(101, 202, 303),
+            explicit_genre_rows=(),
+            favorite_rows=(),
+            item_export=item_export,
+            positive_interactions=positives,
+        )
+
+        genre_1 = export.feature_token_map["genre:1"]
+        genre_2 = export.feature_token_map["genre:2"]
+        healing = export.feature_token_map["theme:healing"]
+        self.assertAlmostEqual(float(export.user_features[0, genre_1]), 2.0 / 3.0)
+        self.assertAlmostEqual(float(export.user_features[0, genre_2]), 1.0 / 3.0)
+        self.assertAlmostEqual(float(export.user_features[0, healing]), 2.3 / 3.0)
+        self.assertAlmostEqual(float(export.user_features[1, genre_2]), 1.0)
+        self.assertEqual(export.user_features[2, 3:].nnz, 0)
+        self.assertEqual(export.manifest.long_term_positive_pair_count, 4)
+        self.assertEqual(export.manifest.long_term_covered_user_count, 2)
+        self.assertEqual(export.manifest.missing_long_term_movie_count, 1)
+        self.assertGreater(export.manifest.long_term_derived_feature_count, 0)
+        self.assertEqual(export.long_term_evidence_counts, (2, 1, 0))
+        self.assertIsNotNone(export.onboarding_features)
+        self.assertIsNotNone(export.long_term_features)
+
+    def test_bounded_long_term_evidence_preserves_onboarding_and_scales_history(self) -> None:
+        item_export = transform_item_feature_export(
+            synthetic_item_export(),
+            policy="supported_identity_field_budgeted",
+            supported_movie_ids=frozenset({10, 20, 30, 40}),
+            field_budgets={
+                "genre": 0.25,
+                "keyword": 0.20,
+                "actor": 0.15,
+                "director": 0.15,
+                "theme": 0.15,
+                "mood": 0.10,
+            },
+            keyword_weighting="normalized_idf",
+        )
+        onboarding = synthetic_user_export(item_export)
+        onboarding_result = transform_user_feature_export(
+            onboarding,
+            policy="bounded_long_term_evidence",
+            identity_weight=2.0,
+            semantic_weight=0.5,
+        )
+        onboarding_sums = np.asarray(
+            onboarding_result.user_features[:, 3:].sum(axis=1)
+        ).reshape(-1)
+        np.testing.assert_allclose(onboarding_sums, np.full(3, 0.5), atol=1e-6)
+
+        positives = (
+            PositiveInteraction(
+                user_id=101,
+                movie_id=10,
+                actions=(SnapshotAction.SAVED,),
+                representative_action=SnapshotAction.SAVED,
+                sample_weight=2.0,
+                latest_at=None,
+            ),
+            PositiveInteraction(
+                user_id=101,
+                movie_id=40,
+                actions=(SnapshotAction.PINNED,),
+                representative_action=SnapshotAction.PINNED,
+                sample_weight=1.0,
+                latest_at=None,
+            ),
+        )
+        history = build_user_feature_export(
+            user_ids=(101, 202, 303),
+            explicit_genre_rows=(),
+            favorite_rows=(),
+            item_export=item_export,
+            positive_interactions=positives,
+        )
+        history_result = transform_user_feature_export(
+            history,
+            policy="bounded_long_term_evidence",
+            identity_weight=2.0,
+            semantic_weight=0.5,
+        )
+        raw_sum = float(history.long_term_features[0, 3:].sum())
+        expected = raw_sum * (2.0 / 7.0) * 0.5
+        self.assertAlmostEqual(
+            float(history_result.user_features[0, 3:].sum()),
+            expected,
+            places=6,
+        )
+        self.assertLessEqual(float(history_result.user_features[:, 3:].sum(axis=1).max()), 0.5)
+        self.assertEqual(
+            history_result.manifest.representation_policy,
+            "bounded_long_term_evidence",
+        )
+
+    def test_bounded_long_term_evidence_is_rejected_for_items(self) -> None:
+        with self.assertRaises(ValueError):
+            transform_item_feature_export(
+                synthetic_item_export(),
+                policy="bounded_long_term_evidence",
+            )
+
+    def test_feature_representation_normalizes_semantics_and_limits_item_identity(self) -> None:
+        original = synthetic_item_export()
+        transformed = transform_item_feature_export(
+            original,
+            policy="supported_identity_normalized",
+            supported_movie_ids=frozenset({10, 40}),
+        )
+
+        movie_count = len(original.movie_ids)
+        identities = transformed.item_features[:, :movie_count]
+        semantics = transformed.item_features[:, movie_count:]
+        self.assertEqual(identities.nnz, 2)
+        self.assertEqual(float(identities[0, 0]), 1.0)
+        self.assertEqual(float(identities[3, 3]), 1.0)
+        semantic_sums = np.asarray(semantics.sum(axis=1)).reshape(-1)
+        np.testing.assert_allclose(semantic_sums, np.ones(5), atol=1e-6)
+        self.assertEqual(
+            transformed.manifest.representation_policy,
+            "supported_identity_normalized",
+        )
+        self.assertNotEqual(transformed.manifest.export_hash, original.manifest.export_hash)
+
+        user_export = synthetic_user_export(transformed)
+        normalized_users = transform_user_feature_export(
+            user_export,
+            policy="supported_identity_normalized",
+        )
+        row_sums = np.asarray(normalized_users.user_features.sum(axis=1)).reshape(-1)
+        np.testing.assert_allclose(row_sums, np.full(3, 2.0), atol=1e-6)
+
+    def test_metadata_only_representation_removes_all_item_identity_values(self) -> None:
+        transformed = transform_item_feature_export(
+            synthetic_item_export(),
+            policy="metadata_only_normalized",
+        )
+        movie_count = len(transformed.movie_ids)
+        self.assertEqual(transformed.item_features[:, :movie_count].nnz, 0)
+
+    def test_field_budget_does_not_redistribute_missing_or_low_information_weight(self) -> None:
+        original = synthetic_item_export()
+        keyword_matrix = csr_matrix(
+            np.asarray(
+                [
+                    [1.0, 0.0],
+                    [1.0, 0.0],
+                    [1.0, 0.0],
+                    [0.0, 1.0],
+                    [0.0, 0.0],
+                ],
+                dtype=np.float32,
+            )
+        )
+        matrix = hstack((original.item_features, keyword_matrix), format="csr")
+        tokens = original.feature_tokens + ("keyword:818", "keyword:999")
+        original = replace(
+            original,
+            feature_tokens=tokens,
+            feature_token_map={token: index for index, token in enumerate(tokens)},
+            item_features=matrix,
+            manifest=replace(
+                original.manifest,
+                feature_count=len(tokens),
+                matrix_nnz=int(matrix.nnz),
+                matrix_shape=matrix.shape,
+            ),
+        )
+        budgets = {
+            "genre": 0.25,
+            "keyword": 0.20,
+            "actor": 0.15,
+            "director": 0.15,
+            "theme": 0.15,
+            "mood": 0.10,
+        }
+        transformed = transform_item_feature_export(
+            original,
+            policy="supported_identity_field_budgeted",
+            supported_movie_ids=frozenset({10, 40}),
+            field_budgets=budgets,
+            keyword_weighting="normalized_idf",
+        )
+
+        movie_count = len(original.movie_ids)
+        identities = transformed.item_features[:, :movie_count]
+        semantics = transformed.item_features[:, movie_count:].toarray()
+        common_keyword_idf = np.log(6.0 / 4.0) / np.log(3.0)
+
+        self.assertEqual(identities.nnz, 2)
+        self.assertAlmostEqual(float(semantics[0, 0]), 0.25)
+        self.assertAlmostEqual(float(semantics[0, 2]), 0.15 * 0.8)
+        self.assertAlmostEqual(
+            float(semantics[0, 3]),
+            0.20 * common_keyword_idf,
+        )
+        self.assertAlmostEqual(float(semantics[3, 4]), 0.20)
+        self.assertAlmostEqual(float(semantics[4].sum()), 0.25)
+        self.assertLess(float(semantics[0].sum()), 1.0)
+        self.assertEqual(
+            transformed.manifest.semantic_field_budgets,
+            budgets,
+        )
+        self.assertEqual(
+            transformed.manifest.keyword_weighting_policy,
+            "normalized_idf",
+        )
+
+
+class HybridTrainerTest(unittest.TestCase):
+    def test_train_publish_reload_preserves_hybrid_predictions(self) -> None:
+        item_export = synthetic_item_export()
+        user_export = synthetic_user_export(item_export)
+        config = LightFMTrainingConfig(
+            stage="hybrid_ontology",
+            no_components=4,
+            epochs=3,
+            num_threads=1,
+        )
+        result = train_hybrid_model(
+            synthetic_dataset(),
+            item_export=item_export,
+            user_export=user_export,
+            config=config,
+        )
+
+        with tempfile.TemporaryDirectory(prefix="v3-hybrid-test-") as temporary:
+            artifact_path = publish_hybrid_artifact(result, temporary)
+            loaded = load_hybrid_artifact(artifact_path)
+
+            self.assertEqual(loaded.manifest["ontology"]["build_id"], 22)
+            self.assertTrue(loaded.manifest["ontology"]["applicable"])
+            self.assertEqual(loaded.user_features.shape, user_export.user_features.shape)
+            self.assertEqual(loaded.item_features.shape, item_export.item_features.shape)
+            self.assertEqual(loaded.manifest["feature_exports"]["item_export_hash"], "e" * 64)
+
+    def test_feature_only_new_user_and_item_receive_finite_scores(self) -> None:
+        item_export = synthetic_item_export()
+        user_export = synthetic_user_export(item_export)
+        result = train_hybrid_model(
+            synthetic_dataset(),
+            item_export=item_export,
+            user_export=user_export,
+            config=LightFMTrainingConfig(
+                stage="hybrid_ontology",
+                no_components=4,
+                epochs=3,
+            ),
+        )
+        new_item = csr_matrix(
+            ([1.0], ([0], [item_export.feature_token_map["genre:1"]])),
+            shape=(1, item_export.item_features.shape[1]),
+            dtype=np.float32,
+        )
+        extended_items = vstack([item_export.item_features, new_item], format="csr")
+        new_user = csr_matrix(
+            ([1.0], ([0], [user_export.feature_token_map["genre:1"]])),
+            shape=(1, user_export.user_features.shape[1]),
+            dtype=np.float32,
+        )
+        extended_users = vstack([user_export.user_features, new_user], format="csr")
+
+        new_item_score = result.model.predict(
+            0,
+            np.array([5], dtype=np.int32),
+            user_features=user_export.user_features,
+            item_features=extended_items,
+            num_threads=1,
+        )
+        new_user_score = result.model.predict(
+            3,
+            np.array([0], dtype=np.int32),
+            user_features=extended_users,
+            item_features=item_export.item_features,
+            num_threads=1,
+        )
+        self.assertTrue(np.isfinite(new_item_score).all())
+        self.assertTrue(np.isfinite(new_user_score).all())
+
+    def test_hybrid_training_rejects_movie_mapping_mismatch(self) -> None:
+        item_export = synthetic_item_export()
+        user_export = synthetic_user_export(item_export)
+        incompatible = replace(
+            item_export,
+            movie_ids=(10, 20, 30, 40, 60),
+            movie_id_map={10: 0, 20: 1, 30: 2, 40: 3, 60: 4},
+        )
+        with self.assertRaisesRegex(ValueError, "movie mappings must match"):
+            train_hybrid_model(
+                synthetic_dataset(),
+                item_export=incompatible,
+                user_export=user_export,
+                config=LightFMTrainingConfig(stage="hybrid_ontology", epochs=1),
+            )
+
+    def test_hybrid_training_rejects_non_successful_ontology_features(self) -> None:
+        item_export = synthetic_item_export()
+        user_export = synthetic_user_export(item_export)
+        running = replace(
+            item_export,
+            manifest=replace(item_export.manifest, ontology_build_status="running"),
+        )
+        with self.assertRaisesRegex(ValueError, "successful ontology build"):
+            train_hybrid_model(
+                synthetic_dataset(),
+                item_export=running,
+                user_export=user_export,
+                config=LightFMTrainingConfig(stage="hybrid_ontology", epochs=1),
+            )
+
+    def test_model_health_rejects_finite_but_exploded_parameters(self) -> None:
+        class ExplodedModel:
+            user_embeddings = np.full((3, 4), 1_000_000.0, dtype=np.float32)
+            item_embeddings = np.full((5, 4), 1.0, dtype=np.float32)
+            user_biases = np.zeros(3, dtype=np.float32)
+            item_biases = np.zeros(5, dtype=np.float32)
+
+            @staticmethod
+            def predict(user_ids, item_ids, **_kwargs):
+                return np.full(np.asarray(item_ids).shape, 4_000_000.0, dtype=np.float32)
+
+            @classmethod
+            def get_user_representations(cls, _features=None):
+                return cls.user_biases, cls.user_embeddings
+
+            @classmethod
+            def get_item_representations(cls, _features=None):
+                return cls.item_biases, cls.item_embeddings
+
+        report = evaluate_model_health(
+            ExplodedModel(),
+            user_count=3,
+            movie_count=5,
+            num_threads=1,
+        )
+
+        self.assertEqual(report["status"], "fail")
+        self.assertIn("user_embeddings.max_abs", report["violations"])
+        self.assertIn("prediction.max_abs", report["violations"])
+        with self.assertRaises(ModelHealthError):
+            assert_model_health(report)
+
+    def test_model_health_rejects_identical_candidate_lists(self) -> None:
+        class ConcentratedModel:
+            user_embeddings = np.zeros((8, 2), dtype=np.float32)
+            item_embeddings = np.zeros((120, 2), dtype=np.float32)
+            user_biases = np.zeros(8, dtype=np.float32)
+            item_biases = np.linspace(1.0, 0.0, 120, dtype=np.float32)
+
+            @classmethod
+            def predict(cls, user_ids, item_ids, **_kwargs):
+                return cls.item_biases[np.asarray(item_ids)]
+
+        report = evaluate_model_health(
+            ConcentratedModel(),
+            user_count=8,
+            movie_count=120,
+            num_threads=1,
+        )
+
+        self.assertEqual(report["status"], "fail")
+        self.assertIn("candidate_sample.pairwise_jaccard_mean", report["violations"])
+        self.assertIn("candidate_sample.top20_unique_ratio", report["violations"])
+        self.assertIn(
+            "candidate_sample.top20_max_user_frequency_ratio",
+            report["warnings"],
+        )
+
+    def test_model_health_warns_for_one_universal_top20_item(self) -> None:
+        class OneUniversalItemModel:
+            user_embeddings = np.eye(8, dtype=np.float32)
+            item_embeddings = np.zeros((240, 8), dtype=np.float32)
+            item_embeddings[0, :] = 2.0
+            for user_index in range(8):
+                start = 1 + user_index * 19
+                item_embeddings[start : start + 19, user_index] = 1.0
+            user_biases = np.zeros(8, dtype=np.float32)
+            item_biases = np.zeros(240, dtype=np.float32)
+
+            @classmethod
+            def predict(cls, user_ids, item_ids, **_kwargs):
+                users = np.asarray(user_ids, dtype=np.int64)
+                items = np.asarray(item_ids, dtype=np.int64)
+                return np.sum(
+                    cls.user_embeddings[users] * cls.item_embeddings[items],
+                    axis=1,
+                )
+
+        report = evaluate_model_health(
+            OneUniversalItemModel(),
+            user_count=8,
+            movie_count=240,
+            num_threads=1,
+        )
+
+        self.assertEqual(report["status"], "pass")
+        self.assertEqual(report["violations"], [])
+        self.assertIn(
+            "candidate_sample.top20_max_user_frequency_ratio",
+            report["warnings"],
+        )
+        assert_model_health(report)
+
+    def test_inverse_sqrt_frequency_weighting_reduces_common_item_weight(self) -> None:
+        dataset = synthetic_dataset()
+        interactions, weights = (
+            dataset.interactions.tocoo(),
+            dataset.sample_weights.tocoo(),
+        )
+        adjusted, diagnostics = apply_item_frequency_weighting(
+            interactions,
+            weights,
+            mode="inverse_sqrt",
+        )
+        by_coordinate = {
+            (int(row), int(column)): float(value)
+            for row, column, value in zip(
+                adjusted.row, adjusted.col, adjusted.data, strict=True
+            )
+        }
+        self.assertEqual(diagnostics["mode"], "inverse_sqrt")
+        self.assertLess(by_coordinate[(0, 1)] / 2.0, by_coordinate[(0, 0)] / 1.0)
+        self.assertLessEqual(diagnostics["multiplier_max"], 1.0)
+
+    def test_default_training_does_not_attenuate_popular_items(self) -> None:
+        dataset = synthetic_dataset()
+        original = dataset.sample_weights.tocoo()
+
+        adjusted, diagnostics = apply_item_frequency_weighting(
+            dataset.interactions,
+            original,
+            mode=TRAINING_ITEM_FREQUENCY_WEIGHTING,
+        )
+
+        self.assertEqual(TRAINING_ITEM_FREQUENCY_WEIGHTING, "none")
+        self.assertEqual(diagnostics["mode"], "none")
+        np.testing.assert_array_equal(adjusted.data, original.data)
+
+    def test_user_activity_weighting_caps_only_above_median_total(self) -> None:
+        interactions = csr_matrix(
+            np.array(
+                [
+                    [1, 0, 0, 0],
+                    [1, 1, 0, 0],
+                    [1, 1, 1, 1],
+                ],
+                dtype=np.float32,
+            )
+        ).tocoo()
+        weights = interactions.copy()
+        weights.data = np.ones(weights.nnz, dtype=np.float32)
+
+        adjusted, diagnostics = apply_user_activity_weighting(
+            interactions,
+            weights,
+            mode="cap_at_median",
+        )
+        row_totals = np.asarray(adjusted.tocsr().sum(axis=1)).reshape(-1)
+
+        np.testing.assert_allclose(row_totals, np.array([1.0, 2.0, 2.0]))
+        self.assertEqual(diagnostics["reference_total_weight"], 2.0)
+        self.assertEqual(diagnostics["capped_user_count"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

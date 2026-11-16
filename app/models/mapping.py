@@ -1,4 +1,3 @@
-# models/mapping.py
 from sqlalchemy import Table, Column, Integer, Boolean, DateTime, ForeignKey, func, text, String, Text
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -58,6 +57,15 @@ likes = Table(
     Base.metadata,
     Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
     Column("post_id", Integer, ForeignKey("posts.id", ondelete="CASCADE"), primary_key=True)
+)
+
+# 2026.08.14 임재준
+# 댓글 좋아요 다대다 매핑 테이블을 추가한다.
+reply_likes = Table(
+    "reply_likes",
+    Base.metadata,
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("reply_id", Integer, ForeignKey("replies.id", ondelete="CASCADE"), primary_key=True)
 )
 
 class MovieActor(Base):
